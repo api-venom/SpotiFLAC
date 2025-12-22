@@ -28,6 +28,9 @@ export interface Settings {
   embedLyrics: boolean;
   embedMaxQualityCover: boolean;
   operatingSystem: "Windows" | "linux/MacOS";
+  // Global quality preference (mapped per service). Default: 24-bit.
+  // "auto" means use per-service quality selectors / service defaults.
+  audioBitDepth: "auto" | "16" | "24" | "32";
   // Quality settings for specific sources
   tidalQuality: "LOSSLESS" | "HI_RES_LOSSLESS";
   qobuzQuality: "6" | "7" | "27";
@@ -104,8 +107,9 @@ export const DEFAULT_SETTINGS: Settings = {
   embedLyrics: false,
   embedMaxQualityCover: false,
   operatingSystem: detectOS(),
-  tidalQuality: "LOSSLESS", // Default: 16-bit lossless
-  qobuzQuality: "6" // Default: FLAC 16-bit
+  audioBitDepth: "24",
+  tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit lossless
+  qobuzQuality: "7" // Default: FLAC 24-bit
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [
@@ -190,12 +194,22 @@ export function getSettings(): Settings {
       }
       // Always use detected OS (don't persist it)
       parsed.operatingSystem = detectOS();
+
+      // Global audio bit depth (default 24-bit)
+      if (!('audioBitDepth' in parsed)) {
+        parsed.audioBitDepth = "24";
+      }
+      // Normalize legacy values if someone manually edited settings
+      if (parsed.audioBitDepth !== "auto" && parsed.audioBitDepth !== "16" && parsed.audioBitDepth !== "24" && parsed.audioBitDepth !== "32") {
+        parsed.audioBitDepth = "24";
+      }
+
       // Set default quality if not present
       if (!('tidalQuality' in parsed)) {
-        parsed.tidalQuality = "LOSSLESS";
+        parsed.tidalQuality = "HI_RES_LOSSLESS";
       }
       if (!('qobuzQuality' in parsed)) {
-        parsed.qobuzQuality = "6";
+        parsed.qobuzQuality = "7";
       }
       return { ...DEFAULT_SETTINGS, ...parsed };
     }

@@ -126,6 +126,12 @@ export function useDownload() {
       // Convert duration from ms to seconds for backend
       const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
 
+      const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+      const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
+
+      const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+      const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
+
       // Try Tidal first
       if (streamingURLs?.tidal_url) {
         try {
@@ -133,6 +139,7 @@ export function useDownload() {
           const tidalResponse = await downloadTrack({
             isrc,
             service: "tidal",
+            ...preferredBitDepthPayload,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -174,6 +181,7 @@ export function useDownload() {
           const amazonResponse = await downloadTrack({
             isrc,
             service: "amazon",
+            ...preferredBitDepthPayload,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -211,6 +219,7 @@ export function useDownload() {
       const qobuzResponse = await downloadTrack({
         isrc,
         service: "qobuz",
+        ...preferredBitDepthPayload,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -247,6 +256,9 @@ export function useDownload() {
     // Convert duration from ms to seconds for backend
     const durationSecondsForFallback = durationMs ? Math.round(durationMs / 1000) : undefined;
 
+    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
+
     // Determine audio format based on service
     let audioFormat: string | undefined;
     if (service === "tidal") {
@@ -258,6 +270,7 @@ export function useDownload() {
     const singleServiceResponse = await downloadTrack({
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
+      ...preferredBitDepthPayload,
       query,
       track_name: trackName,
       artist_name: artistName,
@@ -378,6 +391,7 @@ export function useDownload() {
           const tidalResponse = await downloadTrack({
             isrc,
             service: "tidal",
+            ...preferredBitDepthPayload,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -416,6 +430,7 @@ export function useDownload() {
           const amazonResponse = await downloadTrack({
             isrc,
             service: "amazon",
+            ...preferredBitDepthPayload,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -450,6 +465,7 @@ export function useDownload() {
       const qobuzResponse = await downloadTrack({
         isrc,
         service: "qobuz",
+        ...preferredBitDepthPayload,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -485,6 +501,9 @@ export function useDownload() {
     // Single service download
     const durationSecondsForFallback = durationMs ? Math.round(durationMs / 1000) : undefined;
 
+    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
+
     // Determine audio format based on service
     let audioFormat: string | undefined;
     if (service === "tidal") {
@@ -496,6 +515,7 @@ export function useDownload() {
     const singleServiceResponse = await downloadTrack({
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
+      ...preferredBitDepthPayload,
       query,
       track_name: trackName,
       artist_name: artistName,

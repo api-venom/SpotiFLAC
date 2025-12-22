@@ -246,8 +246,25 @@ export function SettingsPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Global bit-depth preference (mapped per service). */}
+              <Select
+                value={tempSettings.audioBitDepth}
+                onValueChange={(value: "auto" | "16" | "24" | "32") => setTempSettings((prev) => ({ ...prev, audioBitDepth: value }))}
+              >
+                <SelectTrigger className="h-9 w-fit">
+                  <SelectValue placeholder="Quality" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="24">24-bit (Best default)</SelectItem>
+                  <SelectItem value="16">16-bit (CD Quality)</SelectItem>
+                  <SelectItem value="32">32-bit (If available)</SelectItem>
+                  <SelectItem value="auto">Auto (Use source setting)</SelectItem>
+                </SelectContent>
+              </Select>
+
               {/* Quality dropdown for Tidal */}
-              {tempSettings.downloader === "tidal" && (
+              {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "tidal" && (
                 <Select
                   value={tempSettings.tidalQuality}
                   onValueChange={(value: "LOSSLESS" | "HI_RES_LOSSLESS") => setTempSettings((prev) => ({ ...prev, tidalQuality: value }))}
@@ -262,7 +279,7 @@ export function SettingsPage() {
                 </Select>
               )}
               {/* Quality dropdown for Qobuz */}
-              {tempSettings.downloader === "qobuz" && (
+              {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "qobuz" && (
                 <Select
                   value={tempSettings.qobuzQuality}
                   onValueChange={(value: "6" | "7" | "27") => setTempSettings((prev) => ({ ...prev, qobuzQuality: value }))}

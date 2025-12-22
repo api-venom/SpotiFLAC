@@ -128,36 +128,56 @@ func NewTidalDownloader(apiURL string) *TidalDownloader {
 }
 
 func (t *TidalDownloader) GetAvailableAPIs() ([]string, error) {
-	// Decode base64 API URL
-	apiURL, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2Fma2FyeHl6L1Nwb3RpRkxBQy9yZWZzL2hlYWRzL21haW4vdGlkYWwuanNvbg==")
-
-	// Add cache-busting parameter with current timestamp
-	urlWithCacheBust := fmt.Sprintf("%s?t=%d", string(apiURL), time.Now().Unix())
-
-	// Create request with cache bypass headers
-	req, err := http.NewRequest("GET", urlWithCacheBust, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Add headers to bypass cache
-	req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Expires", "0")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch API list: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch API list: HTTP %d", resp.StatusCode)
-	}
-
+	// Prefer a local API list (supports forks + offline use)
 	var apiList []string
-	if err := json.NewDecoder(resp.Body).Decode(&apiList); err != nil {
-		return nil, fmt.Errorf("failed to decode API list: %w", err)
+	tryPaths := make([]string, 0, 2)
+	if exe, err := os.Executable(); err == nil {
+		tryPaths = append(tryPaths, filepath.Join(filepath.Dir(exe), "tidal.json"))
+	}
+	tryPaths = append(tryPaths, "tidal.json")
+
+	for _, p := range tryPaths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if err := json.Unmarshal(b, &apiList); err == nil && len(apiList) > 0 {
+			fmt.Printf("[Tidal] Using local API list: %s\n", p)
+			break
+		}
+	}
+
+	// Fallback to remote list from your fork
+	if len(apiList) == 0 {
+		apiURL := "https://raw.githubusercontent.com/api-venom/SpotiFLAC/main/tidal.json"
+
+		// Add cache-busting parameter with current timestamp
+		urlWithCacheBust := fmt.Sprintf("%s?t=%d", apiURL, time.Now().Unix())
+
+		// Create request with cache bypass headers
+		req, err := http.NewRequest("GET", urlWithCacheBust, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		// Add headers to bypass cache
+		req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		req.Header.Set("Pragma", "no-cache")
+		req.Header.Set("Expires", "0")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch API list: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to fetch API list: HTTP %d", resp.StatusCode)
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&apiList); err != nil {
+			return nil, fmt.Errorf("failed to decode API list: %w", err)
+		}
 	}
 
 	var apis []string
@@ -784,14 +804,33 @@ func (t *TidalDownloader) DownloadFromManifest(manifestB64, outputPath string) e
 	// Remux M4A to FLAC using ffmpeg
 	// DASH segments are in fMP4 container with FLAC codec, need to extract to native FLAC
 	fmt.Println("Converting to FLAC...")
-	cmd := exec.Command("ffmpeg", "-y", "-i", tempPath, "-vn", "-c:a", "flac", outputPath)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		// If ffmpeg fails, try to keep the M4A file for debugging
-		m4aPath := strings.TrimSuffix(outputPath, ".flac") + ".m4a"
-		os.Rename(tempPath, m4aPath)
-		return fmt.Errorf("ffmpeg conversion failed (M4A saved as %s): %w - %s", m4aPath, err, stderr.String())
+	ffmpegPath, err := GetFFmpegPath()
+	if err != nil {
+		return fmt.Errorf("failed to get ffmpeg path: %w", err)
+	}
+	installed, err := IsFFmpegInstalled()
+	if err != nil || !installed {
+		return fmt.Errorf("ffmpeg is not installed")
+	}
+
+	// Prefer stream copy to preserve the original audio bit depth and avoid unnecessary encode/decode.
+	// If copy fails, fall back to decoding and re-encoding to FLAC.
+	{
+		cmd := exec.Command(ffmpegPath, "-y", "-i", tempPath, "-vn", "-c:a", "copy", outputPath)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("[Tidal] ffmpeg stream-copy failed, falling back to FLAC encode: %v\n", err)
+			cmd2 := exec.Command(ffmpegPath, "-y", "-i", tempPath, "-vn", "-c:a", "flac", outputPath)
+			var stderr2 strings.Builder
+			cmd2.Stderr = &stderr2
+			if err2 := cmd2.Run(); err2 != nil {
+				// If ffmpeg fails, try to keep the M4A file for debugging
+				m4aPath := strings.TrimSuffix(outputPath, ".flac") + ".m4a"
+				_ = os.Rename(tempPath, m4aPath)
+				return fmt.Errorf("ffmpeg conversion failed (M4A saved as %s): %w - %s", m4aPath, err2, stderr2.String())
+			}
+		}
 	}
 
 	// Remove temp file

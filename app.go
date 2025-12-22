@@ -49,6 +49,7 @@ type DownloadRequest struct {
 	ApiURL               string `json:"api_url,omitempty"`
 	OutputDir            string `json:"output_dir,omitempty"`
 	AudioFormat          string `json:"audio_format,omitempty"`
+	PreferredBitDepth    int    `json:"preferred_bit_depth,omitempty"` // If set, overrides AudioFormat with the closest available quality per service
 	FilenameFormat       string `json:"filename_format,omitempty"`
 	TrackNumber          bool   `json:"track_number,omitempty"`
 	Position             int    `json:"position,omitempty"`                // Position in playlist/album (1-based)
@@ -148,6 +149,30 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		req.AudioFormat = "LOSSLESS"
 	}
 
+	// Resolve a single cross-platform "preferred bit depth" into each service's quality selector.
+	// - Tidal: LOSSLESS (16-bit) or HI_RES_LOSSLESS (24-bit)
+	// - Qobuz: 6 (16-bit FLAC), 7 (24-bit FLAC), 27 (Hi-Res)
+	// Other services: ignored (we cannot reliably request bit depth)
+	resolvedAudioFormat := req.AudioFormat
+	if req.PreferredBitDepth != 0 {
+		switch req.Service {
+		case "tidal":
+			if req.PreferredBitDepth >= 24 {
+				resolvedAudioFormat = "HI_RES_LOSSLESS"
+			} else {
+				resolvedAudioFormat = "LOSSLESS"
+			}
+		case "qobuz":
+			if req.PreferredBitDepth >= 32 {
+				resolvedAudioFormat = "27"
+			} else if req.PreferredBitDepth >= 24 {
+				resolvedAudioFormat = "7"
+			} else {
+				resolvedAudioFormat = "6"
+			}
+		}
+	}
+
 	var err error
 	var filename string
 
@@ -231,7 +256,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 			downloader := backend.NewTidalDownloader("")
 			if req.ServiceURL != "" {
 				// Use provided URL directly with fallback to multiple APIs
-				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
+				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -240,13 +265,13 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
 				// Use ISRC matching for search fallback
-				filename, err = downloader.DownloadWithFallbackAndISRC(req.SpotifyID, req.ISRC, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
+				filename, err = downloader.DownloadWithFallbackAndISRC(req.SpotifyID, req.ISRC, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
 			}
 		} else {
 			downloader := backend.NewTidalDownloader(req.ApiURL)
 			if req.ServiceURL != "" {
 				// Use provided URL directly with specific API
-				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
+				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -255,14 +280,14 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
 				// Use ISRC matching for search fallback
-				filename, err = downloader.DownloadWithISRC(req.SpotifyID, req.ISRC, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
+				filename, err = downloader.DownloadWithISRC(req.SpotifyID, req.ISRC, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
 			}
 		}
 
 	case "qobuz":
 		downloader := backend.NewQobuzDownloader()
 		// Default to "6" (FLAC 16-bit) for Qobuz if not specified
-		quality := req.AudioFormat
+		quality := resolvedAudioFormat
 		if quality == "" {
 			quality = "6"
 		}

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.25.5'
+  GO_VERSION: '1.23.x'
   NODE_VERSION: '24'
 
 jobs:
@@ -80,7 +80,7 @@ jobs:
 
       - name: Prepare artifacts
         run: |
-          mkdir -p dist
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
 
       - name: Upload artifacts

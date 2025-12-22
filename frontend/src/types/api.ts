@@ -123,6 +123,7 @@ export interface DownloadRequest {
   api_url?: string;
   output_dir?: string;
   audio_format?: string;
+  preferred_bit_depth?: number;
   folder_name?: string;
   filename_format?: string;
   track_number?: boolean;

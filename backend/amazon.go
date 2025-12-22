@@ -489,7 +489,7 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        spotifyISRC,        // Use ISRC from Spotify
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(filePath, metadata, coverPath); err != nil {

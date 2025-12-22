@@ -120,84 +120,65 @@ func (q *QobuzDownloader) SearchByISRC(isrc string) (*QobuzTrack, error) {
 }
 
 func (q *QobuzDownloader) GetDownloadURL(trackID int64, quality string) (string, error) {
-	// Map quality to Qobuz quality code
-	// Qobuz uses: 5 (MP3 320), 6 (FLAC 16-bit), 7 (FLAC 24-bit), 27 (Hi-Res)
-	qualityCode := quality // Use the provided quality parameter
+	// Qobuz uses: 6 (FLAC 16-bit), 7 (FLAC 24-bit), 27 (Hi-Res)
+	qualityCode := quality
 	if qualityCode == "" {
-		qualityCode = "6" // Default to FLAC 16-bit if not specified
+		qualityCode = "6"
 	}
 
-	fmt.Printf("Getting download URL for track ID: %d with requested quality: %s\n", trackID, qualityCode)
-	fmt.Printf("Quality codes: 6=FLAC 16-bit, 7=FLAC 24-bit, 27=Hi-Res\n")
+	// If requested quality isn't available, fall back to the next best.
+	qualitiesToTry := []string{qualityCode}
+	if qualityCode == "27" {
+		qualitiesToTry = append(qualitiesToTry, "7", "6")
+	} else if qualityCode == "7" {
+		qualitiesToTry = append(qualitiesToTry, "6")
+	}
 
-	// Decode base64 API URLs
+	fmt.Printf("Getting download URL for track ID: %d (requested=%s)\n", trackID, qualityCode)
 	primaryBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9kYWIueWVldC5zdS9hcGkvc3RyZWFtP3RyYWNrSWQ9")
+	fallbackBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9kYWJtdXNpYy54eXovYXBpL3N0cmVhbT90cmFja0lkPQ==")
 
-	// Try primary API first
-	primaryURL := fmt.Sprintf("%s%d&quality=%s", string(primaryBase), trackID, qualityCode)
-	fmt.Printf("Qobuz API URL: %s\n", primaryURL)
+	for _, qCode := range qualitiesToTry {
+		fmt.Printf("Qobuz quality try: %s\n", qCode)
 
-	resp, err := q.client.Get(primaryURL)
-	if err == nil && resp.StatusCode == 200 {
-		defer resp.Body.Close()
+		// Try primary API
+		primaryURL := fmt.Sprintf("%s%d&quality=%s", string(primaryBase), trackID, qCode)
+		resp, err := q.client.Get(primaryURL)
+		if err == nil && resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				var streamResp QobuzStreamResponse
+				if err := json.Unmarshal(body, &streamResp); err == nil && streamResp.URL != "" {
+					fmt.Printf("Got download URL from primary API (quality=%s)\n", qCode)
+					return streamResp.URL, nil
+				}
+			}
+		}
 
+		// Fallback API
+		fallbackURL := fmt.Sprintf("%s%d&quality=%s", string(fallbackBase), trackID, qCode)
+		resp, err = q.client.Get(fallbackURL)
+		if err != nil {
+			continue
+		}
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("Primary API response: %s\n", string(body))
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			continue
+		}
+		if len(body) == 0 {
+			continue
+		}
 
 		var streamResp QobuzStreamResponse
 		if err := json.Unmarshal(body, &streamResp); err == nil && streamResp.URL != "" {
-			fmt.Printf("Got download URL from primary API\n")
+			fmt.Printf("Got download URL from fallback API (quality=%s)\n", qCode)
 			return streamResp.URL, nil
 		}
 	}
-	if resp != nil {
-		resp.Body.Close()
-	}
 
-	// Fallback to secondary API
-	fmt.Println("Primary API failed, trying fallback...")
-	fallbackBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9kYWJtdXNpYy54eXovYXBpL3N0cmVhbT90cmFja0lkPQ==")
-	fallbackURL := fmt.Sprintf("%s%d&quality=%s", string(fallbackBase), trackID, qualityCode)
-
-	resp, err = q.client.Get(fallbackURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to get download URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("Fallback API error response: %s\n", string(body))
-		return "", fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return "", fmt.Errorf("API returned empty response")
-	}
-
-	fmt.Printf("Fallback API response: %s\n", string(body))
-
-	var streamResp QobuzStreamResponse
-	if err := json.Unmarshal(body, &streamResp); err != nil {
-		// Truncate body for error message (max 200 chars)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return "", fmt.Errorf("failed to decode response: %w (response: %s)", err, bodyStr)
-	}
-
-	if streamResp.URL == "" {
-		return "", fmt.Errorf("no download URL available")
-	}
-
-	fmt.Printf("Got download URL from fallback API\n")
-	return streamResp.URL, nil
+	return "", fmt.Errorf("no download URL available for requested quality (and fallbacks)")
 }
 
 func (q *QobuzDownloader) DownloadFile(url, filepath string) error {
@@ -411,7 +392,7 @@ func (q *QobuzDownloader) DownloadByISRC(isrc, outputDir, quality, filenameForma
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        isrc,               // ISRC from Spotify (passed as parameter)
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(filepath, metadata, coverPath); err != nil {

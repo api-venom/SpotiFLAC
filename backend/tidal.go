@@ -558,6 +558,9 @@ func (t *TidalDownloader) GetTrackInfoByID(trackID int64) (*TidalTrack, error) {
 
 func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string, error) {
 	fmt.Println("Fetching URL...")
+	if quality == "" {
+		quality = "LOSSLESS"
+	}
 
 	url := fmt.Sprintf("%s/track/?id=%d&quality=%s", t.apiURL, trackID, quality)
 	fmt.Printf("Tidal API URL: %s\n", url)
@@ -571,6 +574,11 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 
 	if resp.StatusCode != 200 {
 		fmt.Printf("✗ Tidal API returned status code: %d\n", resp.StatusCode)
+		// If hi-res is requested but not available for this track, fall back to LOSSLESS.
+		if quality == "HI_RES_LOSSLESS" {
+			fmt.Println("[Tidal] Hi-Res not available, falling back to LOSSLESS")
+			return t.GetDownloadURL(trackID, "LOSSLESS")
+		}
 		return "", fmt.Errorf("API returned status code: %d", resp.StatusCode)
 	}
 
@@ -934,7 +942,7 @@ func (t *TidalDownloader) DownloadByURL(tidalURL, outputDir, quality, filenameFo
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        spotifyISRC,        // ISRC from Spotify
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(outputFilename, metadata, coverPath); err != nil {
@@ -1047,7 +1055,7 @@ func (t *TidalDownloader) DownloadByURLWithFallback(tidalURL, outputDir, quality
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        spotifyISRC,        // ISRC from Spotify
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(outputFilename, metadata, coverPath); err != nil {
@@ -1180,7 +1188,7 @@ func (t *TidalDownloader) DownloadBySearchWithISRC(trackName, artistName, albumN
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        spotifyISRC,        // ISRC from Spotify
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(outputFilename, metadata, coverPath); err != nil {
@@ -1506,7 +1514,7 @@ func (t *TidalDownloader) DownloadBySearchWithFallback(trackName, artistName, al
 		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
 		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
 		ISRC:        spotifyISRC,        // ISRC from Spotify
-		Description: "https://github.com/afkarxyz/SpotiFLAC",
+		Description: "https://github.com/api-venom/SpotiFLAC",
 	}
 
 	if err := EmbedMetadata(outputFilename, metadata, coverPath); err != nil {

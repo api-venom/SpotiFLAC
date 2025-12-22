@@ -136,7 +136,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               variant="ghost"
               size="icon"
               className="h-10 w-10"
-              onClick={() => openExternal("https://github.com/afkarxyz/SpotiFLAC/issues")}
+              onClick={() => openExternal("https://github.com/api-venom/SpotiFLAC/issues")}
             >
               <GithubIcon size={20} />
             </Button>

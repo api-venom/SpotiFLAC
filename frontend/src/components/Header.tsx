@@ -36,7 +36,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
                 <Badge variant="default" asChild>
                   <button
                     type="button"
-                    onClick={() => openExternal("https://github.com/afkarxyz/SpotiFLAC/releases")}
+                    onClick={() => openExternal("https://github.com/api-venom/SpotiFLAC/releases")}
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                   >
                     v{version}

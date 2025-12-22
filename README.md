@@ -1,4 +1,4 @@
-[![GitHub All Releases](https://img.shields.io/github/downloads/afkarxyz/SpotiFLAC/total?style=for-the-badge)](https://github.com/afkarxyz/SpotiFLAC/releases)
+[![GitHub All Releases](https://img.shields.io/github/downloads/api-venom/SpotiFLAC/total?style=for-the-badge)](https://github.com/api-venom/SpotiFLAC/releases)
 
 ![Image](https://github.com/user-attachments/assets/a6e92fdd-2944-45c1-83e8-e23a26c827af)
 
@@ -12,7 +12,14 @@ Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no account 
 
 </div>
 
-### [Download](https://github.com/afkarxyz/SpotiFLAC/releases)
+### [Download](https://github.com/api-venom/SpotiFLAC/releases)
+
+## Docs
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Networking ("curl/fetch")](docs/NETWORKING.md)
+- [Dependencies](docs/DEPENDENCIES.md)
+- [Changes (fork)](docs/CHANGES.md)
 
 ## Screenshot
 

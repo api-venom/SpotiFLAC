@@ -62,6 +62,9 @@ export function useDownload() {
   ) => {
     const service = settings.downloader;
 
+    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
+
     const query = trackName && artistName ? `${trackName} ${artistName}` : undefined;
     const os = settings.operatingSystem;
 
@@ -125,12 +128,6 @@ export function useDownload() {
 
       // Convert duration from ms to seconds for backend
       const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
-
-      const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-      const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
-
-      const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-      const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
 
       // Try Tidal first
       if (streamingURLs?.tidal_url) {
@@ -256,9 +253,6 @@ export function useDownload() {
     // Convert duration from ms to seconds for backend
     const durationSecondsForFallback = durationMs ? Math.round(durationMs / 1000) : undefined;
 
-    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
-
     // Determine audio format based on service
     let audioFormat: string | undefined;
     if (service === "tidal") {
@@ -325,6 +319,9 @@ export function useDownload() {
     spotifyTotalTracks?: number
   ) => {
     const service = settings.downloader;
+
+    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
+    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
 
     const query = trackName && artistName ? `${trackName} ${artistName}` : undefined;
     const os = settings.operatingSystem;
@@ -500,9 +497,6 @@ export function useDownload() {
 
     // Single service download
     const durationSecondsForFallback = durationMs ? Math.round(durationMs / 1000) : undefined;
-
-    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
 
     // Determine audio format based on service
     let audioFormat: string | undefined;

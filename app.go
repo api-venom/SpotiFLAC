@@ -57,6 +57,7 @@ type DownloadRequest struct {
 	SpotifyID            string `json:"spotify_id,omitempty"`              // Spotify track ID
 	EmbedLyrics          bool   `json:"embed_lyrics,omitempty"`            // Whether to embed lyrics into the audio file
 	EmbedMaxQualityCover bool   `json:"embed_max_quality_cover,omitempty"` // Whether to embed max quality cover art
+	UseTempExtension     *bool  `json:"use_temp_extension,omitempty"`      // Whether to use a .tmp extension for partial downloads (default true)
 	ServiceURL           string `json:"service_url,omitempty"`             // Direct service URL (Tidal/Deezer/Amazon) to skip song.link API call
 	Duration             int    `json:"duration,omitempty"`                // Track duration in seconds for better matching
 	ItemID               string `json:"item_id,omitempty"`                 // Optional queue item ID for multi-service fallback tracking
@@ -252,8 +253,13 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		}
 
 	case "tidal":
+		useTempExt := true
+		if req.UseTempExtension != nil {
+			useTempExt = *req.UseTempExtension
+		}
 		if req.ApiURL == "" || req.ApiURL == "auto" {
 			downloader := backend.NewTidalDownloader("")
+			downloader.SetUseTempDownloadExtension(useTempExt)
 			if req.ServiceURL != "" {
 				// Use provided URL directly with fallback to multiple APIs
 				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
@@ -269,6 +275,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 			}
 		} else {
 			downloader := backend.NewTidalDownloader(req.ApiURL)
+			downloader.SetUseTempDownloadExtension(useTempExt)
 			if req.ServiceURL != "" {
 				// Use provided URL directly with specific API
 				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)

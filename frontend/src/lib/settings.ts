@@ -27,6 +27,9 @@ export interface Settings {
   sfxEnabled: boolean;
   embedLyrics: boolean;
   embedMaxQualityCover: boolean;
+  // When enabled, the app writes partial downloads to a temporary filename (e.g. .m4a.tmp)
+  // and renames/cleans up after success. Disabling makes the intermediate file use .m4a directly.
+  useTempDownloadExtension: boolean;
   operatingSystem: "Windows" | "linux/MacOS";
   // Global quality preference (mapped per service). Default: 24-bit.
   // "auto" means use per-service quality selectors / service defaults.
@@ -106,6 +109,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfxEnabled: true,
   embedLyrics: false,
   embedMaxQualityCover: false,
+  useTempDownloadExtension: true,
   operatingSystem: detectOS(),
   audioBitDepth: "24",
   tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit lossless
@@ -194,6 +198,11 @@ export function getSettings(): Settings {
       }
       // Always use detected OS (don't persist it)
       parsed.operatingSystem = detectOS();
+
+      // Use temporary extension for partial downloads (default true)
+      if (!('useTempDownloadExtension' in parsed)) {
+        parsed.useTempDownloadExtension = true;
+      }
 
       // Global audio bit depth (default 24-bit)
       if (!('audioBitDepth' in parsed)) {

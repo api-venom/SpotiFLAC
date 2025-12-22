@@ -129,7 +129,47 @@ export function useDownload() {
       // Convert duration from ms to seconds for backend
       const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
 
-      // Try Tidal first
+      const preferredBitDepthValue = Number.isFinite(preferredBitDepth) ? preferredBitDepth : undefined;
+
+      // If user prefers 32-bit, prioritize Qobuz first (more likely to have it than Tidal).
+      if (preferredBitDepthValue === 32) {
+        logger.debug(`trying qobuz (preferred 32-bit) for: ${trackName} - ${artistName}`);
+        const qobuzFirst = await downloadTrack({
+          isrc,
+          service: "qobuz",
+          ...preferredBitDepthPayload,
+          use_temp_extension: settings.useTempDownloadExtension,
+          query,
+          track_name: trackName,
+          artist_name: artistName,
+          album_name: albumName,
+          album_artist: albumArtist,
+          release_date: releaseDate,
+          cover_url: coverUrl,
+          output_dir: outputDir,
+          filename_format: settings.filenameTemplate,
+          track_number: settings.trackNumber,
+          position,
+          use_album_track_number: useAlbumTrackNumber,
+          spotify_id: spotifyId,
+          embed_lyrics: settings.embedLyrics,
+          embed_max_quality_cover: settings.embedMaxQualityCover,
+          duration: durationMs ? Math.round(durationMs / 1000) : undefined,
+          item_id: itemID,
+          audio_format: settings.qobuzQuality || "6",
+          spotify_track_number: spotifyTrackNumber,
+          spotify_disc_number: spotifyDiscNumber,
+          spotify_total_tracks: spotifyTotalTracks,
+        });
+
+        if (qobuzFirst.success) {
+          logger.success(`qobuz: ${trackName} - ${artistName}`);
+          return qobuzFirst;
+        }
+        logger.warning(`qobuz failed, trying tidal/amazon fallbacks...`);
+      }
+
+      // Try Tidal
       if (streamingURLs?.tidal_url) {
         try {
           logger.debug(`trying tidal for: ${trackName} - ${artistName}`);
@@ -137,6 +177,7 @@ export function useDownload() {
             isrc,
             service: "tidal",
             ...preferredBitDepthPayload,
+            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -154,8 +195,8 @@ export function useDownload() {
             embed_max_quality_cover: settings.embedMaxQualityCover,
             service_url: streamingURLs.tidal_url,
             duration: durationSeconds,
-            item_id: itemID, // Pass the same itemID through all attempts
-            audio_format: settings.tidalQuality || "LOSSLESS", // Use default LOSSLESS for auto mode
+            item_id: itemID,
+            audio_format: settings.tidalQuality || "LOSSLESS",
             spotify_track_number: spotifyTrackNumber,
             spotify_disc_number: spotifyDiscNumber,
             spotify_total_tracks: spotifyTotalTracks,
@@ -171,7 +212,7 @@ export function useDownload() {
         }
       }
 
-      // Try Amazon second
+      // Try Amazon
       if (streamingURLs?.amazon_url) {
         try {
           logger.debug(`trying amazon for: ${trackName} - ${artistName}`);
@@ -179,6 +220,7 @@ export function useDownload() {
             isrc,
             service: "amazon",
             ...preferredBitDepthPayload,
+            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -217,6 +259,7 @@ export function useDownload() {
         isrc,
         service: "qobuz",
         ...preferredBitDepthPayload,
+        use_temp_extension: settings.useTempDownloadExtension,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -265,6 +308,7 @@ export function useDownload() {
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
       ...preferredBitDepthPayload,
+      use_temp_extension: settings.useTempDownloadExtension,
       query,
       track_name: trackName,
       artist_name: artistName,
@@ -389,6 +433,7 @@ export function useDownload() {
             isrc,
             service: "tidal",
             ...preferredBitDepthPayload,
+            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -428,6 +473,7 @@ export function useDownload() {
             isrc,
             service: "amazon",
             ...preferredBitDepthPayload,
+            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -463,6 +509,7 @@ export function useDownload() {
         isrc,
         service: "qobuz",
         ...preferredBitDepthPayload,
+        use_temp_extension: settings.useTempDownloadExtension,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -510,6 +557,7 @@ export function useDownload() {
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
       ...preferredBitDepthPayload,
+      use_temp_extension: settings.useTempDownloadExtension,
       query,
       track_name: trackName,
       artist_name: artistName,

@@ -23,6 +23,7 @@ type TidalDownloader struct {
 	clientID     string
 	clientSecret string
 	apiURL       string
+	useTempDownloadExtension bool
 }
 
 type TidalSearchResponse struct {
@@ -124,7 +125,12 @@ func NewTidalDownloader(apiURL string) *TidalDownloader {
 		clientID:     string(clientID),
 		clientSecret: string(clientSecret),
 		apiURL:       apiURL,
+		useTempDownloadExtension: true,
 	}
+}
+
+func (t *TidalDownloader) SetUseTempDownloadExtension(enabled bool) {
+	t.useTempDownloadExtension = enabled
 }
 
 func (t *TidalDownloader) GetAvailableAPIs() ([]string, error) {
@@ -727,8 +733,14 @@ func (t *TidalDownloader) DownloadFromManifest(manifestB64, outputPath string) e
 	// DASH format - download segments to temporary M4A file, then remux to FLAC
 	fmt.Printf("Downloading %d segments...\n", len(mediaURLs)+1)
 
-	// Create temporary file for M4A segments
-	tempPath := outputPath + ".m4a.tmp"
+	// Create intermediate M4A path for DASH segments.
+	// Default uses a temporary extension to avoid half-downloaded files looking "complete".
+	basePath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath))
+	m4aPath := basePath + ".m4a"
+	tempPath := m4aPath
+	if t.useTempDownloadExtension {
+		tempPath = m4aPath + ".tmp"
+	}
 	out, err := os.Create(tempPath)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
@@ -833,9 +845,11 @@ func (t *TidalDownloader) DownloadFromManifest(manifestB64, outputPath string) e
 			var stderr2 strings.Builder
 			cmd2.Stderr = &stderr2
 			if err2 := cmd2.Run(); err2 != nil {
-				// If ffmpeg fails, try to keep the M4A file for debugging
-				m4aPath := strings.TrimSuffix(outputPath, ".flac") + ".m4a"
-				_ = os.Rename(tempPath, m4aPath)
+				// If ffmpeg fails, try to keep the M4A file for debugging.
+				// When using a temp extension, rename it back to .m4a.
+				if t.useTempDownloadExtension {
+					_ = os.Rename(tempPath, m4aPath)
+				}
 				return fmt.Errorf("ffmpeg conversion failed (M4A saved as %s): %w - %s", m4aPath, err2, stderr2.String())
 			}
 		}
@@ -1018,6 +1032,7 @@ func (t *TidalDownloader) DownloadByURLWithFallback(tidalURL, outputDir, quality
 	// Download the file
 	fmt.Printf("Downloading to: %s\n", outputFilename)
 	downloader := NewTidalDownloader(successAPI)
+	downloader.SetUseTempDownloadExtension(t.useTempDownloadExtension)
 	if err := downloader.DownloadFile(downloadURL, outputFilename); err != nil {
 		return "", err
 	}
@@ -1476,6 +1491,7 @@ func (t *TidalDownloader) DownloadBySearchWithFallback(trackName, artistName, al
 	// Download the file using the successful API
 	fmt.Printf("Downloading to: %s\n", outputFilename)
 	downloader := NewTidalDownloader(successAPI)
+	downloader.SetUseTempDownloadExtension(t.useTempDownloadExtension)
 	if err := downloader.DownloadFile(downloadURL, outputFilename); err != nil {
 		return "", fmt.Errorf("download failed: %w", err)
 	}

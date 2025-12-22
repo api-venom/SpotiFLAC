@@ -124,6 +124,7 @@ export interface DownloadRequest {
   output_dir?: string;
   audio_format?: string;
   preferred_bit_depth?: number;
+  use_temp_extension?: boolean;
   folder_name?: string;
   filename_format?: string;
   track_number?: boolean;

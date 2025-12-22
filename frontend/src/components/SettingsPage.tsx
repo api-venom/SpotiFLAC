@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { getSettings, getSettingsWithDefaults, saveSettings, resetToDefaultSettings, applyThemeMode, applyFont, FONT_OPTIONS, FOLDER_PRESETS, FILENAME_PRESETS, TEMPLATE_VARIABLES, type Settings as SettingsType, type FontFamily, type FolderPreset, type FilenamePreset } from "@/lib/settings";
 import { themes, applyTheme } from "@/lib/themes";
-import { SelectFolder } from "../../wailsjs/go/main/App";
+import { SelectFolder, IsFFmpegInstalled, DownloadFFmpeg } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 
 // Service Icons
@@ -53,6 +53,8 @@ export function SettingsPage() {
   const [tempSettings, setTempSettings] = useState<SettingsType>(savedSettings);
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [ffmpegInstalled, setFfmpegInstalled] = useState<boolean | null>(null);
+  const [isInstallingFFmpeg, setIsInstallingFFmpeg] = useState(false);
 
   useEffect(() => {
     applyThemeMode(savedSettings.themeMode);
@@ -90,10 +92,51 @@ export function SettingsPage() {
     loadDefaults();
   }, []);
 
+  useEffect(() => {
+    const checkFFmpeg = async () => {
+      try {
+        const installed = await IsFFmpegInstalled();
+        setFfmpegInstalled(installed);
+      } catch {
+        setFfmpegInstalled(false);
+      }
+    };
+    checkFFmpeg();
+  }, []);
+
   const handleSave = () => {
     saveSettings(tempSettings);
-    setSavedSettings(tempSettings);
+    // Verify persisted settings (helps avoid "settings not saving" confusion)
+    const persisted = getSettings();
+    setSavedSettings(persisted);
+    setTempSettings(persisted);
     toast.success("Settings saved");
+  };
+
+  const handleInstallFFmpeg = async () => {
+    try {
+      setIsInstallingFFmpeg(true);
+      const resp = await DownloadFFmpeg();
+      if (!resp?.success) {
+        toast.error(resp?.error || "Failed to install FFmpeg");
+        setFfmpegInstalled(false);
+        return;
+      }
+
+      // Re-check after install
+      const installed = await IsFFmpegInstalled();
+      setFfmpegInstalled(installed);
+      if (installed) {
+        toast.success("FFmpeg installed");
+      } else {
+        toast.warning("FFmpeg install finished, but not detected yet");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to install FFmpeg");
+      setFfmpegInstalled(false);
+    } finally {
+      setIsInstallingFFmpeg(false);
+    }
   };
 
   const handleReset = async () => {
@@ -218,10 +261,61 @@ export function SettingsPage() {
               onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, sfxEnabled: checked }))}
             />
           </div>
+
+          {/* Temporary download extension */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="use-temp-download-extension" className="cursor-pointer text-sm">Use .tmp while downloading</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground">
+                      <Info className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Prevents partially-downloaded files being mistaken as complete.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+            <Switch
+              id="use-temp-download-extension"
+              checked={tempSettings.useTempDownloadExtension}
+              onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, useTempDownloadExtension: checked }))}
+            />
+          </div>
         </div>
 
         {/* Right Column */}
         <div className="space-y-4">
+          {/* FFmpeg */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label className="text-sm">FFmpeg</Label>
+                <p className="text-xs text-muted-foreground">
+                  Status: {ffmpegInstalled === null ? "Checking..." : ffmpegInstalled ? "Installed" : "Not installed"}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isInstallingFFmpeg || ffmpegInstalled === true}
+                onClick={handleInstallFFmpeg}
+              >
+                {ffmpegInstalled ? "Installed" : isInstallingFFmpeg ? "Installing..." : "Install FFmpeg"}
+              </Button>
+            </div>
+            {ffmpegInstalled === false && (
+              <p className="text-xs text-muted-foreground">
+                Required for Tidal remux/transcode and some metadata operations.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t" />
+
           {/* Source Selection */}
           <div className="space-y-2">
             <Label htmlFor="downloader" className="text-sm">Source</Label>

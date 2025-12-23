@@ -1,4 +1,4 @@
-package backend
+ package backend
 
 import (
 	"context"
@@ -1319,19 +1319,22 @@ func (c *SpotifyMetadataClient) getAccessTokenTOTP(ctx context.Context) (string,
 
 func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, error) {
 	// Preferred: official OAuth token (user login via Settings).
+	// If present, use it and skip any web-player token logic.
 	if oauthToken, ok, err := GetSpotifyOAuthAccessToken(ctx); err != nil {
 		spotifyDebugf("oauth token fetch failed: %v", err)
-	} else if ok && oauthToken != "" {
+	} else if ok && strings.TrimSpace(oauthToken) != "" {
 		spotifyDebugf("using spotify oauth access token")
 		return oauthToken, nil
 	}
 
+	// Fallback: web-player token (TOTP / legacy endpoints).
+	// Note: cached token is only for the web-player token, not OAuth.
 	if token, ok := c.getCachedToken(); ok {
-		spotifyDebugf("using cached access token")
+		spotifyDebugf("using cached web-player access token")
 		return token, nil
 	}
 
-	// Original logic order: TOTP -> legacy -> access point.
+	// Fallback order: TOTP -> legacy -> access point.
 	token, err := c.getAccessTokenTOTP(ctx)
 	if err == nil && token != "" {
 		// getAccessTokenTOTP ultimately calls fetchAccessTokenWithRetryURL which caches expiry.
@@ -1364,7 +1367,7 @@ func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, err
 	spotifyDebugf("getAccessToken legacy failed: %v", legacyErr)
 	spotifyDebugf("getAccessToken accessPoint failed: %v", accessPointErr)
 
-	return "", fmt.Errorf("failed to get Spotify access token: totp=%v; legacy=%v; accessPoint=%v", totpErr, legacyErr, accessPointErr)
+	return "", fmt.Errorf("failed to get Spotify access token: oauth=not-configured; totp=%v; legacy=%v; accessPoint=%v", totpErr, legacyErr, accessPointErr)
 }
 
 func (c *SpotifyMetadataClient) getAccessTokenLegacy(ctx context.Context) (string, error) {

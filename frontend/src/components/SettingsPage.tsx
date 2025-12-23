@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { InputWithContext } from "@/components/ui/input-with-context";
 import { Label } from "@/components/ui/label";
@@ -172,8 +172,19 @@ export function SettingsPage() {
   const handleSpotifyOAuthLogin = async () => {
     const clientID = (tempSettings.spotifyOAuthClientId || "").trim();
     if (!clientID) {
-      toast.error("Spotify Client ID is required");
+      toast.error("Spotify Client ID is required (create an app in Spotify Developer Dashboard).");
       return;
+    }
+
+    // Persist immediately so users don't forget to hit "Save Changes"
+    // and then wonder why OAuth isn't being used.
+    try {
+      saveSettings({ ...tempSettings, spotifyOAuthClientId: clientID });
+      const persisted = getSettings();
+      setSavedSettings(persisted);
+      setTempSettings(persisted);
+    } catch {
+      // Non-fatal; still attempt login.
     }
 
     try {
@@ -223,7 +234,7 @@ export function SettingsPage() {
     try {
       const selectedPath = await SelectFolder(tempSettings.downloadPath || "");
       if (selectedPath && selectedPath.trim() !== "") {
-        setTempSettings((prev) => ({ ...prev, downloadPath: selectedPath }));
+        setTempSettings((prev: SettingsType) => ({ ...prev, downloadPath: selectedPath }));
       }
     } catch (error) {
       console.error("Error selecting folder:", error);
@@ -245,7 +256,9 @@ export function SettingsPage() {
               <InputWithContext
                 id="download-path"
                 value={tempSettings.downloadPath}
-                onChange={(e) => setTempSettings((prev) => ({ ...prev, downloadPath: e.target.value }))}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, downloadPath: e.target.value }))
+                }
                 placeholder="C:\Users\YourUsername\Music"
               />
               <Button type="button" onClick={handleBrowseFolder} className="gap-1.5">
@@ -260,7 +273,9 @@ export function SettingsPage() {
             <Label htmlFor="theme-mode">Mode</Label>
             <Select
               value={tempSettings.themeMode}
-              onValueChange={(value: "auto" | "light" | "dark") => setTempSettings((prev) => ({ ...prev, themeMode: value }))}
+              onValueChange={(value: "auto" | "light" | "dark") =>
+                setTempSettings((prev: SettingsType) => ({ ...prev, themeMode: value }))
+              }
             >
               <SelectTrigger id="theme-mode">
                 <SelectValue placeholder="Select theme mode" />
@@ -278,7 +293,9 @@ export function SettingsPage() {
             <Label htmlFor="theme">Accent</Label>
             <Select
               value={tempSettings.theme}
-              onValueChange={(value) => setTempSettings((prev) => ({ ...prev, theme: value }))}
+              onValueChange={(value: string) =>
+                setTempSettings((prev: SettingsType) => ({ ...prev, theme: value }))
+              }
             >
               <SelectTrigger id="theme">
                 <SelectValue placeholder="Select a theme" />
@@ -306,7 +323,9 @@ export function SettingsPage() {
             <Label htmlFor="font">Font</Label>
             <Select
               value={tempSettings.fontFamily}
-              onValueChange={(value: FontFamily) => setTempSettings((prev) => ({ ...prev, fontFamily: value }))}
+              onValueChange={(value: FontFamily) =>
+                setTempSettings((prev: SettingsType) => ({ ...prev, fontFamily: value }))
+              }
             >
               <SelectTrigger id="font">
                 <SelectValue placeholder="Select a font" />
@@ -327,7 +346,9 @@ export function SettingsPage() {
             <Switch
               id="sfx-enabled"
               checked={tempSettings.sfxEnabled}
-              onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, sfxEnabled: checked }))}
+              onCheckedChange={(checked) =>
+                setTempSettings((prev: SettingsType) => ({ ...prev, sfxEnabled: checked }))
+              }
             />
           </div>
 
@@ -351,7 +372,9 @@ export function SettingsPage() {
             <Switch
               id="use-temp-download-extension"
               checked={tempSettings.useTempDownloadExtension}
-              onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, useTempDownloadExtension: checked }))}
+              onCheckedChange={(checked) =>
+                setTempSettings((prev: SettingsType) => ({ ...prev, useTempDownloadExtension: checked }))
+              }
             />
           </div>
         </div>
@@ -394,7 +417,9 @@ export function SettingsPage() {
               <InputWithContext
                 id="spotify-oauth-client-id"
                 value={tempSettings.spotifyOAuthClientId}
-                onChange={(e) => setTempSettings((prev) => ({ ...prev, spotifyOAuthClientId: e.target.value }))}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, spotifyOAuthClientId: e.target.value }))
+                }
                 placeholder="Your Spotify App Client ID"
               />
             </div>
@@ -418,6 +443,19 @@ export function SettingsPage() {
               {spotifyOAuthStatus?.expires_at ? ` (expires ${new Date(spotifyOAuthStatus.expires_at).toLocaleString()})` : ""}
               {spotifyOAuthStatus?.last_error ? ` — ${spotifyOAuthStatus.last_error}` : ""}
             </p>
+
+            <p className="text-xs text-muted-foreground mt-2">
+              <strong>Setup Instructions:</strong>
+            </p>
+            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+              <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Spotify Developer Dashboard</a></li>
+              <li>Create a new app (any name, description)</li>
+              <li>In "Edit Settings", add Redirect URI: <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:*/callback</code> (use wildcard port or specific like <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:8080/callback</code>)</li>
+              <li>Copy the Client ID and paste above, then click "Login with Spotify"</li>
+            </ol>
+            <p className="text-xs text-muted-foreground mt-2">
+              Once logged in, SpotiFLAC will prefer OAuth for Spotify metadata requests and only fall back to TOTP if OAuth isn't configured.
+            </p>
           </div>
 
           <div className="border-t" />
@@ -428,7 +466,9 @@ export function SettingsPage() {
             <div className="flex gap-2">
               <Select
                 value={tempSettings.downloader}
-                onValueChange={(value: "auto" | "tidal" | "qobuz" | "amazon") => setTempSettings((prev) => ({ ...prev, downloader: value }))}
+                onValueChange={(value: "auto" | "tidal" | "qobuz" | "amazon") =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, downloader: value }))
+                }
               >
                 <SelectTrigger id="downloader" className="h-9 w-fit">
                   <SelectValue placeholder="Select a source" />
@@ -450,7 +490,9 @@ export function SettingsPage() {
               {/* Global bit-depth preference (mapped per service). */}
               <Select
                 value={tempSettings.audioBitDepth}
-                onValueChange={(value: "auto" | "16" | "24" | "32") => setTempSettings((prev) => ({ ...prev, audioBitDepth: value }))}
+                onValueChange={(value: "auto" | "16" | "24" | "32") =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, audioBitDepth: value }))
+                }
               >
                 <SelectTrigger className="h-9 w-fit">
                   <SelectValue placeholder="Quality" />
@@ -467,7 +509,9 @@ export function SettingsPage() {
               {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "tidal" && (
                 <Select
                   value={tempSettings.tidalQuality}
-                  onValueChange={(value: "LOSSLESS" | "HI_RES_LOSSLESS") => setTempSettings((prev) => ({ ...prev, tidalQuality: value }))}
+                  onValueChange={(value: "LOSSLESS" | "HI_RES_LOSSLESS") =>
+                    setTempSettings((prev: SettingsType) => ({ ...prev, tidalQuality: value }))
+                  }
                 >
                   <SelectTrigger className="h-9 w-fit">
                     <SelectValue />
@@ -482,7 +526,9 @@ export function SettingsPage() {
               {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "qobuz" && (
                 <Select
                   value={tempSettings.qobuzQuality}
-                  onValueChange={(value: "6" | "7" | "27") => setTempSettings((prev) => ({ ...prev, qobuzQuality: value }))}
+                  onValueChange={(value: "6" | "7" | "27") =>
+                    setTempSettings((prev: SettingsType) => ({ ...prev, qobuzQuality: value }))
+                  }
                 >
                   <SelectTrigger className="h-9 w-fit">
                     <SelectValue />
@@ -504,7 +550,9 @@ export function SettingsPage() {
               <Switch
                 id="embed-lyrics"
                 checked={tempSettings.embedLyrics}
-                onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, embedLyrics: checked }))}
+                onCheckedChange={(checked) =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, embedLyrics: checked }))
+                }
               />
             </div>
             <div className="flex items-center gap-3">
@@ -512,7 +560,9 @@ export function SettingsPage() {
               <Switch
                 id="embed-max-quality-cover"
                 checked={tempSettings.embedMaxQualityCover}
-                onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, embedMaxQualityCover: checked }))}
+                onCheckedChange={(checked) =>
+                  setTempSettings((prev: SettingsType) => ({ ...prev, embedMaxQualityCover: checked }))
+                }
               />
             </div>
           </div>
@@ -537,7 +587,7 @@ export function SettingsPage() {
                 value={tempSettings.folderPreset}
                 onValueChange={(value: FolderPreset) => {
                   const preset = FOLDER_PRESETS[value];
-                  setTempSettings(prev => ({
+                  setTempSettings((prev: SettingsType) => ({
                     ...prev,
                     folderPreset: value,
                     folderTemplate: value === "custom" ? (prev.folderTemplate || preset.template) : preset.template
@@ -556,7 +606,9 @@ export function SettingsPage() {
               {tempSettings.folderPreset === "custom" && (
                 <InputWithContext
                   value={tempSettings.folderTemplate}
-                  onChange={(e) => setTempSettings(prev => ({ ...prev, folderTemplate: e.target.value }))}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setTempSettings((prev: SettingsType) => ({ ...prev, folderTemplate: e.target.value }))
+                  }
                   placeholder="{artist}/{album}"
                   className="h-9 text-sm flex-1"
                 />
@@ -589,7 +641,7 @@ export function SettingsPage() {
                 value={tempSettings.filenamePreset}
                 onValueChange={(value: FilenamePreset) => {
                   const preset = FILENAME_PRESETS[value];
-                  setTempSettings(prev => ({
+                  setTempSettings((prev: SettingsType) => ({
                     ...prev,
                     filenamePreset: value,
                     filenameTemplate: value === "custom" ? (prev.filenameTemplate || preset.template) : preset.template
@@ -608,7 +660,9 @@ export function SettingsPage() {
               {tempSettings.filenamePreset === "custom" && (
                 <InputWithContext
                   value={tempSettings.filenameTemplate}
-                  onChange={(e) => setTempSettings(prev => ({ ...prev, filenameTemplate: e.target.value }))}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setTempSettings((prev: SettingsType) => ({ ...prev, filenameTemplate: e.target.value }))
+                  }
                   placeholder="{track}. {title}"
                   className="h-9 text-sm flex-1"
                 />

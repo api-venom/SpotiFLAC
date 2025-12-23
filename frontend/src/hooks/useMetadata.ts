@@ -26,17 +26,39 @@ export function useMetadata() {
     return "unknown";
   };
 
+  const normalizeSpotifyUrlForRequest = (input: string): string => {
+    const trimmed = input.trim();
+    if (!trimmed) return trimmed;
+    try {
+      const u = new URL(trimmed);
+      // Keep only canonical path; strip tracking params like si, nd, dlsi, etc.
+      if (u.hostname.endsWith("spotify.com")) {
+        u.search = "";
+        u.hash = "";
+        return u.toString();
+      }
+      return trimmed;
+    } catch {
+      return trimmed;
+    }
+  };
+
   const fetchMetadataDirectly = async (url: string) => {
-    const urlType = getUrlType(url);
+    const normalizedUrl = normalizeSpotifyUrlForRequest(url);
+    const urlType = getUrlType(normalizedUrl);
     logger.info(`fetching ${urlType} metadata...`);
-    logger.debug(`url: ${url}`);
+    logger.debug(`url(original): ${url}`);
+    if (normalizedUrl !== url) {
+      logger.debug(`url(normalized): ${normalizedUrl}`);
+    }
     
     setLoading(true);
     setMetadata(null);
 
     try {
       const startTime = Date.now();
-      const data = await fetchSpotifyMetadata(url);
+      logger.debug("request: GetSpotifyMetadata(batch=true delay=1 timeout=300)");
+      const data = await fetchSpotifyMetadata(normalizedUrl);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       
       setMetadata(data);
@@ -59,8 +81,15 @@ export function useMetadata() {
       logger.info(`fetch completed in ${elapsed}s`);
       toast.success("Metadata fetched successfully");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to fetch metadata";
+      const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error(`fetch failed: ${errorMsg}`);
+      if (err && typeof err === "object") {
+        try {
+          logger.debug(`error details: ${JSON.stringify(err)}`);
+        } catch {
+          // ignore
+        }
+      }
       toast.error(errorMsg);
     } finally {
       setLoading(false);

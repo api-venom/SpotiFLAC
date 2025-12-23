@@ -38,6 +38,48 @@ var (
 	errInvalidSpotifyURL = errors.New("invalid or unsupported Spotify URL")
 )
 
+func spotifyDebugEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("SPOTIFLAC_SPOTIFY_DEBUG")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func spotifyDebugf(format string, args ...any) {
+	if !spotifyDebugEnabled() {
+		return
+	}
+	fmt.Printf("[spotify-debug] "+format+"\n", args...)
+}
+
+func spotifyPreviewBody(body []byte, max int) string {
+	if max <= 0 || len(body) == 0 {
+		return ""
+	}
+	s := strings.TrimSpace(string(body))
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
+}
+
+func redactSpotifyTokenURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	if q.Has("totp") {
+		q.Set("totp", "***")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // SpotifyMetadataClient mirrors the behaviour of Doc/getMetadata.py and interacts with Spotify's web API.
 type SpotifyMetadataClient struct {
 	httpClient *http.Client
@@ -325,18 +367,25 @@ func GetFilteredSpotifyData(ctx context.Context, spotifyURL string, batch bool, 
 
 // GetFilteredData fetches, normalises, and formats Spotify payloads for the given URL.
 func (c *SpotifyMetadataClient) GetFilteredData(ctx context.Context, spotifyURL string, batch bool, delay time.Duration) (interface{}, error) {
+	spotifyDebugf("GetFilteredData url=%q batch=%v delay=%s", spotifyURL, batch, delay)
+
 	parsed, err := parseSpotifyURI(spotifyURL)
 	if err != nil {
+		spotifyDebugf("parseSpotifyURI failed: %v", err)
 		return nil, err
 	}
+	spotifyDebugf("parsed uri type=%q id=%q discography=%q", parsed.Type, parsed.ID, parsed.DiscographyGroup)
 
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
+		spotifyDebugf("getAccessToken failed: %v", err)
 		return nil, err
 	}
+	spotifyDebugf("access token acquired (len=%d)", len(token))
 
 	raw, err := c.getRawSpotifyData(ctx, parsed, token, batch, delay)
 	if err != nil {
+		spotifyDebugf("getRawSpotifyData failed: %v", err)
 		return nil, err
 	}
 
@@ -771,6 +820,7 @@ func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, next
 }
 
 func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
+	spotifyDebugf("api GET %s", endpoint)
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -788,6 +838,7 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			spotifyDebugf("api request error: %v", err)
 			return err
 		}
 		body, err := io.ReadAll(resp.Body)
@@ -797,13 +848,20 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			if err := sleepWithContext(ctx, parseRetryAfter(resp.Header.Get("Retry-After"))); err != nil {
+			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			spotifyDebugf("api 429 rate-limited retry-after=%s", retryAfter)
+			if err := sleepWithContext(ctx, retryAfter); err != nil {
 				return err
 			}
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			preview := spotifyPreviewBody(body, 900)
+			spotifyDebugf("api non-200 status=%d endpoint=%s body(peek)=%s", resp.StatusCode, endpoint, preview)
+			if preview != "" {
+				return fmt.Errorf("spotify API returned status %d for %s body=%q", resp.StatusCode, endpoint, preview)
+			}
 			return fmt.Errorf("spotify API returned status %d for %s", resp.StatusCode, endpoint)
 		}
 
@@ -862,20 +920,28 @@ func (c *SpotifyMetadataClient) randRange(min, max int) int {
 
 func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, error) {
 	// Spotify changes web token flows often; try multiple endpoints.
+	spotifyDebugf("getAccessToken start")
+
 	totpToken, totpErr := c.getAccessTokenTOTP(ctx)
 	if totpErr == nil {
+		spotifyDebugf("getAccessToken success source=totp")
 		return totpToken, nil
 	}
+	spotifyDebugf("getAccessToken totp failed: %v", totpErr)
 
 	legacyToken, legacyErr := c.getAccessTokenLegacy(ctx)
 	if legacyErr == nil {
+		spotifyDebugf("getAccessToken success source=legacy")
 		return legacyToken, nil
 	}
+	spotifyDebugf("getAccessToken legacy failed: %v", legacyErr)
 
 	accessPointToken, accessPointErr := c.getAccessTokenAccessPoint(ctx)
 	if accessPointErr == nil {
+		spotifyDebugf("getAccessToken success source=accessPoint")
 		return accessPointToken, nil
 	}
+	spotifyDebugf("getAccessToken accessPoint failed: %v", accessPointErr)
 
 	return "", fmt.Errorf("failed to get Spotify access token: totp=%v; legacy=%v; accessPoint=%v", totpErr, legacyErr, accessPointErr)
 }
@@ -914,8 +980,11 @@ func (c *SpotifyMetadataClient) getAccessTokenAccessPoint(ctx context.Context) (
 }
 
 func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context, requestURL string) (string, error) {
+	spotifyDebugf("token GET %s", redactSpotifyTokenURL(requestURL))
+
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
+		spotifyDebugf("token attempt=%d", attempt+1)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return "", err
@@ -938,6 +1007,7 @@ func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context
 
 		if resp.StatusCode == http.StatusTooManyRequests {
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			spotifyDebugf("token 429 rate-limited retry-after=%s", retryAfter)
 			lastErr = fmt.Errorf("rate limited while getting token: %s", retryAfter)
 			_ = sleepWithContext(ctx, retryAfter)
 			continue
@@ -948,6 +1018,7 @@ func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context
 			if len(preview) > 500 {
 				preview = preview[:500]
 			}
+			spotifyDebugf("token non-200 status=%d body(peek)=%s", resp.StatusCode, spotifyPreviewBody(body, 500))
 			lastErr = fmt.Errorf("token request failed. status=%d body=%q", resp.StatusCode, preview)
 			if resp.StatusCode >= 500 {
 				_ = sleepWithContext(ctx, time.Duration(attempt+1)*500*time.Millisecond)

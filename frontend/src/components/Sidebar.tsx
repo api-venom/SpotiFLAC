@@ -210,6 +210,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         <div className="mt-4 text-xs text-muted-foreground px-2">
           <span className="truncate block">SpotiFLAC</span>
         </div>
-    </div>
+      </div>
     </aside>
+  );
 }

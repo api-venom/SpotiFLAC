@@ -9,6 +9,8 @@ import (
 	"spotiflac/backend"
 	"strings"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -124,6 +126,33 @@ func (a *App) GetSpotifyMetadata(req SpotifyMetadataRequest) (string, error) {
 	}
 
 	return string(jsonData), nil
+}
+
+// BeginSpotifyOAuthLogin starts a browser-based Spotify login (OAuth PKCE loopback).
+// This is a safe alternative to cookie extraction and improves rate-limit stability.
+func (a *App) BeginSpotifyOAuthLogin(clientID string) (string, error) {
+	url, err := backend.BeginSpotifyOAuthLogin(a.ctx, clientID)
+	if err != nil {
+		return "", err
+	}
+	// Open in user's default browser.
+	runtime.BrowserOpenURL(a.ctx, url)
+	return url, nil
+}
+
+// GetSpotifyOAuthStatus returns current OAuth login status as JSON.
+func (a *App) GetSpotifyOAuthStatus() (string, error) {
+	status := backend.GetSpotifyOAuthStatus()
+	b, err := json.Marshal(status)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// LogoutSpotifyOAuth clears stored Spotify OAuth tokens.
+func (a *App) LogoutSpotifyOAuth() error {
+	return backend.ClearSpotifyOAuthTokens()
 }
 
 // DownloadTrack downloads a track by ISRC

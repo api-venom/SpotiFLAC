@@ -9,8 +9,8 @@ import {
 } from "@/components/ui/dialog";
 
 import { Badge } from "@/components/ui/badge";
-import { GetDownloadQueue, ClearCompletedDownloads } from "../../wailsjs/go/main/App";
-import { backend } from "../../wailsjs/go/models";
+import { GetDownloadQueue, ClearCompletedDownloads } from "wailsjs/go/main/App";
+import { backend } from "wailsjs/go/models";
 
 interface DownloadQueueProps {
   isOpen: boolean;

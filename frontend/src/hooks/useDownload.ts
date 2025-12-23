@@ -109,7 +109,7 @@ export function useDownload() {
     }
 
     // Always add item to queue before downloading
-    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
     const itemID = await AddToDownloadQueue(isrc, trackName || "", artistName || "", albumName || "");
 
     if (service === "auto") {
@@ -118,7 +118,7 @@ export function useDownload() {
       let streamingURLs: any = null;
       if (spotifyId) {
         try {
-          const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
+          const { GetStreamingURLs } = await import("wailsjs/go/main/App");
           const urlsJson = await GetStreamingURLs(spotifyId);
           streamingURLs = JSON.parse(urlsJson);
         } catch (err) {
@@ -285,7 +285,7 @@ export function useDownload() {
 
       // If Qobuz also failed, mark the item as failed
       if (!qobuzResponse.success) {
-        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, qobuzResponse.error || "All services failed");
       }
 
@@ -334,7 +334,7 @@ export function useDownload() {
 
     // Mark as failed if download failed for single-service attempt
     if (!singleServiceResponse.success) {
-      const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+      const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
       await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
     }
 
@@ -416,7 +416,7 @@ export function useDownload() {
       let streamingURLs: any = null;
       if (spotifyId) {
         try {
-          const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
+          const { GetStreamingURLs } = await import("wailsjs/go/main/App");
           const urlsJson = await GetStreamingURLs(spotifyId);
           streamingURLs = JSON.parse(urlsJson);
         } catch (err) {
@@ -535,7 +535,7 @@ export function useDownload() {
 
       // If Qobuz also failed, mark the item as failed
       if (!qobuzResponse.success) {
-        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, qobuzResponse.error || "All services failed");
       }
 
@@ -583,7 +583,7 @@ export function useDownload() {
 
     // Mark as failed if download failed for single-service attempt
     if (!singleServiceResponse.success) {
-      const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+      const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
       await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
     }
 
@@ -715,7 +715,7 @@ export function useDownload() {
     logger.info(`found ${existingISRCs.size} existing files`);
 
     // Pre-add ALL tracks to the queue and mark existing ones as skipped
-    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
     const itemIDs: string[] = [];
     for (const isrc of selectedTracks) {
       const track = allTracks.find((t) => t.isrc === isrc);
@@ -815,7 +815,7 @@ export function useDownload() {
         logger.error(`error: ${track.name} - ${err}`);
         setFailedTracks((prev) => new Set(prev).add(isrc));
         // Mark item as failed in queue
-        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
       }
 
@@ -830,7 +830,7 @@ export function useDownload() {
     shouldStopDownloadRef.current = false;
 
     // Cancel any remaining queued items
-    const { CancelAllQueuedItems } = await import("../../wailsjs/go/main/App");
+    const { CancelAllQueuedItems } = await import("wailsjs/go/main/App");
     await CancelAllQueuedItems();
 
     // Build summary message
@@ -900,7 +900,7 @@ export function useDownload() {
     logger.info(`found ${existingISRCs.size} existing files`);
 
     // Pre-add ALL tracks to the queue and mark existing ones as skipped
-    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
     const itemIDs: string[] = [];
     for (const track of tracksWithIsrc) {
       const itemID = await AddToDownloadQueue(
@@ -997,7 +997,7 @@ export function useDownload() {
         logger.error(`error: ${track.name} - ${err}`);
         setFailedTracks((prev) => new Set(prev).add(track.isrc));
         // Mark item as failed in queue
-        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
       }
 
@@ -1012,7 +1012,7 @@ export function useDownload() {
     shouldStopDownloadRef.current = false;
 
     // Cancel any remaining queued items
-    const { CancelAllQueuedItems: CancelQueued } = await import("../../wailsjs/go/main/App");
+    const { CancelAllQueuedItems: CancelQueued } = await import("wailsjs/go/main/App");
     await CancelQueued();
 
     // Build summary message

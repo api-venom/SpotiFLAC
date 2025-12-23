@@ -1,4 +1,4 @@
-import { GetDefaults } from "../../wailsjs/go/main/App";
+import { GetDefaults } from "wailsjs/go/main/App";
 
 export type FontFamily = "google-sans" | "inter" | "poppins" | "roboto" | "dm-sans" | "plus-jakarta-sans" | "manrope" | "space-grotesk" | "noto-sans" | "nunito-sans" | "figtree" | "raleway" | "public-sans" | "outfit" | "jetbrains-mono" | "geist-sans";
 
@@ -37,6 +37,10 @@ export interface Settings {
   // Quality settings for specific sources
   tidalQuality: "LOSSLESS" | "HI_RES_LOSSLESS";
   qobuzQuality: "6" | "7" | "27";
+
+  // Optional: use official Spotify OAuth (PKCE loopback) for more stable metadata requests.
+  // The access/refresh tokens are stored on the backend; frontend only stores the Client ID.
+  spotifyOAuthClientId: string;
 }
 
 // Folder preset templates
@@ -113,7 +117,9 @@ export const DEFAULT_SETTINGS: Settings = {
   operatingSystem: detectOS(),
   audioBitDepth: "24",
   tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit lossless
-  qobuzQuality: "7" // Default: FLAC 24-bit
+  qobuzQuality: "7", // Default: FLAC 24-bit
+
+  spotifyOAuthClientId: "",
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [
@@ -220,6 +226,10 @@ export function getSettings(): Settings {
       if (!('qobuzQuality' in parsed)) {
         parsed.qobuzQuality = "7";
       }
+
+	  if (!('spotifyOAuthClientId' in parsed)) {
+		parsed.spotifyOAuthClientId = "";
+	  }
       return { ...DEFAULT_SETTINGS, ...parsed };
     }
   } catch (error) {

@@ -86,6 +86,27 @@ type SpotifyMetadataClient struct {
 	rng        *rand.Rand
 	rngMu      sync.Mutex
 	userAgent  string
+
+	rateLimitMu     sync.Mutex
+	cooldownUntil   map[string]time.Time
+	backoff         map[string]time.Duration
+	lastRequestTime map[string]time.Time
+	minInterval     time.Duration
+
+	tokenMu            sync.Mutex
+	cachedAccessToken  string
+	cachedTokenUntil   time.Time
+
+	secretsMu        sync.Mutex
+	cachedSecrets    []secretEntry
+	cachedSecretsAt  time.Time
+	cachedSecretsTTL time.Duration
+
+	serverTimeMu          sync.Mutex
+	cachedServerTime      int64
+	cachedServerTimeIsMS  bool
+	cachedServerTimeAt    time.Time
+	cachedServerTimeTTL   time.Duration
 }
 
 // NewSpotifyMetadataClient creates a ready-to-use client with sane defaults.
@@ -95,8 +116,94 @@ func NewSpotifyMetadataClient() *SpotifyMetadataClient {
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		rng:        rand.New(src),
 	}
+	c.cooldownUntil = map[string]time.Time{}
+	c.backoff = map[string]time.Duration{}
+	c.lastRequestTime = map[string]time.Time{}
+	c.minInterval = 250 * time.Millisecond
+	c.cachedSecretsTTL = 6 * time.Hour
+	c.cachedServerTimeTTL = 5 * time.Minute
 	c.userAgent = c.randomUserAgent()
 	return c
+}
+
+var defaultSpotifyMetadataClient = NewSpotifyMetadataClient()
+
+func (c *SpotifyMetadataClient) clearTokenCache() {
+	c.tokenMu.Lock()
+	c.cachedAccessToken = ""
+	c.cachedTokenUntil = time.Time{}
+	c.tokenMu.Unlock()
+}
+
+func (c *SpotifyMetadataClient) cacheToken(token string, until time.Time) {
+	if strings.TrimSpace(token) == "" {
+		return
+	}
+	c.tokenMu.Lock()
+	c.cachedAccessToken = token
+	c.cachedTokenUntil = until
+	c.tokenMu.Unlock()
+}
+
+func (c *SpotifyMetadataClient) getCachedToken() (string, bool) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	if c.cachedAccessToken == "" {
+		return "", false
+	}
+	if !c.cachedTokenUntil.IsZero() && time.Now().Before(c.cachedTokenUntil) {
+		return c.cachedAccessToken, true
+	}
+	return "", false
+}
+
+func (c *SpotifyMetadataClient) normalizeServerTimeUnits(serverTime int64) (isMS bool, nowUnit int64) {
+	// Spotify sometimes returns seconds; protect against ms.
+	if serverTime > 1_000_000_000_000 {
+		return true, time.Now().UnixMilli()
+	}
+	return false, time.Now().Unix()
+}
+
+func (c *SpotifyMetadataClient) getServerTimeCached(ctx context.Context) (int64, error) {
+	c.serverTimeMu.Lock()
+	if c.cachedServerTime != 0 && !c.cachedServerTimeAt.IsZero() && time.Since(c.cachedServerTimeAt) <= c.cachedServerTimeTTL {
+		base := c.cachedServerTime
+		isMS := c.cachedServerTimeIsMS
+		at := c.cachedServerTimeAt
+		c.serverTimeMu.Unlock()
+
+		elapsed := time.Since(at)
+		if isMS {
+			return base + elapsed.Milliseconds(), nil
+		}
+		return base + int64(elapsed.Seconds()), nil
+	}
+	c.serverTimeMu.Unlock()
+
+	serverTime, err := c.fetchServerTime(ctx)
+	if err != nil {
+		return 0, err
+	}
+	isMS, _ := c.normalizeServerTimeUnits(serverTime)
+	c.serverTimeMu.Lock()
+	c.cachedServerTime = serverTime
+	c.cachedServerTimeIsMS = isMS
+	c.cachedServerTimeAt = time.Now()
+	c.serverTimeMu.Unlock()
+	return serverTime, nil
+}
+
+func spotifyTokenExpiryFromPayload(p accessTokenResponse) time.Time {
+	// Prefer explicit expiry if present.
+	if p.AccessTokenExpirationTimestampMs > 0 {
+		return time.UnixMilli(p.AccessTokenExpirationTimestampMs)
+	}
+	if p.ExpiresIn > 0 {
+		return time.Now().Add(time.Duration(p.ExpiresIn) * time.Second)
+	}
+	// Fallback: web player tokens are typically long-lived; be conservative.
+	return time.Now().Add(45 * time.Minute)
 }
 
 // TrackMetadata mirrors the filtered track payload returned by the Python script.
@@ -241,7 +348,9 @@ type serverTimeResponse struct {
 }
 
 type accessTokenResponse struct {
-	AccessToken string `json:"accessToken"`
+	AccessToken                     string `json:"accessToken"`
+	ExpiresIn                        int    `json:"expiresIn,omitempty"`
+	AccessTokenExpirationTimestampMs int64  `json:"accessTokenExpirationTimestampMs,omitempty"`
 }
 
 type image struct {
@@ -361,8 +470,99 @@ type discographyRaw struct {
 
 // GetFilteredSpotifyData is a convenience wrapper that mirrors the Python module's entry point.
 func GetFilteredSpotifyData(ctx context.Context, spotifyURL string, batch bool, delay time.Duration) (interface{}, error) {
-	client := NewSpotifyMetadataClient()
-	return client.GetFilteredData(ctx, spotifyURL, batch, delay)
+	return defaultSpotifyMetadataClient.GetFilteredData(ctx, spotifyURL, batch, delay)
+}
+
+func (c *SpotifyMetadataClient) getHostFromURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Host))
+}
+
+func (c *SpotifyMetadataClient) enforceRateLimitGate(ctx context.Context, host string) error {
+	if host == "" {
+		return nil
+	}
+
+	for {
+		now := time.Now()
+		var sleepFor time.Duration
+		var cooldownUntil time.Time
+
+		c.rateLimitMu.Lock()
+		if until, ok := c.cooldownUntil[host]; ok && until.After(now) {
+			sleepFor = time.Until(until)
+			cooldownUntil = until
+			c.rateLimitMu.Unlock()
+			// If it's a tiny remaining wait, it's nicer to just wait and continue.
+			if sleepFor <= 3*time.Second {
+				if err := sleepWithContext(ctx, sleepFor); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("spotify rate limited: cooldown active host=%s wait=%s until=%s", host, sleepFor.Round(time.Second), cooldownUntil.Format(time.RFC3339))
+		}
+
+		// Gentle pacing even when not rate-limited.
+		if last, ok := c.lastRequestTime[host]; ok && !last.IsZero() {
+			gap := now.Sub(last)
+			if gap < c.minInterval {
+				sleepFor = c.minInterval - gap
+			}
+		}
+		c.lastRequestTime[host] = now
+		c.rateLimitMu.Unlock()
+
+		if sleepFor > 0 {
+			if err := sleepWithContext(ctx, sleepFor); err != nil {
+				return err
+			}
+			continue
+		}
+		return nil
+	}
+}
+
+func (c *SpotifyMetadataClient) noteRateLimited(host string, retryAfter time.Duration) (time.Time, time.Duration) {
+	if host == "" {
+		return time.Time{}, 0
+	}
+	if retryAfter <= 0 {
+		retryAfter = 5 * time.Second
+	}
+
+	const maxBackoff = 10 * time.Minute
+	const buffer = 5 * time.Second
+
+	now := time.Now()
+
+	c.rateLimitMu.Lock()
+	defer c.rateLimitMu.Unlock()
+
+	prev := c.backoff[host]
+	backoff := retryAfter
+	if prev > 0 {
+		backoff = prev * 2
+		if backoff < retryAfter {
+			backoff = retryAfter
+		}
+	}
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	// Add a small buffer so "retry-after=60" doesn't instantly 429 again due to clock skew.
+	until := now.Add(backoff + buffer)
+
+	if existing := c.cooldownUntil[host]; existing.After(until) {
+		until = existing
+	}
+
+	c.backoff[host] = backoff
+	c.cooldownUntil[host] = until
+	return until, backoff
 }
 
 // GetFilteredData fetches, normalises, and formats Spotify payloads for the given URL.
@@ -384,6 +584,15 @@ func (c *SpotifyMetadataClient) GetFilteredData(ctx context.Context, spotifyURL 
 	spotifyDebugf("access token acquired (len=%d)", len(token))
 
 	raw, err := c.getRawSpotifyData(ctx, parsed, token, batch, delay)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unauthorized (401)") {
+		// Token expired/invalid; refresh once and retry.
+		spotifyDebugf("api unauthorized; refreshing token and retrying once")
+		c.clearTokenCache()
+		refreshed, tokenErr := c.getAccessToken(ctx)
+		if tokenErr == nil && refreshed != "" {
+			raw, err = c.getRawSpotifyData(ctx, parsed, refreshed, batch, delay)
+		}
+	}
 	if err != nil {
 		spotifyDebugf("getRawSpotifyData failed: %v", err)
 		return nil, err
@@ -821,6 +1030,10 @@ func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, next
 
 func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
 	spotifyDebugf("api GET %s", endpoint)
+	host := c.getHostFromURL(endpoint)
+	if err := c.enforceRateLimitGate(ctx, host); err != nil {
+		return err
+	}
 	var rateLimitCount int
 	for attempt := 0; attempt < 6; attempt++ {
 		start := time.Now()
@@ -841,6 +1054,11 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			spotifyDebugf("api request error (attempt=%d elapsed=%s): %v", attempt+1, time.Since(start), err)
+			// Retry transient network errors a few times.
+			if attempt < 2 && isRetriableHTTPError(err) {
+				_ = sleepWithContext(ctx, time.Duration(attempt+1)*250*time.Millisecond)
+				continue
+			}
 			return err
 		}
 		body, err := io.ReadAll(resp.Body)
@@ -853,20 +1071,41 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 		if resp.StatusCode == http.StatusTooManyRequests {
 			rateLimitCount++
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			until, backoff := c.noteRateLimited(host, retryAfter)
 			spotifyDebugf("api 429 rate-limited retry-after=%s", retryAfter)
 			// Don't wait arbitrarily long; surface a useful error instead.
 			// This avoids the user seeing only "context deadline exceeded".
 			if retryAfter > 30*time.Second || rateLimitCount >= 2 {
 				preview := spotifyPreviewBody(body, 350)
 				if preview != "" {
-					return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s body=%q", endpoint, retryAfter, preview)
+					return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s body=%q", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second), preview)
 				}
-				return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s", endpoint, retryAfter)
+				return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second))
 			}
 			if err := sleepWithContext(ctx, retryAfter); err != nil {
 				return err
 			}
 			continue
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			// Token likely expired/revoked; clear cache so next attempt fetches a new token.
+			if token != "" {
+				c.clearTokenCache()
+			}
+			preview := spotifyPreviewBody(body, 350)
+			if preview != "" {
+				return fmt.Errorf("spotify API unauthorized (401) endpoint=%s body=%q", endpoint, preview)
+			}
+			return fmt.Errorf("spotify API unauthorized (401) endpoint=%s", endpoint)
+		}
+
+		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout {
+			// Transient upstream errors.
+			if attempt < 2 {
+				_ = sleepWithContext(ctx, time.Duration(attempt+1)*350*time.Millisecond)
+				continue
+			}
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -934,34 +1173,6 @@ func (c *SpotifyMetadataClient) randRange(min, max int) int {
 	return c.rng.Intn(max-min) + min
 }
 
-func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, error) {
-	// Spotify changes web token flows often; try multiple endpoints.
-	spotifyDebugf("getAccessToken start")
-
-	totpToken, totpErr := c.getAccessTokenTOTP(ctx)
-	if totpErr == nil {
-		spotifyDebugf("getAccessToken success source=totp")
-		return totpToken, nil
-	}
-	spotifyDebugf("getAccessToken totp failed: %v", totpErr)
-
-	legacyToken, legacyErr := c.getAccessTokenLegacy(ctx)
-	if legacyErr == nil {
-		spotifyDebugf("getAccessToken success source=legacy")
-		return legacyToken, nil
-	}
-	spotifyDebugf("getAccessToken legacy failed: %v", legacyErr)
-
-	accessPointToken, accessPointErr := c.getAccessTokenAccessPoint(ctx)
-	if accessPointErr == nil {
-		spotifyDebugf("getAccessToken success source=accessPoint")
-		return accessPointToken, nil
-	}
-	spotifyDebugf("getAccessToken accessPoint failed: %v", accessPointErr)
-
-	return "", fmt.Errorf("failed to get Spotify access token: totp=%v; legacy=%v; accessPoint=%v", totpErr, legacyErr, accessPointErr)
-}
-
 func (c *SpotifyMetadataClient) getAccessTokenTOTP(ctx context.Context) (string, error) {
 	code, serverTime, version, err := c.generateTOTP(ctx)
 	if err != nil {
@@ -983,6 +1194,56 @@ func (c *SpotifyMetadataClient) getAccessTokenTOTP(ctx context.Context) (string,
 	return c.fetchAccessTokenWithRetryURL(ctx, requestURL)
 }
 
+func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, error) {
+	// Preferred: official OAuth token (user login via Settings).
+	if oauthToken, ok, err := GetSpotifyOAuthAccessToken(ctx); err != nil {
+		spotifyDebugf("oauth token fetch failed: %v", err)
+	} else if ok && oauthToken != "" {
+		spotifyDebugf("using spotify oauth access token")
+		return oauthToken, nil
+	}
+
+	if token, ok := c.getCachedToken(); ok {
+		spotifyDebugf("using cached access token")
+		return token, nil
+	}
+
+	// Original logic order: TOTP -> legacy -> access point.
+	token, err := c.getAccessTokenTOTP(ctx)
+	if err == nil && token != "" {
+		// getAccessTokenTOTP ultimately calls fetchAccessTokenWithRetryURL which caches expiry.
+		if cached, ok := c.getCachedToken(); ok {
+			return cached, nil
+		}
+		return token, nil
+	}
+	totpErr := err
+
+	token, err = c.getAccessTokenLegacy(ctx)
+	if err == nil && token != "" {
+		if cached, ok := c.getCachedToken(); ok {
+			return cached, nil
+		}
+		return token, nil
+	}
+	legacyErr := err
+
+	token, err = c.getAccessTokenAccessPoint(ctx)
+	if err == nil && token != "" {
+		if cached, ok := c.getCachedToken(); ok {
+			return cached, nil
+		}
+		return token, nil
+	}
+	accessPointErr := err
+
+	spotifyDebugf("getAccessToken totp failed: %v", totpErr)
+	spotifyDebugf("getAccessToken legacy failed: %v", legacyErr)
+	spotifyDebugf("getAccessToken accessPoint failed: %v", accessPointErr)
+
+	return "", fmt.Errorf("failed to get Spotify access token: totp=%v; legacy=%v; accessPoint=%v", totpErr, legacyErr, accessPointErr)
+}
+
 func (c *SpotifyMetadataClient) getAccessTokenLegacy(ctx context.Context) (string, error) {
 	params := url.Values{}
 	params.Set("reason", "transport")
@@ -997,6 +1258,10 @@ func (c *SpotifyMetadataClient) getAccessTokenAccessPoint(ctx context.Context) (
 
 func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context, requestURL string) (string, error) {
 	spotifyDebugf("token GET %s", redactSpotifyTokenURL(requestURL))
+	host := c.getHostFromURL(requestURL)
+	if err := c.enforceRateLimitGate(ctx, host); err != nil {
+		return "", err
+	}
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -1023,9 +1288,14 @@ func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context
 
 		if resp.StatusCode == http.StatusTooManyRequests {
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			until, backoff := c.noteRateLimited(host, retryAfter)
 			spotifyDebugf("token 429 rate-limited retry-after=%s", retryAfter)
-			lastErr = fmt.Errorf("rate limited while getting token: %s", retryAfter)
-			_ = sleepWithContext(ctx, retryAfter)
+			lastErr = fmt.Errorf("rate limited while getting token: retry-after=%s cooldown-until=%s backoff=%s", retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second))
+			// If the wait is short, retry; otherwise surface immediately so UI stays responsive.
+			if retryAfter <= 10*time.Second {
+				_ = sleepWithContext(ctx, retryAfter)
+				continue
+			}
 			continue
 		}
 
@@ -1050,6 +1320,12 @@ func (c *SpotifyMetadataClient) fetchAccessTokenWithRetryURL(ctx context.Context
 		if token.AccessToken == "" {
 			return "", errors.New("failed to get access token: empty token received")
 		}
+		until := spotifyTokenExpiryFromPayload(token)
+		// Small safety buffer to reduce 401s at expiry edge.
+		if until.After(time.Now().Add(30 * time.Second)) {
+			until = until.Add(-30 * time.Second)
+		}
+		c.cacheToken(token.AccessToken, until)
 		return token.AccessToken, nil
 	}
 	if lastErr == nil {
@@ -1088,7 +1364,7 @@ func (c *SpotifyMetadataClient) generateTOTP(ctx context.Context) (string, int64
 	}
 	b32Secret := base32.StdEncoding.EncodeToString(secretBytes)
 
-	serverTime, err := c.fetchServerTime(ctx)
+	serverTime, err := c.getServerTimeCached(ctx)
 	if err != nil {
 		return "", 0, 0, err
 	}
@@ -1102,23 +1378,50 @@ func (c *SpotifyMetadataClient) generateTOTP(ctx context.Context) (string, int64
 }
 
 func (c *SpotifyMetadataClient) fetchSecretBytes(ctx context.Context) ([]secretEntry, bool, error) {
-	// Add cache busting parameter with current timestamp
-	urlWithCacheBust := fmt.Sprintf("%s?t=%d", secretBytesRemotePath, time.Now().Unix())
+	// In-memory cache to avoid repeated remote fetches (reduces rate limiting / instability).
+	c.secretsMu.Lock()
+	if len(c.cachedSecrets) > 0 && !c.cachedSecretsAt.IsZero() && time.Since(c.cachedSecretsAt) <= c.cachedSecretsTTL {
+		secrets := make([]secretEntry, len(c.cachedSecrets))
+		copy(secrets, c.cachedSecrets)
+		c.secretsMu.Unlock()
+		return secrets, false, nil
+	}
+	c.secretsMu.Unlock()
+
+	urlWithCacheBust := secretBytesRemotePath
+	host := c.getHostFromURL(urlWithCacheBust)
+	if err := c.enforceRateLimitGate(ctx, host); err != nil {
+		return nil, false, err
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlWithCacheBust, nil)
 	if err == nil {
-		// Add headers to bypass cache
-		req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		req.Header.Set("Pragma", "no-cache")
-		req.Header.Set("Expires", "0")
+		// Normal headers; allow CDN caching. We cache in-memory anyway.
+		req.Header.Set("Accept", "application/json")
 
 		resp, err := c.httpClient.Do(req)
 		if err == nil {
 			body, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
+			if readErr == nil && resp.StatusCode == http.StatusTooManyRequests {
+				retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+				_, _ = c.noteRateLimited(host, retryAfter)
+			}
 			if readErr == nil && resp.StatusCode == http.StatusOK {
 				var secrets []secretEntry
 				if jsonErr := json.Unmarshal(body, &secrets); jsonErr == nil {
+					c.secretsMu.Lock()
+					c.cachedSecrets = secrets
+					c.cachedSecretsAt = time.Now()
+					c.secretsMu.Unlock()
+
+					// Best-effort write-through cache for offline stability.
+					home, herr := os.UserHomeDir()
+					if herr == nil {
+						localDir := filepath.Join(home, ".spotify-secret")
+						_ = os.MkdirAll(localDir, 0o755)
+						_ = os.WriteFile(filepath.Join(localDir, "secretBytes.json"), body, 0o644)
+					}
 					return secrets, false, nil
 				}
 			}
@@ -1139,11 +1442,23 @@ func (c *SpotifyMetadataClient) fetchSecretBytes(ctx context.Context) ([]secretE
 	if err := json.Unmarshal(data, &secrets); err != nil {
 		return nil, false, fmt.Errorf("failed to process local secrets: %w", err)
 	}
+
+	c.secretsMu.Lock()
+	c.cachedSecrets = secrets
+	c.cachedSecretsAt = time.Now()
+	c.secretsMu.Unlock()
+
 	return secrets, true, nil
 }
 
 func (c *SpotifyMetadataClient) fetchServerTime(ctx context.Context) (int64, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://open.spotify.com/api/server-time", nil)
+	endpoint := "https://open.spotify.com/api/server-time"
+	host := c.getHostFromURL(endpoint)
+	if err := c.enforceRateLimitGate(ctx, host); err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -1159,6 +1474,11 @@ func (c *SpotifyMetadataClient) fetchServerTime(ctx context.Context) (int64, err
 		return 0, err
 	}
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+		until, backoff := c.noteRateLimited(host, retryAfter)
+		return 0, fmt.Errorf("spotify server-time rate limited (429) retry-after=%s cooldown-until=%s backoff=%s", retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("failed to get server time. Status code: %d", resp.StatusCode)
 	}
@@ -1213,6 +1533,24 @@ func computeTOTP(b32Secret string, timestamp int64) (string, error) {
 		(int(sum[offset+3]) & 0xff)
 	otp := binaryCode % 1_000_000
 	return fmt.Sprintf("%06d", otp), nil
+}
+
+func isRetriableHTTPError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// net.Error provides Timeout/Temporary checks
+	if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
+		return true
+	}
+	if ne, ok := err.(interface{ Temporary() bool }); ok && ne.Temporary() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "connection reset") || strings.Contains(msg, "connection refused") || strings.Contains(msg, "broken pipe") {
+		return true
+	}
+	return false
 }
 
 func parseSpotifyURI(input string) (spotifyURI, error) {

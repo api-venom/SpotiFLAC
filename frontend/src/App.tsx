@@ -13,7 +13,7 @@ import { Search, X } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings, applyThemeMode, applyFont } from "@/lib/settings";
 import { applyTheme } from "@/lib/themes";
-import { OpenFolder } from "../wailsjs/go/main/App";
+import { OpenFolder } from "wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 
 // Components

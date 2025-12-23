@@ -24,8 +24,8 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
-import { SelectFolder } from "../../wailsjs/go/main/App";
-import { backend } from "../../wailsjs/go/models";
+import { SelectFolder } from "wailsjs/go/main/App";
+import { backend } from "wailsjs/go/models";
 
 // These functions will be available after Wails regenerates bindings
 // For now, we call them directly via window.go

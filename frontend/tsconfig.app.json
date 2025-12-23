@@ -29,8 +29,11 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "wailsjs/*": [
+        "./wailsjs/*"
       ]
     }
   },
-  "include": ["src"]
+  "include": ["src", "wailsjs"]
 }

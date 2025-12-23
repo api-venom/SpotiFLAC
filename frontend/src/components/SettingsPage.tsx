@@ -23,8 +23,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { getSettings, getSettingsWithDefaults, saveSettings, resetToDefaultSettings, applyThemeMode, applyFont, FONT_OPTIONS, FOLDER_PRESETS, FILENAME_PRESETS, TEMPLATE_VARIABLES, type Settings as SettingsType, type FontFamily, type FolderPreset, type FilenamePreset } from "@/lib/settings";
 import { themes, applyTheme } from "@/lib/themes";
-import { SelectFolder, IsFFmpegInstalled, DownloadFFmpeg } from "../../wailsjs/go/main/App";
+import { SelectFolder, IsFFmpegInstalled, DownloadFFmpeg, BeginSpotifyOAuthLogin, GetSpotifyOAuthStatus, LogoutSpotifyOAuth } from "wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
+
+type SpotifyOAuthStatus = {
+  enabled: boolean;
+  pending: boolean;
+  expires_at?: string;
+  has_refresh: boolean;
+  client_id?: string;
+  last_error?: string;
+  cooldown_msg?: string;
+};
 
 // Service Icons
 const TidalIcon = () => (
@@ -55,6 +65,22 @@ export function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [ffmpegInstalled, setFfmpegInstalled] = useState<boolean | null>(null);
   const [isInstallingFFmpeg, setIsInstallingFFmpeg] = useState(false);
+  const [spotifyOAuthStatus, setSpotifyOAuthStatus] = useState<SpotifyOAuthStatus | null>(null);
+  const [isSpotifyOAuthBusy, setIsSpotifyOAuthBusy] = useState(false);
+
+  const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const refreshSpotifyOAuthStatus = async (): Promise<SpotifyOAuthStatus | null> => {
+    try {
+      const raw = await GetSpotifyOAuthStatus();
+      const parsed = JSON.parse(raw) as SpotifyOAuthStatus;
+      setSpotifyOAuthStatus(parsed);
+      return parsed;
+    } catch {
+      setSpotifyOAuthStatus(null);
+      return null;
+    }
+  };
 
   useEffect(() => {
     applyThemeMode(savedSettings.themeMode);
@@ -104,6 +130,10 @@ export function SettingsPage() {
     checkFFmpeg();
   }, []);
 
+  useEffect(() => {
+    refreshSpotifyOAuthStatus();
+  }, []);
+
   const handleSave = () => {
     saveSettings(tempSettings);
     // Verify persisted settings (helps avoid "settings not saving" confusion)
@@ -136,6 +166,45 @@ export function SettingsPage() {
       setFfmpegInstalled(false);
     } finally {
       setIsInstallingFFmpeg(false);
+    }
+  };
+
+  const handleSpotifyOAuthLogin = async () => {
+    const clientID = (tempSettings.spotifyOAuthClientId || "").trim();
+    if (!clientID) {
+      toast.error("Spotify Client ID is required");
+      return;
+    }
+
+    try {
+      setIsSpotifyOAuthBusy(true);
+      await BeginSpotifyOAuthLogin(clientID);
+      toast.info("Opening Spotify login in your browser...");
+
+      // Poll briefly for completion to update status without extra UI.
+      for (let i = 0; i < 45; i++) {
+        await delay(1000);
+        const st = await refreshSpotifyOAuthStatus();
+        if (st?.enabled && !st.pending) break;
+        if (st?.pending === false && st?.last_error) break;
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start Spotify login");
+    } finally {
+      setIsSpotifyOAuthBusy(false);
+    }
+  };
+
+  const handleSpotifyOAuthLogout = async () => {
+    try {
+      setIsSpotifyOAuthBusy(true);
+      await LogoutSpotifyOAuth();
+      await refreshSpotifyOAuthStatus();
+      toast.success("Logged out of Spotify");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to logout");
+    } finally {
+      setIsSpotifyOAuthBusy(false);
     }
   };
 
@@ -312,6 +381,43 @@ export function SettingsPage() {
                 Required for Tidal remux/transcode and some metadata operations.
               </p>
             )}
+          </div>
+
+          <div className="border-t" />
+
+          {/* Spotify Login (OAuth) */}
+          <div className="space-y-2">
+            <Label className="text-sm">Spotify Login (OAuth)</Label>
+
+            <div className="space-y-1">
+              <Label htmlFor="spotify-oauth-client-id" className="text-xs text-muted-foreground">Client ID</Label>
+              <InputWithContext
+                id="spotify-oauth-client-id"
+                value={tempSettings.spotifyOAuthClientId}
+                onChange={(e) => setTempSettings((prev) => ({ ...prev, spotifyOAuthClientId: e.target.value }))}
+                placeholder="Your Spotify App Client ID"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={handleSpotifyOAuthLogin} disabled={isSpotifyOAuthBusy}>
+                {isSpotifyOAuthBusy ? "Working..." : "Login with Spotify"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSpotifyOAuthLogout}
+                disabled={isSpotifyOAuthBusy || !(spotifyOAuthStatus?.enabled || spotifyOAuthStatus?.pending)}
+              >
+                Logout
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Status: {spotifyOAuthStatus?.enabled ? "Logged in" : spotifyOAuthStatus?.pending ? "Pending login" : "Not logged in"}
+              {spotifyOAuthStatus?.expires_at ? ` (expires ${new Date(spotifyOAuthStatus.expires_at).toLocaleString()})` : ""}
+              {spotifyOAuthStatus?.last_error ? ` — ${spotifyOAuthStatus.last_error}` : ""}
+            </p>
           </div>
 
           <div className="border-t" />

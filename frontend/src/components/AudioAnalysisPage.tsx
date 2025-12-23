@@ -4,7 +4,7 @@ import { Upload, ArrowLeft, Trash2 } from "lucide-react";
 import { AudioAnalysis } from "@/components/AudioAnalysis";
 import { SpectrumVisualization } from "@/components/SpectrumVisualization";
 import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
-import { SelectFile } from "../../wailsjs/go/main/App";
+import { SelectFile } from "wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime";
 

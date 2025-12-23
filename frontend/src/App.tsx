@@ -685,11 +685,16 @@ function App() {
     <TooltipProvider>
       <div className="min-h-screen bg-background flex flex-col">
         <TitleBar />
-        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+        <Sidebar
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+        />
         
         {/* Main content area with sidebar offset */}
         <div className="flex-1 ml-72 mt-10 p-4 md:p-8">
-          <LiquidGlassFrame className="max-w-4xl mx-auto space-y-6">
+          <LiquidGlassFrame className="max-w-6xl mx-auto space-y-6 w-full">
             {renderPage()}
           </LiquidGlassFrame>
         </div>

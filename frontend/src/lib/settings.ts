@@ -233,8 +233,13 @@ export function getSettings(): Settings {
       }
 
 	  if (!('spotifyOAuthClientId' in parsed)) {
-		parsed.spotifyOAuthClientId = "";
+		parsed.spotifyOAuthClientId = DEFAULT_SETTINGS.spotifyOAuthClientId;
 	  }
+
+      // If the stored value is blank/invalid, fall back to built-in client id.
+      if (typeof parsed.spotifyOAuthClientId !== "string" || parsed.spotifyOAuthClientId.trim() === "") {
+        parsed.spotifyOAuthClientId = DEFAULT_SETTINGS.spotifyOAuthClientId;
+      }
 
       // Odyssey spatial toggle (default false)
       if (!("odysseySpatialCommsEnabled" in parsed)) {

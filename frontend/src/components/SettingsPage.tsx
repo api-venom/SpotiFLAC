@@ -344,7 +344,7 @@ export function SettingsPage() {
             <Switch
               id="sfx-enabled"
               checked={tempSettings.sfxEnabled}
-              onCheckedChange={(checked) =>
+              onCheckedChange={(checked: boolean) =>
                 setTempSettings((prev: SettingsType) => ({ ...prev, sfxEnabled: checked }))
               }
             />
@@ -370,7 +370,7 @@ export function SettingsPage() {
             <Switch
               id="use-temp-download-extension"
               checked={tempSettings.useTempDownloadExtension}
-              onCheckedChange={(checked) =>
+              onCheckedChange={(checked: boolean) =>
                 setTempSettings((prev: SettingsType) => ({ ...prev, useTempDownloadExtension: checked }))
               }
             />
@@ -414,11 +414,9 @@ export function SettingsPage() {
               <Label htmlFor="spotify-oauth-client-id" className="text-xs text-muted-foreground">Client ID</Label>
               <InputWithContext
                 id="spotify-oauth-client-id"
-                value={tempSettings.spotifyOAuthClientId}
-                onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, spotifyOAuthClientId: e.target.value }))
-                }
-                placeholder="Your Spotify App Client ID"
+                value={SPOTIFY_OAUTH_CLIENT_ID}
+                disabled
+                placeholder={SPOTIFY_OAUTH_CLIENT_ID}
               />
             </div>
 
@@ -447,9 +445,8 @@ export function SettingsPage() {
             </p>
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
               <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Spotify Developer Dashboard</a></li>
-              <li>Create a new app (any name, description)</li>
               <li>In "Edit Settings", add Redirect URI: <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:*/callback</code> (use wildcard port or specific like <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:8080/callback</code>)</li>
-              <li>Copy the Client ID and paste above, then click "Login with Spotify"</li>
+              <li>Click "Login with Spotify"</li>
             </ol>
             <p className="text-xs text-muted-foreground mt-2">
               Once logged in, SpotiFLAC will prefer OAuth for Spotify metadata requests and only fall back to TOTP if OAuth isn't configured.
@@ -548,7 +545,7 @@ export function SettingsPage() {
               <Switch
                 id="embed-lyrics"
                 checked={tempSettings.embedLyrics}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked: boolean) =>
                   setTempSettings((prev: SettingsType) => ({ ...prev, embedLyrics: checked }))
                 }
               />
@@ -558,7 +555,7 @@ export function SettingsPage() {
               <Switch
                 id="embed-max-quality-cover"
                 checked={tempSettings.embedMaxQualityCover}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked: boolean) =>
                   setTempSettings((prev: SettingsType) => ({ ...prev, embedMaxQualityCover: checked }))
                 }
               />
@@ -575,7 +572,7 @@ export function SettingsPage() {
               <Switch
                 id="odyssey-spatial"
                 checked={tempSettings.odysseySpatialCommsEnabled}
-                onCheckedChange={(checked) => {
+                onCheckedChange={(checked: boolean) => {
                   setTempSettings((prev: SettingsType) => ({ ...prev, odysseySpatialCommsEnabled: checked }));
                   toast.info("Odyssey Spatial Comms will apply on the next track");
                 }}

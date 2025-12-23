@@ -27,34 +27,36 @@ export type PageType = "main" | "settings" | "debug" | "audio-analysis" | "audio
 interface SidebarProps {
   currentPage: PageType;
   onPageChange: (page: PageType) => void;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 }
 
-export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
+export function Sidebar({ currentPage, onPageChange, searchQuery, onSearchChange }: SidebarProps) {
   const items = useMemo(
     () => [
       {
         section: "main",
         items: [
           { label: "Home", icon: Home, page: "main" as const },
-          { label: "New", icon: Sparkles, page: "main" as const },
-          { label: "Radio", icon: Radio, page: "main" as const },
+          { label: "New", icon: Sparkles, page: "main" as const, disabled: true },
+          { label: "Radio", icon: Radio, page: "main" as const, disabled: true },
         ],
       },
       {
         section: "library",
         items: [
-          { label: "Pins", icon: Pin, page: "main" as const },
-          { label: "Recently Added", icon: Clock, page: "main" as const },
-          { label: "Artists", icon: Mic2, page: "main" as const },
-          { label: "Albums", icon: Album, page: "main" as const },
-          { label: "Songs", icon: Music, page: "main" as const },
+          { label: "Pins", icon: Pin, page: "main" as const, disabled: true },
+          { label: "Recently Added", icon: Clock, page: "main" as const, disabled: true },
+          { label: "Artists", icon: Mic2, page: "main" as const, disabled: true },
+          { label: "Albums", icon: Album, page: "main" as const, disabled: true },
+          { label: "Songs", icon: Music, page: "main" as const, disabled: true },
         ],
       },
       {
         section: "playlists",
         items: [
-          { label: "All Playlists", icon: ListMusic, page: "main" as const },
-          { label: "Favourite Songs", icon: Music, page: "main" as const },
+          { label: "All Playlists", icon: ListMusic, page: "main" as const, disabled: true },
+          { label: "Favourite Songs", icon: Music, page: "main" as const, disabled: true },
         ],
       },
       {
@@ -79,9 +81,11 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         {/* Search */}
         <div className="relative mb-4">
           <Input
-            placeholder="Search"
+            placeholder="Filter tracks"
             className="pr-9"
             aria-label="Search"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
           />
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         </div>
@@ -100,6 +104,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                     variant={isActive(item.page) ? "secondary" : "ghost"}
                     className="w-full justify-start gap-2"
                     onClick={() => onPageChange(item.page)}
+                    disabled={(item as any).disabled}
+                    title={(item as any).disabled ? "Coming soon" : undefined}
                   >
                     <Icon className="h-4 w-4 text-muted-foreground" />
                     <span className="truncate">{item.label}</span>
@@ -137,6 +143,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                     variant={item.page === "main" && currentPage === "main" ? "ghost" : "ghost"}
                     className="w-full justify-start gap-2"
                     onClick={() => onPageChange(item.page)}
+                    disabled={(item as any).disabled}
+                    title={(item as any).disabled ? "Coming soon" : undefined}
                   >
                     <Icon className="h-4 w-4 text-muted-foreground" />
                     <span className="truncate">{item.label}</span>
@@ -173,6 +181,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                     variant="ghost"
                     className="w-full justify-start gap-2"
                     onClick={() => onPageChange(item.page)}
+                    disabled={(item as any).disabled}
+                    title={(item as any).disabled ? "Coming soon" : undefined}
                   >
                     <Icon className="h-4 w-4 text-muted-foreground" />
                     <span className="truncate">{item.label}</span>

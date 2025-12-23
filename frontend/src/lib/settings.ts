@@ -41,6 +41,9 @@ export interface Settings {
   // Optional: use official Spotify OAuth (PKCE loopback) for more stable metadata requests.
   // The access/refresh tokens are stored on the backend; frontend only stores the Client ID.
   spotifyOAuthClientId: string;
+
+  // Experimental: enable Odyssey Spatial Comms processing (applies on next track).
+  odysseySpatialCommsEnabled: boolean;
 }
 
 // Folder preset templates
@@ -120,6 +123,8 @@ export const DEFAULT_SETTINGS: Settings = {
   qobuzQuality: "7", // Default: FLAC 24-bit
 
   spotifyOAuthClientId: "8894061c83eb48bbb595aaa3f3c11491",
+
+  odysseySpatialCommsEnabled: false,
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [
@@ -230,6 +235,11 @@ export function getSettings(): Settings {
 	  if (!('spotifyOAuthClientId' in parsed)) {
 		parsed.spotifyOAuthClientId = "";
 	  }
+
+      // Odyssey spatial toggle (default false)
+      if (!("odysseySpatialCommsEnabled" in parsed)) {
+        parsed.odysseySpatialCommsEnabled = false;
+      }
       return { ...DEFAULT_SETTINGS, ...parsed };
     }
   } catch (error) {

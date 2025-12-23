@@ -565,6 +565,24 @@ export function SettingsPage() {
             </div>
           </div>
 
+          {/* Odyssey Spatial Comms (experimental) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="odyssey-spatial" className="cursor-pointer text-sm">Odyssey Spatial Comms</Label>
+                <p className="text-xs text-muted-foreground">Experimental. Takes effect on the next track.</p>
+              </div>
+              <Switch
+                id="odyssey-spatial"
+                checked={tempSettings.odysseySpatialCommsEnabled}
+                onCheckedChange={(checked) => {
+                  setTempSettings((prev: SettingsType) => ({ ...prev, odysseySpatialCommsEnabled: checked }));
+                  toast.info("Odyssey Spatial Comms will apply on the next track");
+                }}
+              />
+            </div>
+          </div>
+
           <div className="border-t" />
 
           {/* Folder Structure */}

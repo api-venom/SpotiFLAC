@@ -40,6 +40,46 @@ export function useDownload() {
     artists: string;
   } | null>(null);
   const shouldStopDownloadRef = useRef(false);
+  const ffmpegEnsurePromiseRef = useRef<Promise<boolean> | null>(null);
+
+  const ensureFfmpegForTidal = async (): Promise<boolean> => {
+    if (ffmpegEnsurePromiseRef.current) {
+      return ffmpegEnsurePromiseRef.current;
+    }
+
+    ffmpegEnsurePromiseRef.current = (async () => {
+      try {
+        const { IsFFmpegInstalled, DownloadFFmpeg } = await import("wailsjs/go/main/App");
+
+        const installed = await IsFFmpegInstalled();
+        if (installed) return true;
+
+        toast.info("FFmpeg required for Tidal — installing...");
+        const resp: any = await DownloadFFmpeg();
+
+        if (!resp?.success) {
+          toast.error(resp?.error || "Failed to install FFmpeg");
+          return false;
+        }
+
+        const installedAfter = await IsFFmpegInstalled();
+        if (installedAfter) {
+          toast.success("FFmpeg installed");
+          return true;
+        }
+
+        toast.warning("FFmpeg install finished, but not detected yet");
+        return false;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to install FFmpeg");
+        return false;
+      }
+    })();
+
+    const ok = await ffmpegEnsurePromiseRef.current;
+    if (!ok) ffmpegEnsurePromiseRef.current = null;
+    return ok;
+  };
 
   const downloadWithAutoFallback = async (
     isrc: string,
@@ -173,6 +213,12 @@ export function useDownload() {
       if (streamingURLs?.tidal_url) {
         try {
           logger.debug(`trying tidal for: ${trackName} - ${artistName}`);
+
+          // Tidal needs FFmpeg for remux/transcode. Install automatically if missing.
+          const ffmpegOk = await ensureFfmpegForTidal();
+          if (!ffmpegOk) {
+            logger.warning("ffmpeg not installed; skipping tidal attempt");
+          } else {
           const tidalResponse = await downloadTrack({
             isrc,
             service: "tidal",
@@ -207,6 +253,7 @@ export function useDownload() {
             return tidalResponse;
           }
           logger.warning(`tidal failed, trying amazon...`);
+          }
         } catch (tidalErr) {
           logger.error(`tidal error: ${tidalErr}`);
         }
@@ -302,6 +349,21 @@ export function useDownload() {
       audioFormat = settings.tidalQuality || "LOSSLESS";
     } else if (service === "qobuz") {
       audioFormat = settings.qobuzQuality || "6";
+    }
+
+    if (service === "tidal") {
+      const ffmpegOk = await ensureFfmpegForTidal();
+      if (!ffmpegOk) {
+        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+        await MarkDownloadItemFailed(itemID, "FFmpeg is required for Tidal downloads");
+        return {
+          success: false,
+          message: "FFmpeg is required for Tidal downloads",
+          error: "FFmpeg is required for Tidal downloads",
+          already_exists: false,
+          item_id: itemID,
+        } as any;
+      }
     }
 
     const singleServiceResponse = await downloadTrack({

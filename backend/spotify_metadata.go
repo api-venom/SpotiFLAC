@@ -821,7 +821,9 @@ func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, next
 
 func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
 	spotifyDebugf("api GET %s", endpoint)
-	for {
+	var rateLimitCount int
+	for attempt := 0; attempt < 6; attempt++ {
+		start := time.Now()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return err
@@ -838,7 +840,7 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			spotifyDebugf("api request error: %v", err)
+			spotifyDebugf("api request error (attempt=%d elapsed=%s): %v", attempt+1, time.Since(start), err)
 			return err
 		}
 		body, err := io.ReadAll(resp.Body)
@@ -846,10 +848,21 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 		if err != nil {
 			return err
 		}
+		spotifyDebugf("api response status=%d elapsed=%s", resp.StatusCode, time.Since(start))
 
 		if resp.StatusCode == http.StatusTooManyRequests {
+			rateLimitCount++
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 			spotifyDebugf("api 429 rate-limited retry-after=%s", retryAfter)
+			// Don't wait arbitrarily long; surface a useful error instead.
+			// This avoids the user seeing only "context deadline exceeded".
+			if retryAfter > 30*time.Second || rateLimitCount >= 2 {
+				preview := spotifyPreviewBody(body, 350)
+				if preview != "" {
+					return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s body=%q", endpoint, retryAfter, preview)
+				}
+				return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s", endpoint, retryAfter)
+			}
 			if err := sleepWithContext(ctx, retryAfter); err != nil {
 				return err
 			}
@@ -867,6 +880,9 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 
 		return json.Unmarshal(body, dst)
 	}
+
+	// Should never reach here.
+	return fmt.Errorf("spotify API failed after retries for %s", endpoint)
 }
 
 func (c *SpotifyMetadataClient) baseHeaders() http.Header {

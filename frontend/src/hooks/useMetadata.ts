@@ -57,8 +57,29 @@ export function useMetadata() {
 
     try {
       const startTime = Date.now();
-      logger.debug("request: GetSpotifyMetadata(batch=true delay=1 timeout=300)");
-      const data = await fetchSpotifyMetadata(normalizedUrl);
+
+      // Pick safer request parameters based on URL type.
+      // Track fetch should be fast; long timeouts often just hide rate-limit / token failures.
+      let batch = true;
+      let delay = 1.0;
+      let timeout = 300.0;
+      if (urlType === "track") {
+        batch = false;
+        delay = 0.0;
+        timeout = 60.0;
+      } else if (urlType === "album" || urlType === "playlist") {
+        batch = true;
+        delay = 1.0;
+        timeout = 180.0;
+      } else if (urlType === "artist") {
+        // Artist is handled via dialog elsewhere; keep defaults here.
+        batch = true;
+        delay = 1.0;
+        timeout = 300.0;
+      }
+
+      logger.debug(`request: GetSpotifyMetadata(batch=${batch} delay=${delay} timeout=${timeout})`);
+      const data = await fetchSpotifyMetadata(normalizedUrl, batch, delay, timeout);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       
       setMetadata(data);
@@ -190,7 +211,7 @@ export function useMetadata() {
 
     try {
       const startTime = Date.now();
-      const data = await fetchSpotifyMetadata(albumUrl);
+      const data = await fetchSpotifyMetadata(albumUrl, true, 1.0, 180.0);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       
       setMetadata(data);

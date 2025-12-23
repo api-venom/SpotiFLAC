@@ -87,6 +87,11 @@ type SpotifyMetadataClient struct {
 	rngMu      sync.Mutex
 	userAgent  string
 
+	cacheMu       sync.Mutex
+	responseCache map[string]spotifyCachedResponse
+	inflight      map[string]*spotifyInflight
+	cacheTTL      time.Duration
+
 	rateLimitMu     sync.Mutex
 	cooldownUntil   map[string]time.Time
 	backoff         map[string]time.Duration
@@ -109,6 +114,17 @@ type SpotifyMetadataClient struct {
 	cachedServerTimeTTL   time.Duration
 }
 
+type spotifyCachedResponse struct {
+	body      []byte
+	expiresAt time.Time
+}
+
+type spotifyInflight struct {
+	done chan struct{}
+	body []byte
+	err  error
+}
+
 // NewSpotifyMetadataClient creates a ready-to-use client with sane defaults.
 func NewSpotifyMetadataClient() *SpotifyMetadataClient {
 	src := rand.NewSource(time.Now().UnixNano())
@@ -123,6 +139,9 @@ func NewSpotifyMetadataClient() *SpotifyMetadataClient {
 	c.cachedSecretsTTL = 6 * time.Hour
 	c.cachedServerTimeTTL = 5 * time.Minute
 	c.userAgent = c.randomUserAgent()
+	c.responseCache = map[string]spotifyCachedResponse{}
+	c.inflight = map[string]*spotifyInflight{}
+	c.cacheTTL = 10 * time.Minute
 	return c
 }
 
@@ -486,6 +505,8 @@ func (c *SpotifyMetadataClient) enforceRateLimitGate(ctx context.Context, host s
 		return nil
 	}
 
+	maxWait := spotifyMaxWaitFromContext(ctx)
+
 	for {
 		now := time.Now()
 		var sleepFor time.Duration
@@ -496,8 +517,8 @@ func (c *SpotifyMetadataClient) enforceRateLimitGate(ctx context.Context, host s
 			sleepFor = time.Until(until)
 			cooldownUntil = until
 			c.rateLimitMu.Unlock()
-			// If it's a tiny remaining wait, it's nicer to just wait and continue.
-			if sleepFor <= 3*time.Second {
+			// If the remaining wait is small (or within our timeout budget), just wait and continue.
+			if sleepFor <= 3*time.Second || (maxWait > 0 && sleepFor <= maxWait) {
 				if err := sleepWithContext(ctx, sleepFor); err != nil {
 					return err
 				}
@@ -524,6 +545,98 @@ func (c *SpotifyMetadataClient) enforceRateLimitGate(ctx context.Context, host s
 		}
 		return nil
 	}
+}
+
+func spotifyMaxWaitFromContext(ctx context.Context) time.Duration {
+	if ctx == nil {
+		return 0
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		budget := time.Until(deadline) - 2*time.Second
+		if budget < 0 {
+			return 0
+		}
+		// Cap to avoid extremely long waits in case callers pass huge timeouts.
+		if budget > 2*time.Minute {
+			budget = 2 * time.Minute
+		}
+		return budget
+	}
+	// No deadline: be conservative.
+	return 90 * time.Second
+}
+
+func (c *SpotifyMetadataClient) getCachedResponse(endpoint string) ([]byte, bool) {
+	if endpoint == "" {
+		return nil, false
+	}
+	if c.cacheTTL <= 0 {
+		return nil, false
+	}
+	now := time.Now()
+	c.cacheMu.Lock()
+	entry, ok := c.responseCache[endpoint]
+	if !ok || entry.expiresAt.IsZero() || now.After(entry.expiresAt) || len(entry.body) == 0 {
+		if ok {
+			delete(c.responseCache, endpoint)
+		}
+		c.cacheMu.Unlock()
+		return nil, false
+	}
+	body := make([]byte, len(entry.body))
+	copy(body, entry.body)
+	c.cacheMu.Unlock()
+	return body, true
+}
+
+func (c *SpotifyMetadataClient) cacheResponse(endpoint string, body []byte) {
+	if endpoint == "" || len(body) == 0 || c.cacheTTL <= 0 {
+		return
+	}
+	c.cacheMu.Lock()
+	c.responseCache[endpoint] = spotifyCachedResponse{body: append([]byte(nil), body...), expiresAt: time.Now().Add(c.cacheTTL)}
+	c.cacheMu.Unlock()
+}
+
+func (c *SpotifyMetadataClient) getOrFetchBody(ctx context.Context, endpoint, token string) ([]byte, error) {
+	if body, ok := c.getCachedResponse(endpoint); ok {
+		spotifyDebugf("api cache hit %s", endpoint)
+		return body, nil
+	}
+
+	c.cacheMu.Lock()
+	if inflight, ok := c.inflight[endpoint]; ok {
+		done := inflight.done
+		c.cacheMu.Unlock()
+		select {
+		case <-done:
+			return inflight.body, inflight.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &spotifyInflight{done: make(chan struct{})}
+	c.inflight[endpoint] = call
+	c.cacheMu.Unlock()
+
+	defer func() {
+		c.cacheMu.Lock()
+		delete(c.inflight, endpoint)
+		c.cacheMu.Unlock()
+		select {
+		case <-call.done:
+		default:
+			close(call.done)
+		}
+	}()
+
+	body, err := c.fetchJSONBody(ctx, endpoint, token)
+	call.body = body
+	call.err = err
+	if err == nil {
+		c.cacheResponse(endpoint, body)
+	}
+	return body, err
 }
 
 func (c *SpotifyMetadataClient) noteRateLimited(host string, retryAfter time.Duration) (time.Time, time.Duration) {
@@ -1029,17 +1142,26 @@ func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, next
 }
 
 func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
+	body, err := c.getOrFetchBody(ctx, endpoint, token)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, dst)
+}
+
+func (c *SpotifyMetadataClient) fetchJSONBody(ctx context.Context, endpoint, token string) ([]byte, error) {
 	spotifyDebugf("api GET %s", endpoint)
 	host := c.getHostFromURL(endpoint)
 	if err := c.enforceRateLimitGate(ctx, host); err != nil {
-		return err
+		return nil, err
 	}
+	maxWait := spotifyMaxWaitFromContext(ctx)
 	var rateLimitCount int
 	for attempt := 0; attempt < 6; attempt++ {
 		start := time.Now()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		headers := c.baseHeaders()
 		for key, values := range headers {
@@ -1059,12 +1181,12 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 				_ = sleepWithContext(ctx, time.Duration(attempt+1)*250*time.Millisecond)
 				continue
 			}
-			return err
+			return nil, err
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		spotifyDebugf("api response status=%d elapsed=%s", resp.StatusCode, time.Since(start))
 
@@ -1072,20 +1194,22 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 			rateLimitCount++
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 			until, backoff := c.noteRateLimited(host, retryAfter)
+			sleepFor := time.Until(until)
 			spotifyDebugf("api 429 rate-limited retry-after=%s", retryAfter)
-			// Don't wait arbitrarily long; surface a useful error instead.
-			// This avoids the user seeing only "context deadline exceeded".
-			if retryAfter > 30*time.Second || rateLimitCount >= 2 {
-				preview := spotifyPreviewBody(body, 350)
-				if preview != "" {
-					return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s body=%q", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second), preview)
+
+			// Smooth path: if we have enough timeout budget, wait through the full cooldown and retry.
+			if maxWait > 0 && sleepFor > 0 && sleepFor <= maxWait && rateLimitCount <= 2 {
+				if err := sleepWithContext(ctx, sleepFor); err != nil {
+					return nil, err
 				}
-				return fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second))
+				continue
 			}
-			if err := sleepWithContext(ctx, retryAfter); err != nil {
-				return err
+
+			preview := spotifyPreviewBody(body, 350)
+			if preview != "" {
+				return nil, fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s body=%q", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second), preview)
 			}
-			continue
+			return nil, fmt.Errorf("spotify API rate limited (429) endpoint=%s retry-after=%s cooldown-until=%s backoff=%s", endpoint, retryAfter, until.Format(time.RFC3339), backoff.Round(time.Second))
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
@@ -1095,9 +1219,9 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 			}
 			preview := spotifyPreviewBody(body, 350)
 			if preview != "" {
-				return fmt.Errorf("spotify API unauthorized (401) endpoint=%s body=%q", endpoint, preview)
+				return nil, fmt.Errorf("spotify API unauthorized (401) endpoint=%s body=%q", endpoint, preview)
 			}
-			return fmt.Errorf("spotify API unauthorized (401) endpoint=%s", endpoint)
+			return nil, fmt.Errorf("spotify API unauthorized (401) endpoint=%s", endpoint)
 		}
 
 		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout {
@@ -1112,16 +1236,15 @@ func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token str
 			preview := spotifyPreviewBody(body, 900)
 			spotifyDebugf("api non-200 status=%d endpoint=%s body(peek)=%s", resp.StatusCode, endpoint, preview)
 			if preview != "" {
-				return fmt.Errorf("spotify API returned status %d for %s body=%q", resp.StatusCode, endpoint, preview)
+				return nil, fmt.Errorf("spotify API returned status %d for %s body=%q", resp.StatusCode, endpoint, preview)
 			}
-			return fmt.Errorf("spotify API returned status %d for %s", resp.StatusCode, endpoint)
+			return nil, fmt.Errorf("spotify API returned status %d for %s", resp.StatusCode, endpoint)
 		}
 
-		return json.Unmarshal(body, dst)
+		return body, nil
 	}
 
-	// Should never reach here.
-	return fmt.Errorf("spotify API failed after retries for %s", endpoint)
+	return nil, fmt.Errorf("spotify API failed after retries for %s", endpoint)
 }
 
 func (c *SpotifyMetadataClient) baseHeaders() http.Header {

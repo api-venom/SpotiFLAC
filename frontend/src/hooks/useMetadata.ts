@@ -66,7 +66,8 @@ export function useMetadata() {
       if (urlType === "track") {
         batch = false;
         delay = 0.0;
-        timeout = 60.0;
+        // Allow enough time for a single 429 Retry-After wait.
+        timeout = 120.0;
       } else if (urlType === "album" || urlType === "playlist") {
         batch = true;
         delay = 1.0;

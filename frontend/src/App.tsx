@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +34,7 @@ import { SettingsPage } from "@/components/SettingsPage";
 import { DebugLoggerPage } from "@/components/DebugLoggerPage";
 import type { HistoryItem } from "@/components/FetchHistory";
 import { LiquidGlassFrame } from "@/components/LiquidGlassFrame";
+import { FullscreenLyricsOverlay } from "@/components/FullscreenLyricsOverlay";
 
 // Hooks
 import { useDownload } from "@/hooks/useDownload";
@@ -56,6 +57,9 @@ function App() {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [releaseDate, setReleaseDate] = useState<string | null>(null);
   const [fetchHistory, setFetchHistory] = useState<HistoryItem[]>([]);
+
+  const [fullscreenLyricsTrack, setFullscreenLyricsTrack] = useState<any | null>(null);
+  const [fullscreenLyricsFile, setFullscreenLyricsFile] = useState<string | null>(null);
 
   const ITEMS_PER_PAGE = 50;
   const CURRENT_VERSION = "6.9";
@@ -262,6 +266,38 @@ function App() {
     }
   };
 
+  const canOpenFullscreenLyricsForCurrentTrack = useMemo(() => {
+    if (!metadata.metadata) return false;
+    if (!("track" in metadata.metadata)) return false;
+    return Boolean(metadata.metadata.track?.spotify_id);
+  }, [metadata.metadata]);
+
+  const openFullscreenLyricsForCurrentTrack = async () => {
+    if (!metadata.metadata || !("track" in metadata.metadata)) return;
+
+    const track = metadata.metadata.track;
+    if (!track?.spotify_id) return;
+
+    const existingPath = lyrics.getLyricsFilePath(track.spotify_id);
+    if (existingPath) {
+      setFullscreenLyricsTrack(track);
+      setFullscreenLyricsFile(existingPath);
+      return;
+    }
+
+    const downloadedPath = await lyrics.handleDownloadLyrics(
+      track.spotify_id,
+      track.name,
+      track.artists,
+      track.album_name
+    );
+
+    if (downloadedPath) {
+      setFullscreenLyricsTrack(track);
+      setFullscreenLyricsFile(downloadedPath);
+    }
+  };
+
 
   const renderMetadata = () => {
     if (!metadata.metadata) return null;
@@ -285,6 +321,9 @@ function App() {
           downloadingCover={cover.downloadingCover}
           onDownload={download.handleDownloadTrack}
           onDownloadLyrics={lyrics.handleDownloadLyrics}
+          onOpenFullscreenLyrics={
+            canOpenFullscreenLyricsForCurrentTrack ? openFullscreenLyricsForCurrentTrack : undefined
+          }
           onCheckAvailability={availability.checkAvailability}
           onDownloadCover={cover.handleDownloadCover}
           onOpenFolder={handleOpenFolder}
@@ -663,6 +702,17 @@ function App() {
           isOpen={downloadQueue.isOpen}
           onClose={downloadQueue.closeQueue}
         />
+
+        {fullscreenLyricsTrack && (
+          <FullscreenLyricsOverlay
+            track={fullscreenLyricsTrack}
+            lyricsFilePath={fullscreenLyricsFile}
+            onClose={() => {
+              setFullscreenLyricsTrack(null);
+              setFullscreenLyricsFile(null);
+            }}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

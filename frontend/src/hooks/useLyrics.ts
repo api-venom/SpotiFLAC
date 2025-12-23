@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { downloadLyrics } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -11,9 +11,14 @@ export function useLyrics() {
   const [downloadedLyrics, setDownloadedLyrics] = useState<Set<string>>(new Set());
   const [failedLyrics, setFailedLyrics] = useState<Set<string>>(new Set());
   const [skippedLyrics, setSkippedLyrics] = useState<Set<string>>(new Set());
+  const [lyricsFileBySpotifyId, setLyricsFileBySpotifyId] = useState<Map<string, string>>(new Map());
   const [isBulkDownloadingLyrics, setIsBulkDownloadingLyrics] = useState(false);
   const [lyricsDownloadProgress, setLyricsDownloadProgress] = useState(0);
   const stopBulkDownloadRef = useRef(false);
+
+  const getLyricsFilePath = useMemo(() => {
+    return (spotifyId: string) => lyricsFileBySpotifyId.get(spotifyId) || null;
+  }, [lyricsFileBySpotifyId]);
 
   const handleDownloadLyrics = async (
     spotifyId: string,
@@ -25,7 +30,7 @@ export function useLyrics() {
   ) => {
     if (!spotifyId) {
       toast.error("No Spotify ID found for this track");
-      return;
+      return null;
     }
 
     logger.info(`downloading lyrics: ${trackName} - ${artistName}`);
@@ -79,6 +84,13 @@ export function useLyrics() {
       });
 
       if (response.success) {
+        if (response.file) {
+          setLyricsFileBySpotifyId((prev) => {
+            const next = new Map(prev);
+            next.set(spotifyId, response.file!);
+            return next;
+          });
+        }
         if (response.already_exists) {
           toast.info("Lyrics file already exists");
           setSkippedLyrics((prev) => new Set(prev).add(spotifyId));
@@ -95,9 +107,12 @@ export function useLyrics() {
         toast.error(response.error || "Failed to download lyrics");
         setFailedLyrics((prev) => new Set(prev).add(spotifyId));
       }
+
+      return response.file || null;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download lyrics");
       setFailedLyrics((prev) => new Set(prev).add(spotifyId));
+      return null;
     } finally {
       setDownloadingLyricsTrack(null);
     }
@@ -183,6 +198,13 @@ export function useLyrics() {
         });
 
         if (response.success) {
+          if (response.file) {
+            setLyricsFileBySpotifyId((prev) => {
+              const next = new Map(prev);
+              next.set(id, response.file!);
+              return next;
+            });
+          }
           if (response.already_exists) {
             skipped++;
             setSkippedLyrics((prev) => new Set(prev).add(id));
@@ -227,6 +249,7 @@ export function useLyrics() {
     setDownloadedLyrics(new Set());
     setFailedLyrics(new Set());
     setSkippedLyrics(new Set());
+    setLyricsFileBySpotifyId(new Map());
   };
 
   return {
@@ -234,6 +257,8 @@ export function useLyrics() {
     downloadedLyrics,
     failedLyrics,
     skippedLyrics,
+    lyricsFileBySpotifyId,
+    getLyricsFilePath,
     isBulkDownloadingLyrics,
     lyricsDownloadProgress,
     handleDownloadLyrics,

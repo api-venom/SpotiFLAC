@@ -27,6 +27,7 @@ interface TrackInfoProps {
   downloadingCover?: boolean;
   onDownload: (isrc: string, name: string, artists: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
   onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string) => void;
+  onOpenFullscreenLyrics?: () => void;
   onCheckAvailability?: (spotifyId: string, isrc?: string) => void;
   onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName?: string) => void;
   onOpenFolder: () => void;
@@ -48,6 +49,7 @@ export function TrackInfo({
   downloadingCover,
   onDownload,
   onDownloadLyrics,
+  onOpenFullscreenLyrics,
   onCheckAvailability,
   onDownloadCover,
   onOpenFolder,
@@ -155,6 +157,24 @@ export function TrackInfo({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Download Lyric</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {track.spotify_id && onOpenFullscreenLyrics && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={onOpenFullscreenLyrics}
+                        variant="outline"
+                        disabled={downloadingLyricsTrack === track.spotify_id}
+                      >
+                        <FileText className="h-4 w-4" />
+                        Lyrics
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Open Fullscreen Lyrics</p>
                     </TooltipContent>
                   </Tooltip>
                 )}

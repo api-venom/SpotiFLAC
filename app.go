@@ -464,6 +464,21 @@ func (a *App) SelectFile() (string, error) {
 	return backend.SelectFileDialog(a.ctx)
 }
 
+// ReadTextFile reads a UTF-8 text file from disk and returns its contents.
+// Used by the frontend to display downloaded .lrc lyrics.
+func (a *App) ReadTextFile(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+
+	normalized := backend.NormalizePath(path)
+	b, err := os.ReadFile(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 // GetDefaults returns the default configuration
 func (a *App) GetDefaults() map[string]string {
 	return map[string]string{

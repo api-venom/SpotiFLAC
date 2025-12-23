@@ -119,7 +119,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit lossless
   qobuzQuality: "7", // Default: FLAC 24-bit
 
-  spotifyOAuthClientId: "",
+  spotifyOAuthClientId: "8894061c83eb48bbb595aaa3f3c11491",
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [

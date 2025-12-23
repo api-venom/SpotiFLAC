@@ -70,6 +70,8 @@ var (
 	spotifyOAuthPendingState *spotifyOAuthPending
 )
 
+const hardcodedSpotifyOAuthClientID = "8894061c83eb48bbb595aaa3f3c11491"
+
 func getSpotiFlacDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -171,10 +173,9 @@ func GetSpotifyOAuthStatus() SpotifyOAuthStatus {
 }
 
 func BeginSpotifyOAuthLogin(ctx context.Context, clientID string) (string, error) {
-	clientID = strings.TrimSpace(clientID)
-	if clientID == "" {
-		return "", errors.New("spotify client id is required")
-	}
+	// Per app requirement: always use the hardcoded client id.
+	// We still accept the argument to preserve the public API.
+	clientID = hardcodedSpotifyOAuthClientID
 
 	spotifyOAuthMu.Lock()
 	if spotifyOAuthPendingState != nil {

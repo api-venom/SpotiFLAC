@@ -810,3 +810,48 @@ func (a *App) CheckFilesExistence(outputDir string, tracks []CheckFileExistenceR
 func (a *App) SkipDownloadItem(itemID, filePath string) {
 	backend.SkipDownloadItem(itemID, filePath)
 }
+
+// GetStreamingURL gets direct streaming URL for a track
+func (a *App) GetStreamingURL(spotifyID, isrc, trackName, artistName, albumName, albumArtist, releaseDate, coverURL string, duration, trackNumber, discNumber, totalTracks int, preferredService, quality string) (string, error) {
+	track := &backend.StreamingTrack{
+		ISRC:        isrc,
+		SpotifyID:   spotifyID,
+		Name:        trackName,
+		Artists:     artistName,
+		AlbumName:   albumName,
+		AlbumArtist: albumArtist,
+		ReleaseDate: releaseDate,
+		Duration:    duration,
+		CoverURL:    coverURL,
+		TrackNumber: trackNumber,
+		DiscNumber:  discNumber,
+		TotalTracks: totalTracks,
+	}
+
+	response, err := backend.GetStreamingURLs(a.ctx, spotifyID, isrc, track, preferredService, quality)
+	if err != nil {
+		return "", err
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode response: %v", err)
+	}
+
+	return string(jsonData), nil
+}
+
+// GetStreamingLyrics fetches lyrics for streaming playback
+func (a *App) GetStreamingLyrics(spotifyID, trackName, artistName string) (string, error) {
+	response, err := backend.GetStreamingLyrics(a.ctx, spotifyID, trackName, artistName)
+	if err != nil {
+		return "", err
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode response: %v", err)
+	}
+
+	return string(jsonData), nil
+}

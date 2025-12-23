@@ -18,7 +18,7 @@ export function TitleBar() {
     <>
       {/* Draggable area */}
       <div 
-        className="fixed top-0 left-14 right-0 h-10 z-40 bg-background/80 backdrop-blur-sm"
+        className="fixed top-0 left-72 right-0 h-10 z-40 bg-background/80 backdrop-blur-sm"
         style={{ "--wails-draggable": "drag" } as React.CSSProperties}
         onDoubleClick={handleMaximize}
       />

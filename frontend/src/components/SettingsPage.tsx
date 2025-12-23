@@ -36,6 +36,8 @@ type SpotifyOAuthStatus = {
   cooldown_msg?: string;
 };
 
+const SPOTIFY_OAUTH_CLIENT_ID = "8894061c83eb48bbb595aaa3f3c11491";
+
 // Service Icons
 const TidalIcon = () => (
   <svg viewBox="0 0 24 24" className="inline-block w-[1.1em] h-[1.1em] mr-2 fill-muted-foreground">
@@ -170,11 +172,7 @@ export function SettingsPage() {
   };
 
   const handleSpotifyOAuthLogin = async () => {
-    const clientID = (tempSettings.spotifyOAuthClientId || "").trim();
-    if (!clientID) {
-      toast.error("Spotify Client ID is required (create an app in Spotify Developer Dashboard).");
-      return;
-    }
+    const clientID = (tempSettings.spotifyOAuthClientId || "").trim() || SPOTIFY_OAUTH_CLIENT_ID;
 
     // Persist immediately so users don't forget to hit "Save Changes"
     // and then wonder why OAuth isn't being used.

@@ -33,6 +33,7 @@ import { FileManagerPage } from "@/components/FileManagerPage";
 import { SettingsPage } from "@/components/SettingsPage";
 import { DebugLoggerPage } from "@/components/DebugLoggerPage";
 import type { HistoryItem } from "@/components/FetchHistory";
+import { LiquidGlassFrame } from "@/components/LiquidGlassFrame";
 
 // Hooks
 import { useDownload } from "@/hooks/useDownload";
@@ -648,10 +649,10 @@ function App() {
         <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
         
         {/* Main content area with sidebar offset */}
-        <div className="flex-1 ml-14 mt-10 p-4 md:p-8">
-          <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex-1 ml-72 mt-10 p-4 md:p-8">
+          <LiquidGlassFrame className="max-w-4xl mx-auto space-y-6">
             {renderPage()}
-          </div>
+          </LiquidGlassFrame>
         </div>
 
         {/* Download Progress Toast - Bottom Left */}

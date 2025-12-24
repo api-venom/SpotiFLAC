@@ -70,9 +70,18 @@ jobs:
           $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
           $json = Invoke-RestMethod -Uri $releases
 
-          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.(7z|zip)$" } | Select-Object -First 1
+          # Pick the actual mpv x86_64 build (NOT ffmpeg-only assets).
+          # Example names seen:
+          # - mpv-x86_64-20251217-git-....7z
+          # - mpv-x86_64-v3-20251217-git-....7z
+          $asset = $json.assets |
+            Where-Object { $_.name -match '^mpv-x86_64(-v3)?-.*\.(7z|zip)$' } |
+            Select-Object -First 1
+
           if (-not $asset) {
-            throw "Could not find a mpv-x86_64 archive asset in shinchiro/mpv-winbuild-cmake latest release"
+            Write-Host "Available assets:"
+            $json.assets | Select-Object name | Format-Table -AutoSize | Out-Host
+            throw "Could not find mpv-x86_64 build asset in shinchiro/mpv-winbuild-cmake latest release"
           }
 
           $ext = if ($asset.name -match "\.zip$") { "zip" } else { "7z" }

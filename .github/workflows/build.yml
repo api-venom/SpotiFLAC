@@ -80,20 +80,11 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
-          # shinchiro prebuilt (widely used). We take the latest release asset.
-          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-          $json = Invoke-RestMethod -Uri $releases
+          # Use mpv.io official Windows builds (stable, predictable layout).
+          $mpvZip = "https://sourceforge.net/projects/mpv-player-windows/files/stable/mpv-x86_64-2024-12-15-git-6c8d9d8.7z/download"
 
-          # Prefer a zip if available (easier to extract). Fallback to 7z.
-          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.zip$" } | Select-Object -First 1
-          $ext = "zip"
-          if (-not $asset) {
-            $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.(7z|7zip)$" } | Select-Object -First 1
-            $ext = "7z"
-          }
-          if (-not $asset) {
-            throw "Could not find mpv x86_64 archive in latest release assets"
-          }
+          $asset = [PSCustomObject]@{ name = "mpv.7z"; browser_download_url = $mpvZip }
+          $ext = "7z"
 
           $archive = "third_party/mpv/mpv.$ext"
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
@@ -105,8 +96,8 @@ jobs:
             & 7z x $archive -o"third_party/mpv" -y | Out-Null
           }
 
-          # Find mpv-2.dll (some builds ship mpv-1.dll instead; accept either).
-          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll" -File | Select-Object -First 1
+          # Find common mpv dll names (varies by distribution).
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll","libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
           if (-not $dll) {
             Write-Host "Extracted mpv tree:"
             Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host

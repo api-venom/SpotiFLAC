@@ -80,27 +80,40 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
-          # shinchiro prebuilt (widely used). We take the latest release zip.
+          # shinchiro prebuilt (widely used). We take the latest release asset.
           $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
           $json = Invoke-RestMethod -Uri $releases
-          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.7z$" } | Select-Object -First 1
+
+          # Prefer a zip if available (easier to extract). Fallback to 7z.
+          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.zip$" } | Select-Object -First 1
+          $ext = "zip"
           if (-not $asset) {
-            throw "Could not find mpv x86_64 7z asset in latest release"
+            $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.(7z|7zip)$" } | Select-Object -First 1
+            $ext = "7z"
+          }
+          if (-not $asset) {
+            throw "Could not find mpv x86_64 archive in latest release assets"
           }
 
-          $archive = "third_party/mpv/mpv.7z"
+          $archive = "third_party/mpv/mpv.$ext"
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
 
-          # 7zip is available on windows-latest runner.
-          & 7z x $archive -o"third_party/mpv" -y | Out-Null
-
-          # Find mpv-2.dll within extracted folder.
-          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Filter "mpv-2.dll" | Select-Object -First 1
-          if (-not $dll) {
-            throw "mpv-2.dll not found after extraction"
+          if ($ext -eq "zip") {
+            Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
+          } else {
+            # 7zip is available on windows-latest runner.
+            & 7z x $archive -o"third_party/mpv" -y | Out-Null
           }
 
-          # Copy the dll + common deps into build/bin after build.
+          # Find mpv-2.dll (some builds ship mpv-1.dll instead; accept either).
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll" -File | Select-Object -First 1
+          if (-not $dll) {
+            Write-Host "Extracted mpv tree:"
+            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host
+            throw "mpv dll not found after extraction"
+          }
+
+          "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build application
@@ -114,13 +127,11 @@ jobs:
           $bin = "build\\bin"
           if (-not (Test-Path $bin)) { throw "Missing build/bin" }
 
-          Copy-Item -Path "$env:MPV_DLL_DIR\\mpv-2.dll" -Destination "$bin\\mpv-2.dll" -Force
+          Copy-Item -Path "$env:MPV_DLL_PATH" -Destination (Join-Path $bin (Split-Path -Leaf $env:MPV_DLL_PATH)) -Force
 
-          # Best effort: also copy any dlls sitting next to mpv-2.dll.
+          # Best effort: also copy any dlls sitting next to the mpv dll.
           Get-ChildItem -Path "$env:MPV_DLL_DIR" -Filter "*.dll" | ForEach-Object {
-            if ($_.Name -ne "mpv-2.dll") {
-              Copy-Item -Path $_.FullName -Destination "$bin\\$($_.Name)" -Force
-            }
+            Copy-Item -Path $_.FullName -Destination "$bin\\$($_.Name)" -Force
           }
 
       - name: Compress with UPX
@@ -201,6 +212,28 @@ jobs:
 
       - name: Build application
         run: wails build -platform darwin/universal
+
+      # Bundle mpv (libmpv) into the app bundle so FLAC playback works on fresh machines.
+      - name: Download and bundle mpv runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          brew update
+          brew install mpv
+
+          APP="build/bin/SpotiFLAC.app"
+          FRAMEWORKS="$APP/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS"
+
+          LIBMPV_PATH="$(brew --prefix)/lib/libmpv.dylib"
+          if [ ! -f "$LIBMPV_PATH" ]; then
+            echo "libmpv.dylib not found at $LIBMPV_PATH" >&2
+            exit 1
+          fi
+
+          cp -f "$LIBMPV_PATH" "$FRAMEWORKS/"
+          install_name_tool -id "@rpath/libmpv.dylib" "$FRAMEWORKS/libmpv.dylib" || true
 
       - name: Create DMG
         run: |

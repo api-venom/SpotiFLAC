@@ -58,68 +58,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      # Fetch mpv runtime for bundled hi-res FLAC playback as early as possible
-      # so failures show up quickly in CI.
-      - name: Download mpv runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
-
-          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-          $json = Invoke-RestMethod -Uri $releases
-
-          # Pick the actual mpv x86_64 build (NOT ffmpeg-only assets).
-          # Example names seen:
-          # - mpv-x86_64-20251217-git-....7z
-          # - mpv-x86_64-v3-20251217-git-....7z
-          # IMPORTANT: For embedding we need the *dev* artifact as it includes libmpv dll.
-          $asset = $json.assets |
-            Where-Object { $_.name -match '^mpv-dev-x86_64(-v3)?-.*\.(7z|zip)$' } |
-            Select-Object -First 1
-
-          if (-not $asset) {
-            Write-Host "Available assets:"
-            $json.assets | Select-Object name | Format-Table -AutoSize | Out-Host
-            throw "Could not find mpv-x86_64 build asset in shinchiro/mpv-winbuild-cmake latest release"
-          }
-
-          $ext = if ($asset.name -match "\.zip$") { "zip" } else { "7z" }
-          $archive = "third_party/mpv/mpv.$ext"
-
-          Write-Host "Downloading mpv asset: $($asset.name)"
-          Write-Host "URL: $($asset.browser_download_url)"
-
-          & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
-
-          $bytes = [System.IO.File]::ReadAllBytes($archive)
-          $prefixLen = [Math]::Min(256, $bytes.Length)
-          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $prefixLen)
-          if ($prefix -match "<!DOCTYPE" -or $prefix -match "<html") {
-            throw "Downloaded HTML instead of mpv archive"
-          }
-
-          $sizeMB = [Math]::Round(($bytes.Length / 1MB), 2)
-          Write-Host "Downloaded mpv archive size: ${sizeMB}MB"
-
-          if ($ext -eq "zip") {
-            Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
-          } else {
-            & 7z x $archive -o"third_party/mpv" -y
-          }
-
-          # This mpv build is a standalone player build and may NOT include libmpv dll.
-          # For embedding we need the *dev* build which ships libmpv-2.dll.
-          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll","libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
-          if (-not $dll) {
-            Write-Host "No libmpv dll found in this archive; switching asset selection to mpv-dev-x86_64 (libmpv)"
-            throw "libmpv dll missing"
-          }
-
-          "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
@@ -133,60 +71,52 @@ jobs:
         run: |
           choco install upx -y
 
-          # Download mpv Windows build from SourceForge.
-          # IMPORTANT: Use the "download" endpoint which redirects to a real file.
-          # We avoid hardcoding the version by scraping the stable directory listing.
-          $stableListing = "https://sourceforge.net/projects/mpv-player-windows/files/stable/"
+      # Fetch mpv runtime for bundled hi-res FLAC playback.
+      # Restored near the default/original position (after UPX install).
+      - name: Download mpv runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
 
-          $html = & curl.exe -L --fail --retry 5 --retry-delay 2 $stableListing
+          New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
-          # Use a single-quoted regex to avoid PS string escaping issues.
-          $pattern = 'href="(/projects/mpv-player-windows/files/stable/mpv-x86_64-[^"]+\.(7z|zip))/download"'
-          $match = [regex]::Match($html, $pattern)
-          if (-not $match.Success) {
-            throw "Could not locate mpv-x86_64 archive link on SourceForge stable page"
+          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $json = Invoke-RestMethod -Uri $releases
+
+          # For embedding we need the *dev* build (includes libmpv dll).
+          $asset = $json.assets |
+            Where-Object { $_.name -match '^mpv-dev-x86_64(-v3)?-.*\.(7z|zip)$' } |
+            Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Host "Available assets:"
+            $json.assets | Select-Object name | Format-Table -AutoSize | Out-Host
+            throw "Could not find mpv-dev-x86_64 build asset in shinchiro/mpv-winbuild-cmake latest release"
           }
 
-          $mpvPath = $match.Groups[1].Value
-          $ext = $match.Groups[2].Value
-          $mpvUrl = "https://sourceforge.net$mpvPath/download"
-
-          $asset = [PSCustomObject]@{ name = "mpv.$ext"; browser_download_url = $mpvUrl }
-
+          $ext = if ($asset.name -match "\.zip$") { "zip" } else { "7z" }
           $archive = "third_party/mpv/mpv.$ext"
 
-          # Early visibility: log the URL before downloading.
           Write-Host "Downloading mpv asset: $($asset.name)"
           Write-Host "URL: $($asset.browser_download_url)"
 
-          # Use curl.exe for predictable redirects.
           & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
 
-          # Verify we didn't download HTML.
           $bytes = [System.IO.File]::ReadAllBytes($archive)
-          $prefixLen = [Math]::Min(256, $bytes.Length)
-          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $prefixLen)
-          if ($prefix -match "<!DOCTYPE" -or $prefix -match "<html") {
-            throw "Downloaded HTML instead of mpv archive"
-          }
-
-          # Extra hinting: show size.
           $sizeMB = [Math]::Round(($bytes.Length / 1MB), 2)
           Write-Host "Downloaded mpv archive size: ${sizeMB}MB"
 
           if ($ext -eq "zip") {
             Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
           } else {
-            # 7zip is available on windows-latest runner.
             & 7z x $archive -o"third_party/mpv" -y
           }
 
-          # Find common mpv dll names (varies by distribution).
-          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll","libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "libmpv-2.dll","libmpv-1.dll","mpv-2.dll","mpv-1.dll" -File | Select-Object -First 1
           if (-not $dll) {
             Write-Host "Extracted mpv tree:"
-            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host
-            throw "mpv dll not found after extraction"
+            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 6 | Select-Object FullName | Out-Host
+            throw "libmpv dll missing from mpv-dev archive"
           }
 
           "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -220,7 +150,7 @@ jobs:
           Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
 
           # Also ship mpv dll(s) so the exe works on fresh machines.
-          Copy-Item -Path "build\bin\mpv-2.dll" -Destination "dist\mpv-2.dll" -Force
+          # (dll name can vary: libmpv-2.dll/mpv-2.dll/etc) so just copy all dlls already in build/bin.
           Get-ChildItem -Path "build\bin" -Filter "*.dll" | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination (Join-Path "dist" $_.Name) -Force
           }

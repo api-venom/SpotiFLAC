@@ -310,13 +310,10 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error)
 		return "", err
 	}
 
-	// Prefer Tidal, then Qobuz, then Amazon.
+	// Prefer Tidal, then Amazon.
+	// (SongLinkURLs in this repo currently exposes only Tidal + Amazon.)
 	if urls.TidalURL != "" {
-		// Tidal downloader currently focuses on download. We'll proxy the Tidal URL for now.
 		return urls.TidalURL, nil
-	}
-	if urls.QobuzURL != "" {
-		return urls.QobuzURL, nil
 	}
 	if urls.AmazonURL != "" {
 		return urls.AmazonURL, nil

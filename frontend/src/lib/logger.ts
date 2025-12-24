@@ -4,44 +4,62 @@ export interface LogEntry {
   timestamp: Date;
   level: LogLevel;
   message: string;
+  source?: "ui" | "api" | "player" | "backend" | "system";
+}
+
+function safeToString(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v instanceof Error) return `${v.name}: ${v.message}${v.stack ? `\n${v.stack}` : ""}`;
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
 }
 
 class Logger {
   private logs: LogEntry[] = [];
-  private maxLogs = 500;
+  private maxLogs = 3000;
   private listeners: Set<() => void> = new Set();
 
-  private addLog(level: LogLevel, message: string) {
+  private addLog(level: LogLevel, message: string, source?: LogEntry["source"]) {
     const entry: LogEntry = {
       timestamp: new Date(),
       level,
-      message: message.toLowerCase(),
+      // keep original casing; don’t destroy URLs and IDs
+      message,
+      source,
     };
     this.logs.push(entry);
     if (this.logs.length > this.maxLogs) {
-      this.logs.shift();
+      this.logs.splice(0, this.logs.length - this.maxLogs);
     }
     this.notifyListeners();
   }
 
-  info(message: string) {
-    this.addLog("info", message);
+  info(message: string, source?: LogEntry["source"]) {
+    this.addLog("info", message, source);
   }
 
-  success(message: string) {
-    this.addLog("success", message);
+  success(message: string, source?: LogEntry["source"]) {
+    this.addLog("success", message, source);
   }
 
-  warning(message: string) {
-    this.addLog("warning", message);
+  warning(message: string, source?: LogEntry["source"]) {
+    this.addLog("warning", message, source);
   }
 
-  error(message: string) {
-    this.addLog("error", message);
+  error(message: string, source?: LogEntry["source"]) {
+    this.addLog("error", message, source);
   }
 
-  debug(message: string) {
-    this.addLog("debug", message);
+  debug(message: string, source?: LogEntry["source"]) {
+    this.addLog("debug", message, source);
+  }
+
+  exception(err: unknown, context?: string, source?: LogEntry["source"]) {
+    const msg = context ? `${context}\n${safeToString(err)}` : safeToString(err);
+    this.addLog("error", msg, source);
   }
 
   getLogs(): LogEntry[] {

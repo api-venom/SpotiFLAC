@@ -14,6 +14,7 @@ import { SearchSpotify, SearchSpotifyByType } from "../../wailsjs/go/main/App";
 import { backend } from "../../wailsjs/go/models";
 import { cn } from "@/lib/utils";
 import { getAutoCountryCode } from "@/lib/country";
+import { logger } from "@/lib/logger";
 
 type ResultTab = "tracks" | "albums" | "artists" | "playlists";
 
@@ -132,13 +133,25 @@ export function SearchBar({
     }
 
     searchTimeoutRef.current = setTimeout(async () => {
+      const q = searchQuery.trim();
       setIsSearching(true);
+      logger.info(`search: ${q}`, "api");
+      logger.debug(`market: ${market} limit: ${SEARCH_LIMIT}`, "api");
+
+      const started = performance.now();
       try {
-        const results = await SearchSpotify({ query: searchQuery, limit: SEARCH_LIMIT, market });
+        const results = await SearchSpotify({ query: q, limit: SEARCH_LIMIT, market });
+        const elapsed = ((performance.now() - started) / 1000).toFixed(2);
+
+        logger.success(
+          `search ok (${elapsed}s): tracks=${results.tracks.length} albums=${results.albums.length} artists=${results.artists.length} playlists=${results.playlists.length}`,
+          "api"
+        );
+
         setSearchResults(results);
-        setLastSearchedQuery(searchQuery.trim());
-        saveRecentSearch(searchQuery.trim());
-        
+        setLastSearchedQuery(q);
+        saveRecentSearch(q);
+
         // Check if there might be more results
         setHasMore({
           tracks: results.tracks.length === SEARCH_LIMIT,
@@ -146,19 +159,14 @@ export function SearchBar({
           artists: results.artists.length === SEARCH_LIMIT,
           playlists: results.playlists.length === SEARCH_LIMIT,
         });
-        
+
         // Auto-select first tab with results
         if (results.tracks.length > 0) setActiveTab("tracks");
         else if (results.albums.length > 0) setActiveTab("albums");
         else if (results.artists.length > 0) setActiveTab("artists");
         else if (results.playlists.length > 0) setActiveTab("playlists");
       } catch (error) {
-        console.error("Search failed:", error);
-        // In Wails WebView, some errors stringify poorly. Log a more useful version.
-        if (error instanceof Error) {
-          console.error("Search failed message:", error.message);
-          console.error("Search failed stack:", error.stack);
-        }
+        logger.exception(error, `search failed: ${q}`, "api");
         setSearchResults(null);
       } finally {
         setIsSearching(false);

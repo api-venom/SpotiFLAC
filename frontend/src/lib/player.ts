@@ -1,4 +1,5 @@
 import { GetStreamURL } from "../../wailsjs/go/main/App";
+import { logger } from "@/lib/logger";
 
 export type PlayerTrack = {
   spotifyId: string;
@@ -83,26 +84,47 @@ class PlayerService {
     this.state.current = track;
     this.emit();
 
-    const url = await GetStreamURL({
-      spotify_id: track.spotifyId,
-      isrc: track.isrc || "",
-      track_name: track.title,
-      artist_name: track.artist,
-      album_name: track.album || "",
-      audio_format: opts?.audioFormat || "LOSSLESS",
-      download_dir: opts?.downloadDir || "",
-    } as any);
+    logger.info(`play: ${track.title} - ${track.artist}`, "player");
+    logger.debug(`spotifyId=${track.spotifyId} isrc=${track.isrc || ""}`, "player");
 
-    this.audio.src = url;
-    this.audio.currentTime = 0;
-    this.audio.volume = this.state.volume;
-    await this.audio.play();
+    try {
+      const url = await GetStreamURL({
+        spotify_id: track.spotifyId,
+        isrc: track.isrc || "",
+        track_name: track.title,
+        artist_name: track.artist,
+        album_name: track.album || "",
+        audio_format: opts?.audioFormat || "LOSSLESS",
+        download_dir: opts?.downloadDir || "",
+      } as any);
+
+      logger.success(`stream url: ${url}`, "player");
+
+      this.audio.src = url;
+      this.audio.currentTime = 0;
+      this.audio.volume = this.state.volume;
+
+      await this.audio.play();
+      logger.success("audio.play() ok", "player");
+    } catch (err) {
+      logger.exception(err, "playTrack failed", "player");
+      throw err;
+    }
   }
 
   async togglePlay() {
     if (!this.state.current) return;
-    if (this.audio.paused) await this.audio.play();
-    else this.audio.pause();
+    try {
+      if (this.audio.paused) {
+        await this.audio.play();
+        logger.debug("togglePlay -> play", "player");
+      } else {
+        this.audio.pause();
+        logger.debug("togglePlay -> pause", "player");
+      }
+    } catch (err) {
+      logger.exception(err, "togglePlay failed", "player");
+    }
   }
 
   seek(seconds: number) {

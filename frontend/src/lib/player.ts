@@ -31,6 +31,27 @@ class PlayerService {
     this.audio.preload = "auto";
     this.audio.crossOrigin = "anonymous";
 
+    // Helpful diagnostics for when the underlying WebView/audio pipeline can't decode the stream.
+    this.audio.addEventListener("error", () => {
+      const mediaError = this.audio.error;
+      const code = mediaError?.code ?? 0;
+      const msg =
+        code === 1
+          ? "MEDIA_ERR_ABORTED"
+          : code === 2
+            ? "MEDIA_ERR_NETWORK"
+            : code === 3
+              ? "MEDIA_ERR_DECODE"
+              : code === 4
+                ? "MEDIA_ERR_SRC_NOT_SUPPORTED"
+                : "MEDIA_ERR_UNKNOWN";
+
+      logger.error(
+        `audio error: code=${code} (${msg}) src=${this.audio.currentSrc || this.audio.src}`,
+        "player",
+      );
+    });
+
     this.state = {
       isPlaying: false,
       duration: 0,
@@ -99,6 +120,13 @@ class PlayerService {
       } as any);
 
       logger.success(`stream url: ${url}`, "player");
+
+      // Quick capability checks (most important for FLAC/hi-res).
+      // If the WebView can't decode the MIME/container, it will throw NotSupportedError.
+      const canOgg = this.audio.canPlayType('audio/ogg; codecs="vorbis"');
+      const canFlac = this.audio.canPlayType("audio/flac");
+      const canMp3 = this.audio.canPlayType("audio/mpeg");
+      logger.debug(`canPlayType: flac=${canFlac} mp3=${canMp3} ogg=${canOgg}`, "player");
 
       this.audio.src = url;
       this.audio.currentTime = 0;

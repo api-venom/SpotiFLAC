@@ -74,8 +74,9 @@ jobs:
           # Example names seen:
           # - mpv-x86_64-20251217-git-....7z
           # - mpv-x86_64-v3-20251217-git-....7z
+          # IMPORTANT: For embedding we need the *dev* artifact as it includes libmpv dll.
           $asset = $json.assets |
-            Where-Object { $_.name -match '^mpv-x86_64(-v3)?-.*\.(7z|zip)$' } |
+            Where-Object { $_.name -match '^mpv-dev-x86_64(-v3)?-.*\.(7z|zip)$' } |
             Select-Object -First 1
 
           if (-not $asset) {
@@ -108,11 +109,12 @@ jobs:
             & 7z x $archive -o"third_party/mpv" -y
           }
 
+          # This mpv build is a standalone player build and may NOT include libmpv dll.
+          # For embedding we need the *dev* build which ships libmpv-2.dll.
           $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll","libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
           if (-not $dll) {
-            Write-Host "Extracted mpv tree:"
-            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host
-            throw "mpv dll not found after extraction"
+            Write-Host "No libmpv dll found in this archive; switching asset selection to mpv-dev-x86_64 (libmpv)"
+            throw "libmpv dll missing"
           }
 
           "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

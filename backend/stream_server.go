@@ -267,10 +267,17 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 		return
 	}
 
+	// Force GET for upstream (audio elements will always GET, but some upstreams
+	// don’t like other verbs).
+	ureq.Method = http.MethodGet
+
 	// Forward Range for seek.
 	if rg := r.Header.Get("Range"); rg != "" {
 		ureq.Header.Set("Range", rg)
 	}
+
+	// Some CDNs require a fairly normal accept header.
+	ureq.Header.Set("Accept", "*/*")
 	ureq.Header.Set("User-Agent", "SpotiFLAC-StreamProxy/1.0")
 
 	client := &http.Client{Timeout: 0}
@@ -300,6 +307,13 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 	}
 
 	w.Header().Set("Cache-Control", "no-store")
+
+	// If upstream is returning HTML, the browser audio element will reject it.
+	// Convert to a clear error here so the client sees a failure.
+	if strings.Contains(strings.ToLower(w.Header().Get("Content-Type")), "text/html") {
+		http.Error(w, "upstream returned html (not an audio stream)", http.StatusBadGateway)
+		return
+	}
 
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)

@@ -1214,10 +1214,8 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
+	// NOTE: User requirement: do not include market parameter here.
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist,playlist&limit=%d", encodedQuery, limit)
-	if m, ok := normalizeMarket(market); ok {
-		searchURL += "&market=" + url.QueryEscape(m)
-	}
 
 	response := &SearchResponse{
 		Tracks:    make([]SearchResult, 0),

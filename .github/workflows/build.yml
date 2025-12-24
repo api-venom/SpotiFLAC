@@ -71,8 +71,57 @@ jobs:
         run: |
           choco install upx -y
 
+      # Fetch mpv runtime for bundled hi-res FLAC playback.
+      # We download at build-time to avoid committing binaries.
+      - name: Download mpv runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
+
+          # shinchiro prebuilt (widely used). We take the latest release zip.
+          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $json = Invoke-RestMethod -Uri $releases
+          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.7z$" } | Select-Object -First 1
+          if (-not $asset) {
+            throw "Could not find mpv x86_64 7z asset in latest release"
+          }
+
+          $archive = "third_party/mpv/mpv.7z"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+
+          # 7zip is available on windows-latest runner.
+          & 7z x $archive -o"third_party/mpv" -y | Out-Null
+
+          # Find mpv-2.dll within extracted folder.
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Filter "mpv-2.dll" | Select-Object -First 1
+          if (-not $dll) {
+            throw "mpv-2.dll not found after extraction"
+          }
+
+          # Copy the dll + common deps into build/bin after build.
+          "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build application
         run: wails build -platform windows/amd64
+
+      - name: Bundle mpv runtime next to exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $bin = "build\\bin"
+          if (-not (Test-Path $bin)) { throw "Missing build/bin" }
+
+          Copy-Item -Path "$env:MPV_DLL_DIR\\mpv-2.dll" -Destination "$bin\\mpv-2.dll" -Force
+
+          # Best effort: also copy any dlls sitting next to mpv-2.dll.
+          Get-ChildItem -Path "$env:MPV_DLL_DIR" -Filter "*.dll" | ForEach-Object {
+            if ($_.Name -ne "mpv-2.dll") {
+              Copy-Item -Path $_.FullName -Destination "$bin\\$($_.Name)" -Force
+            }
+          }
 
       - name: Compress with UPX
         run: |
@@ -83,11 +132,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
 
+          # Also ship mpv dll(s) so the exe works on fresh machines.
+          Copy-Item -Path "build\bin\mpv-2.dll" -Destination "dist\mpv-2.dll" -Force
+          Get-ChildItem -Path "build\bin" -Filter "*.dll" | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination (Join-Path "dist" $_.Name) -Force
+          }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
-          path: dist/SpotiFLAC.exe
+          path: dist/
           retention-days: 7
 
   build-macos:

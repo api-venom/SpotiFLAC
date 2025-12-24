@@ -81,12 +81,21 @@ jobs:
           New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
           # Download mpv Windows build from SourceForge.
-          # IMPORTANT: SourceForge uses redirects and can return HTML if not followed.
-          # We use an explicit output that follows redirects.
-          $mpvUrl = "https://sourceforge.net/projects/mpv-player-windows/files/stable/mpv-x86_64.7z/download"
+          # IMPORTANT: Use the "download" endpoint which redirects to a real file.
+          # We avoid hardcoding the version by scraping the stable directory listing.
+          $stableListing = "https://sourceforge.net/projects/mpv-player-windows/files/stable/"
 
-          $asset = [PSCustomObject]@{ name = "mpv.7z"; browser_download_url = $mpvUrl }
-          $ext = "7z"
+          $html = & curl.exe -L --fail --retry 5 --retry-delay 2 $stableListing
+          $match = [regex]::Match($html, "href=\"(/projects/mpv-player-windows/files/stable/mpv-x86_64-[^\"]+?\.(7z|zip))/download\"")
+          if (-not $match.Success) {
+            throw "Could not locate mpv-x86_64 archive link on SourceForge stable page"
+          }
+
+          $mpvPath = $match.Groups[1].Value
+          $ext = $match.Groups[2].Value
+          $mpvUrl = "https://sourceforge.net$mpvPath/download"
+
+          $asset = [PSCustomObject]@{ name = "mpv.$ext"; browser_download_url = $mpvUrl }
 
           $archive = "third_party/mpv/mpv.$ext"
 
@@ -94,9 +103,10 @@ jobs:
           & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
 
           # Verify we didn't download HTML.
-          $head = Get-Content -Path $archive -Encoding Byte -TotalCount 16
-          $asText = -join ($head | ForEach-Object { [char]$_ })
-          if ($asText -match "<!DOCTYPE" -or $asText -match "<html") {
+          $bytes = [System.IO.File]::ReadAllBytes($archive)
+          $prefixLen = [Math]::Min(256, $bytes.Length)
+          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $prefixLen)
+          if ($prefix -match "<!DOCTYPE" -or $prefix -match "<html") {
             throw "Downloaded HTML instead of mpv archive (redirect/protection)."
           }
 

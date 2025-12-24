@@ -58,6 +58,57 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
+      # Fetch mpv runtime for bundled hi-res FLAC playback as early as possible
+      # so failures show up quickly in CI.
+      - name: Download mpv runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
+
+          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $json = Invoke-RestMethod -Uri $releases
+
+          $asset = $json.assets | Where-Object { $_.name -match "mpv-x86_64-.*\.(7z|zip)$" } | Select-Object -First 1
+          if (-not $asset) {
+            throw "Could not find a mpv-x86_64 archive asset in shinchiro/mpv-winbuild-cmake latest release"
+          }
+
+          $ext = if ($asset.name -match "\.zip$") { "zip" } else { "7z" }
+          $archive = "third_party/mpv/mpv.$ext"
+
+          Write-Host "Downloading mpv asset: $($asset.name)"
+          Write-Host "URL: $($asset.browser_download_url)"
+
+          & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
+
+          $bytes = [System.IO.File]::ReadAllBytes($archive)
+          $prefixLen = [Math]::Min(256, $bytes.Length)
+          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $prefixLen)
+          if ($prefix -match "<!DOCTYPE" -or $prefix -match "<html") {
+            throw "Downloaded HTML instead of mpv archive"
+          }
+
+          $sizeMB = [Math]::Round(($bytes.Length / 1MB), 2)
+          Write-Host "Downloaded mpv archive size: ${sizeMB}MB"
+
+          if ($ext -eq "zip") {
+            Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
+          } else {
+            & 7z x $archive -o"third_party/mpv" -y
+          }
+
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "mpv-2.dll","mpv-1.dll","libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
+          if (-not $dll) {
+            Write-Host "Extracted mpv tree:"
+            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host
+            throw "mpv dll not found after extraction"
+          }
+
+          "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
@@ -70,15 +121,6 @@ jobs:
       - name: Install UPX
         run: |
           choco install upx -y
-
-      # Fetch mpv runtime for bundled hi-res FLAC playback.
-      # We download at build-time to avoid committing binaries.
-      - name: Download mpv runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
           # Download mpv Windows build from SourceForge.
           # IMPORTANT: Use the "download" endpoint which redirects to a real file.
@@ -102,7 +144,11 @@ jobs:
 
           $archive = "third_party/mpv/mpv.$ext"
 
-          # Use curl.exe because it handles redirects more predictably on GitHub runners.
+          # Early visibility: log the URL before downloading.
+          Write-Host "Downloading mpv asset: $($asset.name)"
+          Write-Host "URL: $($asset.browser_download_url)"
+
+          # Use curl.exe for predictable redirects.
           & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
 
           # Verify we didn't download HTML.
@@ -110,8 +156,12 @@ jobs:
           $prefixLen = [Math]::Min(256, $bytes.Length)
           $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $prefixLen)
           if ($prefix -match "<!DOCTYPE" -or $prefix -match "<html") {
-            throw "Downloaded HTML instead of mpv archive (redirect/protection)."
+            throw "Downloaded HTML instead of mpv archive"
           }
+
+          # Extra hinting: show size.
+          $sizeMB = [Math]::Round(($bytes.Length / 1MB), 2)
+          Write-Host "Downloaded mpv archive size: ${sizeMB}MB"
 
           if ($ext -eq "zip") {
             Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force

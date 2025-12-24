@@ -140,7 +140,6 @@ export function FullScreenPlayer() {
           onOpenChange={setLyricsOpen}
           track={lyricsTrack}
           ensureLyricsFile={lyrics.ensureLyricsFile}
-          loadLyrics={lyrics.loadLyrics}
         />
       ) : null}
 

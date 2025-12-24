@@ -86,7 +86,10 @@ jobs:
           $stableListing = "https://sourceforge.net/projects/mpv-player-windows/files/stable/"
 
           $html = & curl.exe -L --fail --retry 5 --retry-delay 2 $stableListing
-          $match = [regex]::Match($html, "href=\"(/projects/mpv-player-windows/files/stable/mpv-x86_64-[^\"]+?\.(7z|zip))/download\"")
+
+          # Use a single-quoted regex to avoid PS string escaping issues.
+          $pattern = 'href="(/projects/mpv-player-windows/files/stable/mpv-x86_64-[^"]+\.(7z|zip))/download"'
+          $match = [regex]::Match($html, $pattern)
           if (-not $match.Success) {
             throw "Could not locate mpv-x86_64 archive link on SourceForge stable page"
           }

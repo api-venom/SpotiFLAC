@@ -178,6 +178,12 @@ func (s *StreamServer) putRemote(rawurl string) (string, error) {
 }
 
 func (s *StreamServer) handleStream(w http.ResponseWriter, r *http.Request) {
+	setStreamCORSHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// /stream/{token}
 	tok := strings.TrimPrefix(r.URL.Path, "/stream/")
 	if tok == "" {
@@ -212,6 +218,25 @@ func (s *StreamServer) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, "invalid stream source", http.StatusInternalServerError)
+}
+
+func setStreamCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	// The frontend uses HTMLAudioElement with crossOrigin="anonymous".
+	// When the app origin differs from the stream server origin, Chromium/WebView2
+	// requires CORS headers for media loads (otherwise it often surfaces as
+	// MEDIA_ERR_SRC_NOT_SUPPORTED).
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		// Ensure caches keep per-origin variants separate.
+		w.Header().Add("Vary", "Origin")
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Range")
+	w.Header().Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length, Content-Type")
 }
 
 func serveLocalFile(w http.ResponseWriter, r *http.Request, path string) {
@@ -296,8 +321,10 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 	}
 
 	// Fallback content-type if upstream didn't send it (helps HTMLAudio element).
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "audio/mpeg")
+	if ct := strings.TrimSpace(w.Header().Get("Content-Type")); ct == "" || strings.EqualFold(ct, "application/octet-stream") {
+		if inferred := contentTypeFromPath(up.Path); inferred != "" {
+			w.Header().Set("Content-Type", inferred)
+		}
 	}
 
 	// If upstream doesn't advertise ranges, still advertise to the client;
@@ -317,6 +344,25 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func contentTypeFromPath(p string) string {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".flac":
+		return "audio/flac"
+	case ".m4a":
+		return "audio/mp4"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".ogg":
+		return "audio/ogg"
+	case ".opus":
+		return "audio/opus"
+	default:
+		return ""
+	}
 }
 
 func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error) {

@@ -247,6 +247,8 @@ func serveLocalFile(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", st.Size()))
+	w.Header().Set("Cache-Control", "no-store")
 
 	http.ServeContent(w, r, filepath.Base(path), st.ModTime(), f)
 }
@@ -286,11 +288,18 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 		}
 	}
 
-	// If upstream doesn't advertise ranges, still advertise to the client; 
+	// Fallback content-type if upstream didn't send it (helps HTMLAudio element).
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "audio/mpeg")
+	}
+
+	// If upstream doesn't advertise ranges, still advertise to the client;
 	// some players will attempt Range anyway.
 	if w.Header().Get("Accept-Ranges") == "" {
 		w.Header().Set("Accept-Ranges", "bytes")
 	}
+
+	w.Header().Set("Cache-Control", "no-store")
 
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)

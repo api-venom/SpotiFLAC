@@ -140,7 +140,12 @@ export function SearchBar({
 
       const started = performance.now();
       try {
-        const results = await SearchSpotify({ query: q, limit: SEARCH_LIMIT, market });
+        const results = await SearchSpotify({
+          query: q,
+          limit: SEARCH_LIMIT,
+          market,
+          type: "track,album,artist,playlist",
+        } as any);
         const elapsed = ((performance.now() - started) / 1000).toFixed(2);
 
         logger.success(

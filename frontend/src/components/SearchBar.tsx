@@ -13,6 +13,7 @@ import type { HistoryItem } from "@/components/FetchHistory";
 import { SearchSpotify, SearchSpotifyByType } from "../../wailsjs/go/main/App";
 import { backend } from "../../wailsjs/go/models";
 import { cn } from "@/lib/utils";
+import { getAutoCountryCode } from "@/lib/country";
 
 type ResultTab = "tracks" | "albums" | "artists" | "playlists";
 
@@ -60,7 +61,20 @@ export function SearchBar({
     artists: false,
     playlists: false,
   });
+  const [market, setMarket] = useState<string>("US");
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Determine country for Spotify market (locale first, IP fallback)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cc = await getAutoCountryCode();
+      if (!cancelled) setMarket(cc);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -120,7 +134,7 @@ export function SearchBar({
     searchTimeoutRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const results = await SearchSpotify({ query: searchQuery, limit: SEARCH_LIMIT });
+        const results = await SearchSpotify({ query: searchQuery, limit: SEARCH_LIMIT, market });
         setSearchResults(results);
         setLastSearchedQuery(searchQuery.trim());
         saveRecentSearch(searchQuery.trim());
@@ -151,7 +165,7 @@ export function SearchBar({
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, searchMode, lastSearchedQuery]);
+  }, [searchQuery, searchMode, lastSearchedQuery, market]);
 
   const handleLoadMore = async () => {
     if (!searchResults || !lastSearchedQuery || isLoadingMore) return;
@@ -172,6 +186,7 @@ export function SearchBar({
         search_type: typeMap[activeTab],
         limit: SEARCH_LIMIT,
         offset: currentCount,
+        market,
       });
 
       if (moreResults.length > 0) {

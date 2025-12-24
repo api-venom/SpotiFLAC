@@ -13,6 +13,7 @@ export function useLyrics() {
   const [skippedLyrics, setSkippedLyrics] = useState<Set<string>>(new Set());
   const [isBulkDownloadingLyrics, setIsBulkDownloadingLyrics] = useState(false);
   const [lyricsDownloadProgress, setLyricsDownloadProgress] = useState(0);
+  const [lyricsFiles, setLyricsFiles] = useState<Record<string, string>>({});
   const stopBulkDownloadRef = useRef(false);
 
   const handleDownloadLyrics = async (
@@ -86,6 +87,9 @@ export function useLyrics() {
       });
 
       if (response.success) {
+        if (response.file) {
+          setLyricsFiles((prev) => ({ ...prev, [spotifyId]: response.file! }));
+        }
         if (response.already_exists) {
           toast.info("Lyrics file already exists");
           setSkippedLyrics((prev) => new Set(prev).add(spotifyId));
@@ -108,6 +112,13 @@ export function useLyrics() {
     } finally {
       setDownloadingLyricsTrack(null);
     }
+  };
+
+  const ensureLyricsFile = async (spotifyId: string): Promise<string | null> => {
+    if (!spotifyId) return null;
+    const existing = lyricsFiles[spotifyId];
+    if (existing) return existing;
+    return null;
   };
 
   const handleDownloadAllLyrics = async (
@@ -240,9 +251,13 @@ export function useLyrics() {
   };
 
   const resetLyricsState = () => {
+    setDownloadingLyricsTrack(null);
     setDownloadedLyrics(new Set());
     setFailedLyrics(new Set());
     setSkippedLyrics(new Set());
+    setIsBulkDownloadingLyrics(false);
+    setLyricsDownloadProgress(0);
+    setLyricsFiles({});
   };
 
   return {
@@ -256,5 +271,6 @@ export function useLyrics() {
     handleDownloadAllLyrics,
     handleStopLyricsDownload,
     resetLyricsState,
+    ensureLyricsFile,
   };
 }

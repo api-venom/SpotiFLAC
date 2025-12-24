@@ -32,6 +32,9 @@ import { AudioConverterPage } from "@/components/AudioConverterPage";
 import { FileManagerPage } from "@/components/FileManagerPage";
 import { SettingsPage } from "@/components/SettingsPage";
 import { DebugLoggerPage } from "@/components/DebugLoggerPage";
+import { AmbientBackground } from "@/components/AmbientBackground";
+import { LyricsOverlay, type LyricsOverlayTrack } from "@/components/LyricsOverlay";
+import { FullScreenPlayer } from "@/components/FullScreenPlayer";
 import type { HistoryItem } from "@/components/FetchHistory";
 
 // Hooks
@@ -57,6 +60,8 @@ function App() {
   const [fetchHistory, setFetchHistory] = useState<HistoryItem[]>([]);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [lyricsOverlayOpen, setLyricsOverlayOpen] = useState(false);
+  const [lyricsOverlayTrack, setLyricsOverlayTrack] = useState<LyricsOverlayTrack | null>(null);
 
   const ITEMS_PER_PAGE = 50;
   const CURRENT_VERSION = "7.0";
@@ -67,6 +72,12 @@ function App() {
   const cover = useCover();
   const availability = useAvailability();
   const downloadQueue = useDownloadQueueDialog();
+
+  const openLyricsOverlay = (name: string, artists: string, spotifyId?: string) => {
+    if (!spotifyId) return;
+    setLyricsOverlayTrack({ spotify_id: spotifyId, name, artists });
+    setLyricsOverlayOpen(true);
+  };
 
 
   useEffect(() => {
@@ -259,6 +270,32 @@ function App() {
     );
   };
 
+  const ensureLyricsFile = async (spotifyId: string) => {
+    const existing = await lyrics.ensureLyricsFile(spotifyId);
+    if (existing) return existing;
+
+    const meta = metadata.metadata;
+    if (!meta) return null;
+
+    // If the overlay was opened from the Track view, try using that track's metadata
+    if ("track" in meta && meta.track.spotify_id === spotifyId) {
+      await lyrics.handleDownloadLyrics(
+        spotifyId,
+        meta.track.name,
+        meta.track.artists,
+        meta.track.album_name,
+        undefined,
+        undefined,
+        meta.track.album_artist,
+        meta.track.release_date,
+        meta.track.disc_number
+      );
+      return await lyrics.ensureLyricsFile(spotifyId);
+    }
+
+    return null;
+  };
+
   const toggleSelectAll = (tracks: any[]) => {
     const tracksWithIsrc = tracks.filter((track) => track.isrc).map((track) => track.isrc);
     if (selectedTracks.length === tracksWithIsrc.length) {
@@ -311,6 +348,7 @@ function App() {
           onDownloadLyrics={(spotifyId, name, artists, albumName, albumArtist, releaseDate, discNumber) =>
             lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, undefined, undefined, albumArtist, releaseDate, discNumber)
           }
+          onViewLyrics={(name, artists, spotifyId) => openLyricsOverlay(name, artists, spotifyId)}
           onCheckAvailability={availability.checkAvailability}
           onDownloadCover={(coverUrl, trackName, artistName, albumName, _playlistName, _position, trackId, albumArtist, releaseDate, discNumber) =>
             cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, undefined, undefined, trackId, albumArtist, releaseDate, discNumber)
@@ -682,6 +720,7 @@ function App() {
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background flex flex-col">
+        <AmbientBackground />
         <TitleBar />
         <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
         
@@ -700,6 +739,15 @@ function App() {
           isOpen={downloadQueue.isOpen}
           onClose={downloadQueue.closeQueue}
         />
+
+        <LyricsOverlay
+          open={lyricsOverlayOpen}
+          onOpenChange={setLyricsOverlayOpen}
+          track={lyricsOverlayTrack}
+          ensureLyricsFile={ensureLyricsFile}
+        />
+
+        <FullScreenPlayer />
 
         {/* Jump to Top Button - Bottom Right */}
         {showScrollTop && (

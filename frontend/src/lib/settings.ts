@@ -104,8 +104,8 @@ export const DEFAULT_SETTINGS: Settings = {
   embedLyrics: false,
   embedMaxQualityCover: false,
   operatingSystem: detectOS(),
-  tidalQuality: "LOSSLESS", // Default: 16-bit lossless
-  qobuzQuality: "6" // Default: FLAC 16-bit
+  tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit
+  qobuzQuality: "7" // Default: FLAC 24-bit
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [
@@ -192,10 +192,10 @@ export function getSettings(): Settings {
       parsed.operatingSystem = detectOS();
       // Set default quality if not present
       if (!('tidalQuality' in parsed)) {
-        parsed.tidalQuality = "LOSSLESS";
+        parsed.tidalQuality = "HI_RES_LOSSLESS";
       }
       if (!('qobuzQuality' in parsed)) {
-        parsed.qobuzQuality = "6";
+        parsed.qobuzQuality = "7";
       }
       return { ...DEFAULT_SETTINGS, ...parsed };
     }

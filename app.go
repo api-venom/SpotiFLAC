@@ -15,6 +15,9 @@ import (
 // App struct
 type App struct {
 	ctx context.Context
+
+	// local stream server (for playback)
+	stream *backend.StreamServer
 }
 
 // NewApp creates a new App application struct
@@ -26,6 +29,11 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Start local HTTP stream proxy server (used by the frontend <audio> element)
+	// It binds to 127.0.0.1 on an ephemeral port and supports range requests for seeking.
+	a.stream = backend.NewStreamServer()
+	a.stream.Start()
 }
 
 // SpotifyMetadataRequest represents the request structure for fetching Spotify metadata
@@ -127,8 +135,9 @@ func (a *App) GetSpotifyMetadata(req SpotifyMetadataRequest) (string, error) {
 
 // SpotifySearchRequest represents the request structure for searching Spotify
 type SpotifySearchRequest struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
+	Query  string `json:"query"`
+	Limit  int    `json:"limit"`
+	Market string `json:"market,omitempty"`
 }
 
 // SearchSpotify searches for tracks, albums, artists, and playlists on Spotify
@@ -144,7 +153,7 @@ func (a *App) SearchSpotify(req SpotifySearchRequest) (*backend.SearchResponse, 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return backend.SearchSpotify(ctx, req.Query, req.Limit)
+	return backend.SearchSpotify(ctx, req.Query, req.Limit, req.Market)
 }
 
 // SpotifySearchByTypeRequest represents the request for searching by specific type with offset
@@ -153,6 +162,7 @@ type SpotifySearchByTypeRequest struct {
 	SearchType string `json:"search_type"` // track, album, artist, playlist
 	Limit      int    `json:"limit"`
 	Offset     int    `json:"offset"`
+	Market     string `json:"market,omitempty"`
 }
 
 // SearchSpotifyByType searches for a specific type with offset support for pagination
@@ -172,7 +182,7 @@ func (a *App) SearchSpotifyByType(req SpotifySearchByTypeRequest) ([]backend.Sea
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return backend.SearchSpotifyByType(ctx, req.Query, req.SearchType, req.Limit, req.Offset)
+	return backend.SearchSpotifyByType(ctx, req.Query, req.SearchType, req.Limit, req.Offset, req.Market)
 }
 
 // DownloadTrack downloads a track by ISRC
@@ -500,7 +510,9 @@ func (a *App) CancelAllQueuedItems() {
 
 // Quit closes the application
 func (a *App) Quit() {
-	// You can add cleanup logic here if needed
+	if a.stream != nil {
+		a.stream.Stop()
+	}
 	panic("quit") // This will trigger Wails to close the app
 }
 
@@ -670,6 +682,27 @@ func (a *App) CheckTrackAvailability(spotifyTrackID string, isrc string) (string
 	return string(jsonData), nil
 }
 
+// StreamRequest defines the input for starting/returning a stream URL.
+type StreamRequest struct {
+	SpotifyID   string `json:"spotify_id"`
+	ISRC        string `json:"isrc"`
+	TrackName   string `json:"track_name"`
+	ArtistName  string `json:"artist_name"`
+	AlbumName   string `json:"album_name"`
+	AudioFormat string `json:"audio_format"`
+	DownloadDir string `json:"download_dir"`
+}
+
+// GetStreamURL returns a local stream URL for playback.
+// It prefers an already-downloaded local file (by ISRC in the download folder)
+// and otherwise proxies the best remote provider URL.
+func (a *App) GetStreamURL(req StreamRequest) (string, error) {
+	if a.stream == nil {
+		return "", fmt.Errorf("stream server not started")
+	}
+	return a.stream.GetStreamURL(req.SpotifyID, req.ISRC, req.TrackName, req.ArtistName, req.AlbumName, req.AudioFormat, req.DownloadDir)
+}
+
 // IsFFmpegInstalled checks if ffmpeg is installed
 func (a *App) IsFFmpegInstalled() (bool, error) {
 	return backend.IsFFmpegInstalled()
@@ -803,7 +836,7 @@ func (a *App) ReadImageAsBase64(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	ext := strings.ToLower(filepath.Ext(filePath))
 	var mimeType string
 	switch ext {
@@ -818,7 +851,7 @@ func (a *App) ReadImageAsBase64(filePath string) (string, error) {
 	default:
 		mimeType = "image/jpeg"
 	}
-	
+
 	encoded := base64.StdEncoding.EncodeToString(content)
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
 }

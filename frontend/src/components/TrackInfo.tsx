@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe, ImageDown } from "lucide-react";
+import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe, ImageDown, Play } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { player } from "@/lib/player";
 import {
   Tooltip,
   TooltipContent,
@@ -29,6 +30,7 @@ interface TrackInfoProps {
   skippedCover?: boolean;
   onDownload: (isrc: string, name: string, artists: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
   onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
+  onViewLyrics?: (name: string, artists: string, spotifyId?: string) => void;
   onCheckAvailability?: (spotifyId: string, isrc?: string) => void;
   onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName?: string, playlistName?: string, position?: number, trackId?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
   onOpenFolder: () => void;
@@ -53,6 +55,7 @@ export function TrackInfo({
   skippedCover,
   onDownload,
   onDownloadLyrics,
+  onViewLyrics,
   onCheckAvailability,
   onDownloadCover,
   onOpenFolder,
@@ -96,6 +99,26 @@ export function TrackInfo({
             </div>
             {track.isrc && (
               <div className="flex gap-2 flex-wrap">
+                {track.spotify_id && (
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      await player.playTrack({
+                        spotifyId: track.spotify_id!,
+                        isrc: track.isrc,
+                        title: track.name,
+                        artist: track.artists,
+                        album: track.album_name,
+                        coverUrl: track.images,
+                      });
+                      player.setFullscreen(true);
+                    }}
+                  >
+                    <Play className="h-4 w-4" />
+                    Play
+                  </Button>
+                )}
+
                 <Button
                   onClick={() => onDownload(track.isrc, track.name, track.artists, track.album_name, track.spotify_id, undefined, track.duration_ms, track.track_number, track.album_artist, track.release_date, track.images, track.track_number, track.disc_number, track.total_tracks)}
                   disabled={isDownloading || downloadingTrack === track.isrc}
@@ -132,6 +155,22 @@ export function TrackInfo({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Download Lyric</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {track.spotify_id && onViewLyrics && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => onViewLyrics(track.name, track.artists, track.spotify_id)}
+                        variant="outline"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>View Lyrics</p>
                     </TooltipContent>
                   </Tooltip>
                 )}

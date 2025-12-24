@@ -1094,7 +1094,6 @@ func maxInt(a, b int) int {
 	return b
 }
 
-
 // SearchResult represents a single search result item
 type SearchResult struct {
 	ID          string `json:"id"`
@@ -1184,8 +1183,22 @@ type searchPlaylistsResponse struct {
 	} `json:"playlists"`
 }
 
+func normalizeMarket(market string) (string, bool) {
+	market = strings.TrimSpace(market)
+	if len(market) != 2 {
+		return "", false
+	}
+	market = strings.ToUpper(market)
+	for _, r := range market {
+		if r < 'A' || r > 'Z' {
+			return "", false
+		}
+	}
+	return market, true
+}
+
 // Search performs a search on Spotify and returns results for tracks, albums, artists, and playlists
-func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit int) (*SearchResponse, error) {
+func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit int, market string) (*SearchResponse, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
 	}
@@ -1202,6 +1215,9 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist,playlist&limit=%d", encodedQuery, limit)
+	if m, ok := normalizeMarket(market); ok {
+		searchURL += "&market=" + url.QueryEscape(m)
+	}
 
 	response := &SearchResponse{
 		Tracks:    make([]SearchResult, 0),
@@ -1281,13 +1297,13 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 }
 
 // SearchSpotify is a convenience wrapper for the Search method
-func SearchSpotify(ctx context.Context, query string, limit int) (*SearchResponse, error) {
+func SearchSpotify(ctx context.Context, query string, limit int, market string) (*SearchResponse, error) {
 	client := NewSpotifyMetadataClient()
-	return client.Search(ctx, query, limit)
+	return client.Search(ctx, query, limit, market)
 }
 
 // SearchByType searches for a specific type (track, album, artist, playlist) with offset support
-func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
+func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, searchType string, limit int, offset int, market string) ([]SearchResult, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
 	}
@@ -1307,6 +1323,9 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=%s&limit=%d&offset=%d", encodedQuery, searchType, limit, offset)
+	if m, ok := normalizeMarket(market); ok {
+		searchURL += "&market=" + url.QueryEscape(m)
+	}
 
 	results := make([]SearchResult, 0)
 
@@ -1384,7 +1403,7 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 }
 
 // SearchSpotifyByType is a convenience wrapper for SearchByType
-func SearchSpotifyByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
+func SearchSpotifyByType(ctx context.Context, query string, searchType string, limit int, offset int, market string) ([]SearchResult, error) {
 	client := NewSpotifyMetadataClient()
-	return client.SearchByType(ctx, query, searchType, limit, offset)
+	return client.SearchByType(ctx, query, searchType, limit, offset, market)
 }

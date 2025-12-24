@@ -23,7 +23,7 @@ interface SidebarProps {
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   return (
-    <div className="fixed left-0 top-0 h-full w-14 bg-card border-r border-border flex flex-col items-center py-14 z-30">
+    <div className="fixed left-0 top-0 h-full w-14 bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border-r border-border/60 flex flex-col items-center py-14 z-30">
       <div className="flex flex-col gap-2 flex-1">
         {/* Home */}
         <Tooltip delayDuration={0}>

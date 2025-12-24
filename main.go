@@ -10,6 +10,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
+// Windows-only single-exe embedding:
+// CI stages mpv DLLs into runtime/mpv/*.dll (not committed), then we embed them.
+//go:embed all:runtime/mpv
+var mpvRuntime embed.FS
+
 //go:embed all:frontend/dist
 var assets embed.FS
 

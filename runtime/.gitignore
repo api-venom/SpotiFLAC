@@ -1,0 +1,5 @@
+# Runtime-staged native dependencies.
+# In CI we populate runtime/mpv/* and embed it into the exe.
+# Keep the folder itself so `//go:embed` has a stable path.
+*
+!.gitignore

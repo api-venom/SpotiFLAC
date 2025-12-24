@@ -122,6 +122,26 @@ jobs:
           "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # Stage mpv runtime into a deterministic folder so we can `//go:embed` it into a single exe.
+      - name: Stage mpv runtime for embedding
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $dst = "runtime\\mpv"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+
+          # Copy ALL DLLs next to libmpv (safest for fresh machines)
+          Get-ChildItem -Path "$env:MPV_DLL_DIR" -Filter "*.dll" -File | ForEach-Object {
+            Copy-Item -Force -Path $_.FullName -Destination (Join-Path $dst $_.Name)
+          }
+
+          # Also keep the main libmpv dll explicitly (some archives have it in a different subfolder)
+          Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path $dst (Split-Path -Leaf $env:MPV_DLL_PATH))
+
+          Write-Host "Staged mpv runtime files:"
+          Get-ChildItem -Path $dst | Select-Object Name,Length | Format-Table -AutoSize
+
       - name: Build application
         run: wails build -platform windows/amd64
 

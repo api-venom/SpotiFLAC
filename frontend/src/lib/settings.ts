@@ -1,4 +1,4 @@
-import { GetDefaults } from "wailsjs/go/main/App";
+import { GetDefaults } from "../../wailsjs/go/main/App";
 
 export type FontFamily = "google-sans" | "inter" | "poppins" | "roboto" | "dm-sans" | "plus-jakarta-sans" | "manrope" | "space-grotesk" | "noto-sans" | "nunito-sans" | "figtree" | "raleway" | "public-sans" | "outfit" | "jetbrains-mono" | "geist-sans";
 
@@ -27,23 +27,10 @@ export interface Settings {
   sfxEnabled: boolean;
   embedLyrics: boolean;
   embedMaxQualityCover: boolean;
-  // When enabled, the app writes partial downloads to a temporary filename (e.g. .m4a.tmp)
-  // and renames/cleans up after success. Disabling makes the intermediate file use .m4a directly.
-  useTempDownloadExtension: boolean;
   operatingSystem: "Windows" | "linux/MacOS";
-  // Global quality preference (mapped per service). Default: 24-bit.
-  // "auto" means use per-service quality selectors / service defaults.
-  audioBitDepth: "auto" | "16" | "24" | "32";
   // Quality settings for specific sources
   tidalQuality: "LOSSLESS" | "HI_RES_LOSSLESS";
   qobuzQuality: "6" | "7" | "27";
-
-  // Optional: use official Spotify OAuth (PKCE loopback) for more stable metadata requests.
-  // The access/refresh tokens are stored on the backend; frontend only stores the Client ID.
-  spotifyOAuthClientId: string;
-
-  // Experimental: enable Odyssey Spatial Comms processing (applies on next track).
-  odysseySpatialCommsEnabled: boolean;
 }
 
 // Folder preset templates
@@ -116,22 +103,16 @@ export const DEFAULT_SETTINGS: Settings = {
   sfxEnabled: true,
   embedLyrics: false,
   embedMaxQualityCover: false,
-  useTempDownloadExtension: true,
   operatingSystem: detectOS(),
-  audioBitDepth: "24",
-  tidalQuality: "HI_RES_LOSSLESS", // Default: 24-bit lossless
-  qobuzQuality: "7", // Default: FLAC 24-bit
-
-  spotifyOAuthClientId: "8894061c83eb48bbb595aaa3f3c11491",
-
-  odysseySpatialCommsEnabled: false,
+  tidalQuality: "LOSSLESS", // Default: 16-bit lossless
+  qobuzQuality: "6" // Default: FLAC 16-bit
 };
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; fontFamily: string }[] = [
   { value: "dm-sans", label: "DM Sans", fontFamily: '"DM Sans", system-ui, sans-serif' },
   { value: "figtree", label: "Figtree", fontFamily: '"Figtree", system-ui, sans-serif' },
   { value: "geist-sans", label: "Geist Sans", fontFamily: '"Geist", system-ui, sans-serif' },
-  { value: "google-sans", label: "Google Sans Flex", fontFamily: '"Google Sans Flex", system-ui, sans-serif' },
+  { value: "google-sans", label: "Google Sans", fontFamily: '"Google Sans", system-ui, sans-serif' },
   { value: "inter", label: "Inter", fontFamily: '"Inter", system-ui, sans-serif' },
   { value: "jetbrains-mono", label: "JetBrains Mono", fontFamily: '"JetBrains Mono", ui-monospace, monospace' },
   { value: "manrope", label: "Manrope", fontFamily: '"Manrope", system-ui, sans-serif' },
@@ -209,41 +190,12 @@ export function getSettings(): Settings {
       }
       // Always use detected OS (don't persist it)
       parsed.operatingSystem = detectOS();
-
-      // Use temporary extension for partial downloads (default true)
-      if (!('useTempDownloadExtension' in parsed)) {
-        parsed.useTempDownloadExtension = true;
-      }
-
-      // Global audio bit depth (default 24-bit)
-      if (!('audioBitDepth' in parsed)) {
-        parsed.audioBitDepth = "24";
-      }
-      // Normalize legacy values if someone manually edited settings
-      if (parsed.audioBitDepth !== "auto" && parsed.audioBitDepth !== "16" && parsed.audioBitDepth !== "24" && parsed.audioBitDepth !== "32") {
-        parsed.audioBitDepth = "24";
-      }
-
       // Set default quality if not present
       if (!('tidalQuality' in parsed)) {
-        parsed.tidalQuality = "HI_RES_LOSSLESS";
+        parsed.tidalQuality = "LOSSLESS";
       }
       if (!('qobuzQuality' in parsed)) {
-        parsed.qobuzQuality = "7";
-      }
-
-	  if (!('spotifyOAuthClientId' in parsed)) {
-		parsed.spotifyOAuthClientId = DEFAULT_SETTINGS.spotifyOAuthClientId;
-	  }
-
-      // If the stored value is blank/invalid, fall back to built-in client id.
-      if (typeof parsed.spotifyOAuthClientId !== "string" || parsed.spotifyOAuthClientId.trim() === "") {
-        parsed.spotifyOAuthClientId = DEFAULT_SETTINGS.spotifyOAuthClientId;
-      }
-
-      // Odyssey spatial toggle (default false)
-      if (!("odysseySpatialCommsEnabled" in parsed)) {
-        parsed.odysseySpatialCommsEnabled = false;
+        parsed.qobuzQuality = "6";
       }
       return { ...DEFAULT_SETTINGS, ...parsed };
     }

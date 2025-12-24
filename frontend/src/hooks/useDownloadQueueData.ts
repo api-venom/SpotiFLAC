@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { GetDownloadQueue } from "wailsjs/go/main/App";
-import { backend } from "wailsjs/go/models";
+import { GetDownloadQueue } from "../../wailsjs/go/main/App";
+import { backend } from "../../wailsjs/go/models";
 
 export function useDownloadQueueData() {
   const [queueInfo, setQueueInfo] = useState<backend.DownloadQueueInfo>(

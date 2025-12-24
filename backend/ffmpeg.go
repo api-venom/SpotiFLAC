@@ -54,18 +54,7 @@ func GetFFmpegPath() (string, error) {
 		ffmpegName = "ffmpeg.exe"
 	}
 
-	appPath := filepath.Join(ffmpegDir, ffmpegName)
-	if _, err := os.Stat(appPath); err == nil {
-		return appPath, nil
-	}
-
-	// Fallback: if ffmpeg exists in PATH, use it.
-	if pathFFmpeg, err := exec.LookPath("ffmpeg"); err == nil {
-		return pathFFmpeg, nil
-	}
-
-	// Default to expected app directory location.
-	return appPath, nil
+	return filepath.Join(ffmpegDir, ffmpegName), nil
 }
 
 // GetFFprobePath returns the full path to the ffprobe executable in app directory
@@ -80,17 +69,12 @@ func GetFFprobePath() (string, error) {
 		ffprobeName = "ffprobe.exe"
 	}
 
-	appPath := filepath.Join(ffmpegDir, ffprobeName)
-	if _, err := os.Stat(appPath); err == nil {
-		return appPath, nil
+	ffprobePath := filepath.Join(ffmpegDir, ffprobeName)
+	if _, err := os.Stat(ffprobePath); err == nil {
+		return ffprobePath, nil
 	}
 
-	// Fallback: if ffprobe exists in PATH, use it.
-	if pathFFprobe, err := exec.LookPath("ffprobe"); err == nil {
-		return pathFFprobe, nil
-	}
-
-	return "", fmt.Errorf("ffprobe not found")
+	return "", fmt.Errorf("ffprobe not found in app directory")
 }
 
 // IsFFprobeInstalled checks if ffprobe is installed in the app directory
@@ -113,7 +97,16 @@ func IsFFmpegInstalled() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// Verify it's executable (works for both app-dir and PATH-resolved binaries)
+
+	_, err = os.Stat(ffmpegPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	// Verify it's executable
 	cmd := exec.Command(ffmpegPath, "-version")
 	// Hide console window on Windows
 	setHideWindow(cmd)

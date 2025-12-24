@@ -4,6 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { openExternal } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/relative-time";
 
 interface HeaderProps {
@@ -33,9 +34,13 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge variant="default" asChild>
-                  <span className="cursor-default">
+                  <button
+                    type="button"
+                    onClick={() => openExternal("https://github.com/afkarxyz/SpotiFLAC/releases")}
+                    className="cursor-pointer hover:opacity-80 transition-opacity"
+                  >
                     v{version}
-                  </span>
+                  </button>
                 </Badge>
               </TooltipTrigger>
               {hasUpdate && releaseDate && (

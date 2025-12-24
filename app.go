@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,8 +10,6 @@ import (
 	"spotiflac/backend"
 	"strings"
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -51,7 +50,6 @@ type DownloadRequest struct {
 	ApiURL               string `json:"api_url,omitempty"`
 	OutputDir            string `json:"output_dir,omitempty"`
 	AudioFormat          string `json:"audio_format,omitempty"`
-	PreferredBitDepth    int    `json:"preferred_bit_depth,omitempty"` // If set, overrides AudioFormat with the closest available quality per service
 	FilenameFormat       string `json:"filename_format,omitempty"`
 	TrackNumber          bool   `json:"track_number,omitempty"`
 	Position             int    `json:"position,omitempty"`                // Position in playlist/album (1-based)
@@ -59,7 +57,6 @@ type DownloadRequest struct {
 	SpotifyID            string `json:"spotify_id,omitempty"`              // Spotify track ID
 	EmbedLyrics          bool   `json:"embed_lyrics,omitempty"`            // Whether to embed lyrics into the audio file
 	EmbedMaxQualityCover bool   `json:"embed_max_quality_cover,omitempty"` // Whether to embed max quality cover art
-	UseTempExtension     *bool  `json:"use_temp_extension,omitempty"`      // Whether to use a .tmp extension for partial downloads (default true)
 	ServiceURL           string `json:"service_url,omitempty"`             // Direct service URL (Tidal/Deezer/Amazon) to skip song.link API call
 	Duration             int    `json:"duration,omitempty"`                // Track duration in seconds for better matching
 	ItemID               string `json:"item_id,omitempty"`                 // Optional queue item ID for multi-service fallback tracking
@@ -128,31 +125,54 @@ func (a *App) GetSpotifyMetadata(req SpotifyMetadataRequest) (string, error) {
 	return string(jsonData), nil
 }
 
-// BeginSpotifyOAuthLogin starts a browser-based Spotify login (OAuth PKCE loopback).
-// This is a safe alternative to cookie extraction and improves rate-limit stability.
-func (a *App) BeginSpotifyOAuthLogin(clientID string) (string, error) {
-	url, err := backend.BeginSpotifyOAuthLogin(a.ctx, clientID)
-	if err != nil {
-		return "", err
-	}
-	// Open in user's default browser.
-	runtime.BrowserOpenURL(a.ctx, url)
-	return url, nil
+// SpotifySearchRequest represents the request structure for searching Spotify
+type SpotifySearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
 }
 
-// GetSpotifyOAuthStatus returns current OAuth login status as JSON.
-func (a *App) GetSpotifyOAuthStatus() (string, error) {
-	status := backend.GetSpotifyOAuthStatus()
-	b, err := json.Marshal(status)
-	if err != nil {
-		return "", err
+// SearchSpotify searches for tracks, albums, artists, and playlists on Spotify
+func (a *App) SearchSpotify(req SpotifySearchRequest) (*backend.SearchResponse, error) {
+	if req.Query == "" {
+		return nil, fmt.Errorf("search query is required")
 	}
-	return string(b), nil
+
+	if req.Limit <= 0 {
+		req.Limit = 10
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return backend.SearchSpotify(ctx, req.Query, req.Limit)
 }
 
-// LogoutSpotifyOAuth clears stored Spotify OAuth tokens.
-func (a *App) LogoutSpotifyOAuth() error {
-	return backend.ClearSpotifyOAuthTokens()
+// SpotifySearchByTypeRequest represents the request for searching by specific type with offset
+type SpotifySearchByTypeRequest struct {
+	Query      string `json:"query"`
+	SearchType string `json:"search_type"` // track, album, artist, playlist
+	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
+}
+
+// SearchSpotifyByType searches for a specific type with offset support for pagination
+func (a *App) SearchSpotifyByType(req SpotifySearchByTypeRequest) ([]backend.SearchResult, error) {
+	if req.Query == "" {
+		return nil, fmt.Errorf("search query is required")
+	}
+
+	if req.SearchType == "" {
+		return nil, fmt.Errorf("search type is required")
+	}
+
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return backend.SearchSpotifyByType(ctx, req.Query, req.SearchType, req.Limit, req.Offset)
 }
 
 // DownloadTrack downloads a track by ISRC
@@ -177,30 +197,6 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 
 	if req.AudioFormat == "" {
 		req.AudioFormat = "LOSSLESS"
-	}
-
-	// Resolve a single cross-platform "preferred bit depth" into each service's quality selector.
-	// - Tidal: LOSSLESS (16-bit) or HI_RES_LOSSLESS (24-bit)
-	// - Qobuz: 6 (16-bit FLAC), 7 (24-bit FLAC), 27 (Hi-Res)
-	// Other services: ignored (we cannot reliably request bit depth)
-	resolvedAudioFormat := req.AudioFormat
-	if req.PreferredBitDepth != 0 {
-		switch req.Service {
-		case "tidal":
-			if req.PreferredBitDepth >= 24 {
-				resolvedAudioFormat = "HI_RES_LOSSLESS"
-			} else {
-				resolvedAudioFormat = "LOSSLESS"
-			}
-		case "qobuz":
-			if req.PreferredBitDepth >= 32 {
-				resolvedAudioFormat = "27"
-			} else if req.PreferredBitDepth >= 24 {
-				resolvedAudioFormat = "7"
-			} else {
-				resolvedAudioFormat = "6"
-			}
-		}
 	}
 
 	var err error
@@ -240,7 +236,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 
 	// Fallback: if we have track metadata, check if file already exists by filename
 	if req.TrackName != "" && req.ArtistName != "" {
-		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.FilenameFormat, req.TrackNumber, req.Position, req.UseAlbumTrackNumber)
+		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.FilenameFormat, req.TrackNumber, req.Position, req.SpotifyDiscNumber, req.UseAlbumTrackNumber)
 		expectedPath := filepath.Join(req.OutputDir, expectedFilename)
 
 		if fileInfo, err := os.Stat(expectedPath); err == nil && fileInfo.Size() > 100*1024 {
@@ -282,16 +278,11 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		}
 
 	case "tidal":
-		useTempExt := true
-		if req.UseTempExtension != nil {
-			useTempExt = *req.UseTempExtension
-		}
 		if req.ApiURL == "" || req.ApiURL == "auto" {
 			downloader := backend.NewTidalDownloader("")
-			downloader.SetUseTempDownloadExtension(useTempExt)
 			if req.ServiceURL != "" {
 				// Use provided URL directly with fallback to multiple APIs
-				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
+				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -300,14 +291,13 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
 				// Use ISRC matching for search fallback
-				filename, err = downloader.DownloadWithFallbackAndISRC(req.SpotifyID, req.ISRC, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
+				filename, err = downloader.DownloadWithFallbackAndISRC(req.SpotifyID, req.ISRC, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
 			}
 		} else {
 			downloader := backend.NewTidalDownloader(req.ApiURL)
-			downloader.SetUseTempDownloadExtension(useTempExt)
 			if req.ServiceURL != "" {
 				// Use provided URL directly with specific API
-				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
+				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.ISRC)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -316,14 +306,14 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
 				// Use ISRC matching for search fallback
-				filename, err = downloader.DownloadWithISRC(req.SpotifyID, req.ISRC, req.OutputDir, resolvedAudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
+				filename, err = downloader.DownloadWithISRC(req.SpotifyID, req.ISRC, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.Duration, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks)
 			}
 		}
 
 	case "qobuz":
 		downloader := backend.NewQobuzDownloader()
 		// Default to "6" (FLAC 16-bit) for Qobuz if not specified
-		quality := resolvedAudioFormat
+		quality := req.AudioFormat
 		if quality == "" {
 			quality = "6"
 		}
@@ -464,21 +454,6 @@ func (a *App) SelectFile() (string, error) {
 	return backend.SelectFileDialog(a.ctx)
 }
 
-// ReadTextFile reads a UTF-8 text file from disk and returns its contents.
-// Used by the frontend to display downloaded .lrc lyrics.
-func (a *App) ReadTextFile(path string) (string, error) {
-	if path == "" {
-		return "", fmt.Errorf("path is required")
-	}
-
-	normalized := backend.NormalizePath(path)
-	b, err := os.ReadFile(normalized)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
 // GetDefaults returns the default configuration
 func (a *App) GetDefaults() map[string]string {
 	return map[string]string{
@@ -578,11 +553,15 @@ type LyricsDownloadRequest struct {
 	SpotifyID           string `json:"spotify_id"`
 	TrackName           string `json:"track_name"`
 	ArtistName          string `json:"artist_name"`
+	AlbumName           string `json:"album_name"`
+	AlbumArtist         string `json:"album_artist"`
+	ReleaseDate         string `json:"release_date"`
 	OutputDir           string `json:"output_dir"`
 	FilenameFormat      string `json:"filename_format"`
 	TrackNumber         bool   `json:"track_number"`
 	Position            int    `json:"position"`
 	UseAlbumTrackNumber bool   `json:"use_album_track_number"`
+	DiscNumber          int    `json:"disc_number"`
 }
 
 // DownloadLyrics downloads lyrics for a single track
@@ -599,11 +578,15 @@ func (a *App) DownloadLyrics(req LyricsDownloadRequest) (backend.LyricsDownloadR
 		SpotifyID:           req.SpotifyID,
 		TrackName:           req.TrackName,
 		ArtistName:          req.ArtistName,
+		AlbumName:           req.AlbumName,
+		AlbumArtist:         req.AlbumArtist,
+		ReleaseDate:         req.ReleaseDate,
 		OutputDir:           req.OutputDir,
 		FilenameFormat:      req.FilenameFormat,
 		TrackNumber:         req.TrackNumber,
 		Position:            req.Position,
 		UseAlbumTrackNumber: req.UseAlbumTrackNumber,
+		DiscNumber:          req.DiscNumber,
 	}
 
 	resp, err := client.DownloadLyrics(backendReq)
@@ -622,10 +605,14 @@ type CoverDownloadRequest struct {
 	CoverURL       string `json:"cover_url"`
 	TrackName      string `json:"track_name"`
 	ArtistName     string `json:"artist_name"`
+	AlbumName      string `json:"album_name"`
+	AlbumArtist    string `json:"album_artist"`
+	ReleaseDate    string `json:"release_date"`
 	OutputDir      string `json:"output_dir"`
 	FilenameFormat string `json:"filename_format"`
 	TrackNumber    bool   `json:"track_number"`
 	Position       int    `json:"position"`
+	DiscNumber     int    `json:"disc_number"`
 }
 
 // DownloadCover downloads cover art for a single track
@@ -642,10 +629,14 @@ func (a *App) DownloadCover(req CoverDownloadRequest) (backend.CoverDownloadResp
 		CoverURL:       req.CoverURL,
 		TrackName:      req.TrackName,
 		ArtistName:     req.ArtistName,
+		AlbumName:      req.AlbumName,
+		AlbumArtist:    req.AlbumArtist,
+		ReleaseDate:    req.ReleaseDate,
 		OutputDir:      req.OutputDir,
 		FilenameFormat: req.FilenameFormat,
 		TrackNumber:    req.TrackNumber,
 		Position:       req.Position,
+		DiscNumber:     req.DiscNumber,
 	}
 
 	resp, err := client.DownloadCover(backendReq)
@@ -789,6 +780,49 @@ func (a *App) RenameFilesByMetadata(files []string, format string) []backend.Ren
 	return backend.RenameFiles(files, format)
 }
 
+// ReadTextFile reads a text file and returns its content
+func (a *App) ReadTextFile(filePath string) (string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// RenameFileTo renames a file to a new name (keeping same directory)
+func (a *App) RenameFileTo(oldPath, newName string) error {
+	dir := filepath.Dir(oldPath)
+	ext := filepath.Ext(oldPath)
+	newPath := filepath.Join(dir, newName+ext)
+	return os.Rename(oldPath, newPath)
+}
+
+// ReadImageAsBase64 reads an image file and returns it as base64 data URL
+func (a *App) ReadImageAsBase64(filePath string) (string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	
+	ext := strings.ToLower(filepath.Ext(filePath))
+	var mimeType string
+	switch ext {
+	case ".jpg", ".jpeg":
+		mimeType = "image/jpeg"
+	case ".png":
+		mimeType = "image/png"
+	case ".gif":
+		mimeType = "image/gif"
+	case ".webp":
+		mimeType = "image/webp"
+	default:
+		mimeType = "image/jpeg"
+	}
+	
+	encoded := base64.StdEncoding.EncodeToString(content)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+}
+
 // CheckFileExistenceRequest represents a track to check for existence
 type CheckFileExistenceRequest struct {
 	ISRC       string `json:"isrc"`
@@ -824,49 +858,4 @@ func (a *App) CheckFilesExistence(outputDir string, tracks []CheckFileExistenceR
 // SkipDownloadItem marks a download item as skipped (file already exists)
 func (a *App) SkipDownloadItem(itemID, filePath string) {
 	backend.SkipDownloadItem(itemID, filePath)
-}
-
-// GetStreamingURL gets direct streaming URL for a track
-func (a *App) GetStreamingURL(spotifyID, isrc, trackName, artistName, albumName, albumArtist, releaseDate, coverURL string, duration, trackNumber, discNumber, totalTracks int, preferredService, quality string) (string, error) {
-	track := &backend.StreamingTrack{
-		ISRC:        isrc,
-		SpotifyID:   spotifyID,
-		Name:        trackName,
-		Artists:     artistName,
-		AlbumName:   albumName,
-		AlbumArtist: albumArtist,
-		ReleaseDate: releaseDate,
-		Duration:    duration,
-		CoverURL:    coverURL,
-		TrackNumber: trackNumber,
-		DiscNumber:  discNumber,
-		TotalTracks: totalTracks,
-	}
-
-	response, err := backend.GetStreamingURLs(a.ctx, spotifyID, isrc, track, preferredService, quality)
-	if err != nil {
-		return "", err
-	}
-
-	jsonData, err := json.Marshal(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode response: %v", err)
-	}
-
-	return string(jsonData), nil
-}
-
-// GetStreamingLyrics fetches lyrics for streaming playback
-func (a *App) GetStreamingLyrics(spotifyID, trackName, artistName string) (string, error) {
-	response, err := backend.GetStreamingLyrics(a.ctx, spotifyID, trackName, artistName)
-	if err != nil {
-		return "", err
-	}
-
-	jsonData, err := json.Marshal(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode response: %v", err)
-	}
-
-	return string(jsonData), nil
 }

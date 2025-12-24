@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,11 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Search, X } from "lucide-react";
+import { Search, X, ArrowUp } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getSettings, applyThemeMode, applyFont } from "@/lib/settings";
+import { getSettings, getSettingsWithDefaults, saveSettings, applyThemeMode, applyFont } from "@/lib/settings";
 import { applyTheme } from "@/lib/themes";
-import { OpenFolder } from "wailsjs/go/main/App";
+import { OpenFolder } from "../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 
 // Components
@@ -33,8 +33,6 @@ import { FileManagerPage } from "@/components/FileManagerPage";
 import { SettingsPage } from "@/components/SettingsPage";
 import { DebugLoggerPage } from "@/components/DebugLoggerPage";
 import type { HistoryItem } from "@/components/FetchHistory";
-import { LiquidGlassFrame } from "@/components/LiquidGlassFrame";
-import { FullscreenLyricsOverlay } from "@/components/FullscreenLyricsOverlay";
 
 // Hooks
 import { useDownload } from "@/hooks/useDownload";
@@ -57,12 +55,11 @@ function App() {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [releaseDate, setReleaseDate] = useState<string | null>(null);
   const [fetchHistory, setFetchHistory] = useState<HistoryItem[]>([]);
-
-  const [fullscreenLyricsTrack, setFullscreenLyricsTrack] = useState<any | null>(null);
-  const [fullscreenLyricsFile, setFullscreenLyricsFile] = useState<string | null>(null);
+  const [isSearchMode, setIsSearchMode] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const ITEMS_PER_PAGE = 50;
-  const CURRENT_VERSION = "6.9";
+  const CURRENT_VERSION = "7.0";
 
   const download = useDownload();
   const metadata = useMetadata();
@@ -73,10 +70,19 @@ function App() {
 
 
   useEffect(() => {
-    const settings = getSettings();
-    applyThemeMode(settings.themeMode);
-    applyTheme(settings.theme);
-    applyFont(settings.fontFamily);
+    const initSettings = async () => {
+      const settings = getSettings();
+      applyThemeMode(settings.themeMode);
+      applyTheme(settings.theme);
+      applyFont(settings.fontFamily);
+
+      // Initialize default download path if not set
+      if (!settings.downloadPath) {
+        const settingsWithDefaults = await getSettingsWithDefaults();
+        saveSettings(settingsWithDefaults);
+      }
+    };
+    initSettings();
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
@@ -91,9 +97,20 @@ function App() {
     checkForUpdates();
     loadHistory();
 
+    // Scroll listener for jump to top button
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener("scroll", handleScroll);
+
     return () => {
       mediaQuery.removeEventListener("change", handleChange);
+      window.removeEventListener("scroll", handleScroll);
     };
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -110,7 +127,7 @@ function App() {
   const checkForUpdates = async () => {
     try {
       const response = await fetch(
-        "https://api.github.com/repos/api-venom/SpotiFLAC/releases/latest"
+        "https://api.github.com/repos/afkarxyz/SpotiFLAC/releases/latest"
       );
       const data = await response.json();
       const latestVersion = data.tag_name?.replace(/^v/, "") || "";
@@ -266,38 +283,6 @@ function App() {
     }
   };
 
-  const canOpenFullscreenLyricsForCurrentTrack = useMemo(() => {
-    if (!metadata.metadata) return false;
-    if (!("track" in metadata.metadata)) return false;
-    return Boolean(metadata.metadata.track?.spotify_id);
-  }, [metadata.metadata]);
-
-  const openFullscreenLyricsForCurrentTrack = async () => {
-    if (!metadata.metadata || !("track" in metadata.metadata)) return;
-
-    const track = metadata.metadata.track;
-    if (!track?.spotify_id) return;
-
-    const existingPath = lyrics.getLyricsFilePath(track.spotify_id);
-    if (existingPath) {
-      setFullscreenLyricsTrack(track);
-      setFullscreenLyricsFile(existingPath);
-      return;
-    }
-
-    const downloadedPath = await lyrics.handleDownloadLyrics(
-      track.spotify_id,
-      track.name,
-      track.artists,
-      track.album_name
-    );
-
-    if (downloadedPath) {
-      setFullscreenLyricsTrack(track);
-      setFullscreenLyricsFile(downloadedPath);
-    }
-  };
-
 
   const renderMetadata = () => {
     if (!metadata.metadata) return null;
@@ -319,13 +304,17 @@ function App() {
           checkingAvailability={availability.checkingTrackId === track.spotify_id}
           availability={availability.getAvailability(track.spotify_id || "")}
           downloadingCover={cover.downloadingCover}
+          downloadedCover={cover.downloadedCovers.has(track.spotify_id || "")}
+          failedCover={cover.failedCovers.has(track.spotify_id || "")}
+          skippedCover={cover.skippedCovers.has(track.spotify_id || "")}
           onDownload={download.handleDownloadTrack}
-          onDownloadLyrics={lyrics.handleDownloadLyrics}
-          onOpenFullscreenLyrics={
-            canOpenFullscreenLyricsForCurrentTrack ? openFullscreenLyricsForCurrentTrack : undefined
+          onDownloadLyrics={(spotifyId, name, artists, albumName, albumArtist, releaseDate, discNumber) =>
+            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, undefined, undefined, albumArtist, releaseDate, discNumber)
           }
           onCheckAvailability={availability.checkAvailability}
-          onDownloadCover={cover.handleDownloadCover}
+          onDownloadCover={(coverUrl, trackName, artistName, albumName, _playlistName, _position, trackId, albumArtist, releaseDate, discNumber) =>
+            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, undefined, undefined, trackId, albumArtist, releaseDate, discNumber)
+          }
           onOpenFolder={handleOpenFolder}
         />
       );
@@ -367,11 +356,11 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, album_info.name, position)
+          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
+            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, album_info.name, position, albumArtist, releaseDate, discNumber)
           }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, album_info.name, position, trackId)
+          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
+            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, album_info.name, position, trackId, albumArtist, releaseDate, discNumber)
           }
           onCheckAvailability={availability.checkAvailability}
           onDownloadAllLyrics={() => lyrics.handleDownloadAllLyrics(track_list, album_info.name)}
@@ -435,11 +424,11 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, playlist_info.owner.name, position)
+          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
+            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, playlist_info.owner.name, position, albumArtist, releaseDate, discNumber)
           }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, playlist_info.owner.name, position, trackId)
+          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
+            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, playlist_info.owner.name, position, trackId, albumArtist, releaseDate, discNumber)
           }
           onCheckAvailability={availability.checkAvailability}
           onDownloadAllLyrics={() => lyrics.handleDownloadAllLyrics(track_list, playlist_info.owner.name)}
@@ -509,11 +498,11 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, artist_info.name, position)
+          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
+            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, artist_info.name, position, albumArtist, releaseDate, discNumber)
           }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, artist_info.name, position, trackId)
+          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
+            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, artist_info.name, position, trackId, albumArtist, releaseDate, discNumber)
           }
           onCheckAvailability={availability.checkAvailability}
           onDownloadAllLyrics={() => lyrics.handleDownloadAllLyrics(track_list, artist_info.name)}
@@ -669,13 +658,22 @@ function App() {
               loading={metadata.loading}
               onUrlChange={setSpotifyUrl}
               onFetch={handleFetchMetadata}
+              onFetchUrl={async (url) => {
+                setSpotifyUrl(url);
+                const updatedUrl = await metadata.handleFetchMetadata(url);
+                if (updatedUrl) {
+                  setSpotifyUrl(updatedUrl);
+                }
+              }}
               history={fetchHistory}
               onHistorySelect={handleHistorySelect}
               onHistoryRemove={removeFromHistory}
               hasResult={!!metadata.metadata}
+              searchMode={isSearchMode}
+              onSearchModeChange={setIsSearchMode}
             />
 
-            {metadata.metadata && renderMetadata()}
+            {!isSearchMode && metadata.metadata && renderMetadata()}
           </>
         );
     }
@@ -685,18 +683,13 @@ function App() {
     <TooltipProvider>
       <div className="min-h-screen bg-background flex flex-col">
         <TitleBar />
-        <Sidebar
-          currentPage={currentPage}
-          onPageChange={setCurrentPage}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-        />
+        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
         
         {/* Main content area with sidebar offset */}
-        <div className="flex-1 ml-72 mt-10 p-4 md:p-8">
-          <LiquidGlassFrame className="max-w-6xl mx-auto space-y-6 w-full">
+        <div className="flex-1 ml-14 mt-10 p-4 md:p-8">
+          <div className="max-w-4xl mx-auto space-y-6">
             {renderPage()}
-          </LiquidGlassFrame>
+          </div>
         </div>
 
         {/* Download Progress Toast - Bottom Left */}
@@ -708,15 +701,15 @@ function App() {
           onClose={downloadQueue.closeQueue}
         />
 
-        {fullscreenLyricsTrack && (
-          <FullscreenLyricsOverlay
-            track={fullscreenLyricsTrack}
-            lyricsFilePath={fullscreenLyricsFile}
-            onClose={() => {
-              setFullscreenLyricsTrack(null);
-              setFullscreenLyricsFile(null);
-            }}
-          />
+        {/* Jump to Top Button - Bottom Right */}
+        {showScrollTop && (
+          <Button
+            onClick={scrollToTop}
+            className="fixed bottom-6 right-6 z-50 h-10 w-10 rounded-full shadow-lg"
+            size="icon"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
         )}
       </div>
     </TooltipProvider>

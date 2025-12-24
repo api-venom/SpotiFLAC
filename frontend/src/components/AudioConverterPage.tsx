@@ -21,7 +21,7 @@ import {
   DownloadFFmpeg,
   ConvertAudio,
   SelectAudioFiles,
-} from "wailsjs/go/main/App";
+} from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime";
 

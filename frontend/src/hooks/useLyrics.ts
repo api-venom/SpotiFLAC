@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useState, useRef } from "react";
 import { downloadLyrics } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -11,14 +11,9 @@ export function useLyrics() {
   const [downloadedLyrics, setDownloadedLyrics] = useState<Set<string>>(new Set());
   const [failedLyrics, setFailedLyrics] = useState<Set<string>>(new Set());
   const [skippedLyrics, setSkippedLyrics] = useState<Set<string>>(new Set());
-  const [lyricsFileBySpotifyId, setLyricsFileBySpotifyId] = useState<Map<string, string>>(new Map());
   const [isBulkDownloadingLyrics, setIsBulkDownloadingLyrics] = useState(false);
   const [lyricsDownloadProgress, setLyricsDownloadProgress] = useState(0);
   const stopBulkDownloadRef = useRef(false);
-
-  const getLyricsFilePath = useMemo(() => {
-    return (spotifyId: string) => lyricsFileBySpotifyId.get(spotifyId) || null;
-  }, [lyricsFileBySpotifyId]);
 
   const handleDownloadLyrics = async (
     spotifyId: string,
@@ -26,11 +21,14 @@ export function useLyrics() {
     artistName: string,
     albumName?: string,
     playlistName?: string,
-    position?: number
+    position?: number,
+    albumArtist?: string,
+    releaseDate?: string,
+    discNumber?: number
   ) => {
     if (!spotifyId) {
       toast.error("No Spotify ID found for this track");
-      return null;
+      return;
     }
 
     logger.info(`downloading lyrics: ${trackName} - ${artistName}`);
@@ -76,21 +74,18 @@ export function useLyrics() {
         spotify_id: spotifyId,
         track_name: trackName,
         artist_name: artistName,
+        album_name: albumName,
+        album_artist: albumArtist,
+        release_date: releaseDate,
         output_dir: outputDir,
         filename_format: settings.filenameTemplate || "{title}",
         track_number: settings.trackNumber,
         position: position || 0,
         use_album_track_number: useAlbumTrackNumber,
+        disc_number: discNumber,
       });
 
       if (response.success) {
-        if (response.file) {
-          setLyricsFileBySpotifyId((prev) => {
-            const next = new Map(prev);
-            next.set(spotifyId, response.file!);
-            return next;
-          });
-        }
         if (response.already_exists) {
           toast.info("Lyrics file already exists");
           setSkippedLyrics((prev) => new Set(prev).add(spotifyId));
@@ -107,12 +102,9 @@ export function useLyrics() {
         toast.error(response.error || "Failed to download lyrics");
         setFailedLyrics((prev) => new Set(prev).add(spotifyId));
       }
-
-      return response.file || null;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download lyrics");
       setFailedLyrics((prev) => new Set(prev).add(spotifyId));
-      return null;
     } finally {
       setDownloadingLyricsTrack(null);
     }
@@ -141,7 +133,8 @@ export function useLyrics() {
     let skipped = 0;
     const total = tracksWithSpotifyId.length;
 
-    for (const track of tracksWithSpotifyId) {
+    for (let i = 0; i < tracksWithSpotifyId.length; i++) {
+      const track = tracksWithSpotifyId[i];
       if (stopBulkDownloadRef.current) {
         toast.info("Lyrics download stopped by user");
         break;
@@ -157,12 +150,18 @@ export function useLyrics() {
 
         // Replace forward slashes in template data values to prevent them from being interpreted as path separators
         const placeholder = "__SLASH_PLACEHOLDER__";
+        
+        // Determine if we should use album track number or sequential position
+        const useAlbumTrackNumber = settings.folderTemplate?.includes("{album}") || false;
+        // Use track.track_number for album context, otherwise use sequential position (consistent with track download)
+        const trackPosition = useAlbumTrackNumber ? (track.track_number || i + 1) : (i + 1);
+        
         // Build output path using template system
         const templateData: TemplateData = {
           artist: track.artists?.replace(/\//g, placeholder),
           album: track.album_name?.replace(/\//g, placeholder),
           title: track.name?.replace(/\//g, placeholder),
-          track: track.track_number,
+          track: trackPosition,
           playlist: playlistName?.replace(/\//g, placeholder),
         };
 
@@ -184,27 +183,22 @@ export function useLyrics() {
           }
         }
 
-        const useAlbumTrackNumber = settings.folderTemplate?.includes("{album}") || false;
-
         const response = await downloadLyrics({
           spotify_id: id,
           track_name: track.name,
           artist_name: track.artists,
+          album_name: track.album_name,
+          album_artist: track.album_artist,
+          release_date: track.release_date,
           output_dir: outputDir,
           filename_format: settings.filenameTemplate || "{title}",
           track_number: settings.trackNumber,
-          position: track.track_number || 0,
+          position: trackPosition,
           use_album_track_number: useAlbumTrackNumber,
+          disc_number: track.disc_number,
         });
 
         if (response.success) {
-          if (response.file) {
-            setLyricsFileBySpotifyId((prev) => {
-              const next = new Map(prev);
-              next.set(id, response.file!);
-              return next;
-            });
-          }
           if (response.already_exists) {
             skipped++;
             setSkippedLyrics((prev) => new Set(prev).add(id));
@@ -249,7 +243,6 @@ export function useLyrics() {
     setDownloadedLyrics(new Set());
     setFailedLyrics(new Set());
     setSkippedLyrics(new Set());
-    setLyricsFileBySpotifyId(new Map());
   };
 
   return {
@@ -257,8 +250,6 @@ export function useLyrics() {
     downloadedLyrics,
     failedLyrics,
     skippedLyrics,
-    lyricsFileBySpotifyId,
-    getLyricsFilePath,
     isBulkDownloadingLyrics,
     lyricsDownloadProgress,
     handleDownloadLyrics,

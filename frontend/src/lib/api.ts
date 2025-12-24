@@ -8,8 +8,8 @@ import type {
   CoverDownloadRequest,
   CoverDownloadResponse,
 } from "@/types/api";
-import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover } from "wailsjs/go/main/App";
-import { main } from "wailsjs/go/models";
+import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover } from "../../wailsjs/go/main/App";
+import { main } from "../../wailsjs/go/models";
 
 export async function fetchSpotifyMetadata(
   url: string,

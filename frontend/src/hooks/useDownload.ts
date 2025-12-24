@@ -40,46 +40,6 @@ export function useDownload() {
     artists: string;
   } | null>(null);
   const shouldStopDownloadRef = useRef(false);
-  const ffmpegEnsurePromiseRef = useRef<Promise<boolean> | null>(null);
-
-  const ensureFfmpegForTidal = async (): Promise<boolean> => {
-    if (ffmpegEnsurePromiseRef.current) {
-      return ffmpegEnsurePromiseRef.current;
-    }
-
-    ffmpegEnsurePromiseRef.current = (async () => {
-      try {
-        const { IsFFmpegInstalled, DownloadFFmpeg } = await import("wailsjs/go/main/App");
-
-        const installed = await IsFFmpegInstalled();
-        if (installed) return true;
-
-        toast.info("FFmpeg required for Tidal — installing...");
-        const resp: any = await DownloadFFmpeg();
-
-        if (!resp?.success) {
-          toast.error(resp?.error || "Failed to install FFmpeg");
-          return false;
-        }
-
-        const installedAfter = await IsFFmpegInstalled();
-        if (installedAfter) {
-          toast.success("FFmpeg installed");
-          return true;
-        }
-
-        toast.warning("FFmpeg install finished, but not detected yet");
-        return false;
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to install FFmpeg");
-        return false;
-      }
-    })();
-
-    const ok = await ffmpegEnsurePromiseRef.current;
-    if (!ok) ffmpegEnsurePromiseRef.current = null;
-    return ok;
-  };
 
   const downloadWithAutoFallback = async (
     isrc: string,
@@ -101,9 +61,6 @@ export function useDownload() {
     spotifyTotalTracks?: number
   ) => {
     const service = settings.downloader;
-
-    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
 
     const query = trackName && artistName ? `${trackName} ${artistName}` : undefined;
     const os = settings.operatingSystem;
@@ -149,7 +106,7 @@ export function useDownload() {
     }
 
     // Always add item to queue before downloading
-    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
     const itemID = await AddToDownloadQueue(isrc, trackName || "", artistName || "", albumName || "");
 
     if (service === "auto") {
@@ -158,7 +115,7 @@ export function useDownload() {
       let streamingURLs: any = null;
       if (spotifyId) {
         try {
-          const { GetStreamingURLs } = await import("wailsjs/go/main/App");
+          const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
           const urlsJson = await GetStreamingURLs(spotifyId);
           streamingURLs = JSON.parse(urlsJson);
         } catch (err) {
@@ -169,61 +126,13 @@ export function useDownload() {
       // Convert duration from ms to seconds for backend
       const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
 
-      const preferredBitDepthValue = Number.isFinite(preferredBitDepth) ? preferredBitDepth : undefined;
-
-      // If user prefers 32-bit, prioritize Qobuz first (more likely to have it than Tidal).
-      if (preferredBitDepthValue === 32) {
-        logger.debug(`trying qobuz (preferred 32-bit) for: ${trackName} - ${artistName}`);
-        const qobuzFirst = await downloadTrack({
-          isrc,
-          service: "qobuz",
-          ...preferredBitDepthPayload,
-          use_temp_extension: settings.useTempDownloadExtension,
-          query,
-          track_name: trackName,
-          artist_name: artistName,
-          album_name: albumName,
-          album_artist: albumArtist,
-          release_date: releaseDate,
-          cover_url: coverUrl,
-          output_dir: outputDir,
-          filename_format: settings.filenameTemplate,
-          track_number: settings.trackNumber,
-          position,
-          use_album_track_number: useAlbumTrackNumber,
-          spotify_id: spotifyId,
-          embed_lyrics: settings.embedLyrics,
-          embed_max_quality_cover: settings.embedMaxQualityCover,
-          duration: durationMs ? Math.round(durationMs / 1000) : undefined,
-          item_id: itemID,
-          audio_format: settings.qobuzQuality || "6",
-          spotify_track_number: spotifyTrackNumber,
-          spotify_disc_number: spotifyDiscNumber,
-          spotify_total_tracks: spotifyTotalTracks,
-        });
-
-        if (qobuzFirst.success) {
-          logger.success(`qobuz: ${trackName} - ${artistName}`);
-          return qobuzFirst;
-        }
-        logger.warning(`qobuz failed, trying tidal/amazon fallbacks...`);
-      }
-
-      // Try Tidal
+      // Try Tidal first
       if (streamingURLs?.tidal_url) {
         try {
           logger.debug(`trying tidal for: ${trackName} - ${artistName}`);
-
-          // Tidal needs FFmpeg for remux/transcode. Install automatically if missing.
-          const ffmpegOk = await ensureFfmpegForTidal();
-          if (!ffmpegOk) {
-            logger.warning("ffmpeg not installed; skipping tidal attempt");
-          } else {
           const tidalResponse = await downloadTrack({
             isrc,
             service: "tidal",
-            ...preferredBitDepthPayload,
-            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -241,8 +150,8 @@ export function useDownload() {
             embed_max_quality_cover: settings.embedMaxQualityCover,
             service_url: streamingURLs.tidal_url,
             duration: durationSeconds,
-            item_id: itemID,
-            audio_format: settings.tidalQuality || "LOSSLESS",
+            item_id: itemID, // Pass the same itemID through all attempts
+            audio_format: settings.tidalQuality || "LOSSLESS", // Use default LOSSLESS for auto mode
             spotify_track_number: spotifyTrackNumber,
             spotify_disc_number: spotifyDiscNumber,
             spotify_total_tracks: spotifyTotalTracks,
@@ -253,21 +162,18 @@ export function useDownload() {
             return tidalResponse;
           }
           logger.warning(`tidal failed, trying amazon...`);
-          }
         } catch (tidalErr) {
           logger.error(`tidal error: ${tidalErr}`);
         }
       }
 
-      // Try Amazon
+      // Try Amazon second
       if (streamingURLs?.amazon_url) {
         try {
           logger.debug(`trying amazon for: ${trackName} - ${artistName}`);
           const amazonResponse = await downloadTrack({
             isrc,
             service: "amazon",
-            ...preferredBitDepthPayload,
-            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -305,8 +211,6 @@ export function useDownload() {
       const qobuzResponse = await downloadTrack({
         isrc,
         service: "qobuz",
-        ...preferredBitDepthPayload,
-        use_temp_extension: settings.useTempDownloadExtension,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -332,7 +236,7 @@ export function useDownload() {
 
       // If Qobuz also failed, mark the item as failed
       if (!qobuzResponse.success) {
-        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, qobuzResponse.error || "All services failed");
       }
 
@@ -351,26 +255,9 @@ export function useDownload() {
       audioFormat = settings.qobuzQuality || "6";
     }
 
-    if (service === "tidal") {
-      const ffmpegOk = await ensureFfmpegForTidal();
-      if (!ffmpegOk) {
-        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
-        await MarkDownloadItemFailed(itemID, "FFmpeg is required for Tidal downloads");
-        return {
-          success: false,
-          message: "FFmpeg is required for Tidal downloads",
-          error: "FFmpeg is required for Tidal downloads",
-          already_exists: false,
-          item_id: itemID,
-        } as any;
-      }
-    }
-
     const singleServiceResponse = await downloadTrack({
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
-      ...preferredBitDepthPayload,
-      use_temp_extension: settings.useTempDownloadExtension,
       query,
       track_name: trackName,
       artist_name: artistName,
@@ -396,7 +283,7 @@ export function useDownload() {
 
     // Mark as failed if download failed for single-service attempt
     if (!singleServiceResponse.success) {
-      const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+      const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
       await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
     }
 
@@ -425,9 +312,6 @@ export function useDownload() {
     spotifyTotalTracks?: number
   ) => {
     const service = settings.downloader;
-
-    const preferredBitDepth = settings.audioBitDepth !== "auto" ? Number.parseInt(settings.audioBitDepth, 10) : undefined;
-    const preferredBitDepthPayload = Number.isFinite(preferredBitDepth) ? { preferred_bit_depth: preferredBitDepth } : {};
 
     const query = trackName && artistName ? `${trackName} ${artistName}` : undefined;
     const os = settings.operatingSystem;
@@ -478,7 +362,7 @@ export function useDownload() {
       let streamingURLs: any = null;
       if (spotifyId) {
         try {
-          const { GetStreamingURLs } = await import("wailsjs/go/main/App");
+          const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
           const urlsJson = await GetStreamingURLs(spotifyId);
           streamingURLs = JSON.parse(urlsJson);
         } catch (err) {
@@ -494,8 +378,6 @@ export function useDownload() {
           const tidalResponse = await downloadTrack({
             isrc,
             service: "tidal",
-            ...preferredBitDepthPayload,
-            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -534,8 +416,6 @@ export function useDownload() {
           const amazonResponse = await downloadTrack({
             isrc,
             service: "amazon",
-            ...preferredBitDepthPayload,
-            use_temp_extension: settings.useTempDownloadExtension,
             query,
             track_name: trackName,
             artist_name: artistName,
@@ -570,8 +450,6 @@ export function useDownload() {
       const qobuzResponse = await downloadTrack({
         isrc,
         service: "qobuz",
-        ...preferredBitDepthPayload,
-        use_temp_extension: settings.useTempDownloadExtension,
         query,
         track_name: trackName,
         artist_name: artistName,
@@ -597,7 +475,7 @@ export function useDownload() {
 
       // If Qobuz also failed, mark the item as failed
       if (!qobuzResponse.success) {
-        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, qobuzResponse.error || "All services failed");
       }
 
@@ -618,8 +496,6 @@ export function useDownload() {
     const singleServiceResponse = await downloadTrack({
       isrc,
       service: service as "tidal" | "qobuz" | "amazon",
-      ...preferredBitDepthPayload,
-      use_temp_extension: settings.useTempDownloadExtension,
       query,
       track_name: trackName,
       artist_name: artistName,
@@ -645,7 +521,7 @@ export function useDownload() {
 
     // Mark as failed if download failed for single-service attempt
     if (!singleServiceResponse.success) {
-      const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+      const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
       await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
     }
 
@@ -777,7 +653,7 @@ export function useDownload() {
     logger.info(`found ${existingISRCs.size} existing files`);
 
     // Pre-add ALL tracks to the queue and mark existing ones as skipped
-    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
     const itemIDs: string[] = [];
     for (const isrc of selectedTracks) {
       const track = allTracks.find((t) => t.isrc === isrc);
@@ -877,7 +753,7 @@ export function useDownload() {
         logger.error(`error: ${track.name} - ${err}`);
         setFailedTracks((prev) => new Set(prev).add(isrc));
         // Mark item as failed in queue
-        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
       }
 
@@ -892,7 +768,7 @@ export function useDownload() {
     shouldStopDownloadRef.current = false;
 
     // Cancel any remaining queued items
-    const { CancelAllQueuedItems } = await import("wailsjs/go/main/App");
+    const { CancelAllQueuedItems } = await import("../../wailsjs/go/main/App");
     await CancelAllQueuedItems();
 
     // Build summary message
@@ -962,7 +838,7 @@ export function useDownload() {
     logger.info(`found ${existingISRCs.size} existing files`);
 
     // Pre-add ALL tracks to the queue and mark existing ones as skipped
-    const { AddToDownloadQueue } = await import("wailsjs/go/main/App");
+    const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
     const itemIDs: string[] = [];
     for (const track of tracksWithIsrc) {
       const itemID = await AddToDownloadQueue(
@@ -1059,7 +935,7 @@ export function useDownload() {
         logger.error(`error: ${track.name} - ${err}`);
         setFailedTracks((prev) => new Set(prev).add(track.isrc));
         // Mark item as failed in queue
-        const { MarkDownloadItemFailed } = await import("wailsjs/go/main/App");
+        const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
         await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
       }
 
@@ -1074,7 +950,7 @@ export function useDownload() {
     shouldStopDownloadRef.current = false;
 
     // Cancel any remaining queued items
-    const { CancelAllQueuedItems: CancelQueued } = await import("wailsjs/go/main/App");
+    const { CancelAllQueuedItems: CancelQueued } = await import("../../wailsjs/go/main/App");
     await CancelQueued();
 
     // Build summary message

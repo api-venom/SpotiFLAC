@@ -26,61 +26,17 @@ export function useMetadata() {
     return "unknown";
   };
 
-  const normalizeSpotifyUrlForRequest = (input: string): string => {
-    const trimmed = input.trim();
-    if (!trimmed) return trimmed;
-    try {
-      const u = new URL(trimmed);
-      // Keep only canonical path; strip tracking params like si, nd, dlsi, etc.
-      if (u.hostname.endsWith("spotify.com")) {
-        u.search = "";
-        u.hash = "";
-        return u.toString();
-      }
-      return trimmed;
-    } catch {
-      return trimmed;
-    }
-  };
-
   const fetchMetadataDirectly = async (url: string) => {
-    const normalizedUrl = normalizeSpotifyUrlForRequest(url);
-    const urlType = getUrlType(normalizedUrl);
+    const urlType = getUrlType(url);
     logger.info(`fetching ${urlType} metadata...`);
-    logger.debug(`url(original): ${url}`);
-    if (normalizedUrl !== url) {
-      logger.debug(`url(normalized): ${normalizedUrl}`);
-    }
+    logger.debug(`url: ${url}`);
     
     setLoading(true);
     setMetadata(null);
 
     try {
       const startTime = Date.now();
-
-      // Pick safer request parameters based on URL type.
-      // Track fetch should be fast; long timeouts often just hide rate-limit / token failures.
-      let batch = true;
-      let delay = 1.0;
-      let timeout = 300.0;
-      if (urlType === "track") {
-        batch = false;
-        delay = 0.0;
-        // Allow enough time for a single 429 Retry-After wait.
-        timeout = 120.0;
-      } else if (urlType === "album" || urlType === "playlist") {
-        batch = true;
-        delay = 1.0;
-        timeout = 180.0;
-      } else if (urlType === "artist") {
-        // Artist is handled via dialog elsewhere; keep defaults here.
-        batch = true;
-        delay = 1.0;
-        timeout = 300.0;
-      }
-
-      logger.debug(`request: GetSpotifyMetadata(batch=${batch} delay=${delay} timeout=${timeout})`);
-      const data = await fetchSpotifyMetadata(normalizedUrl, batch, delay, timeout);
+      const data = await fetchSpotifyMetadata(url);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       
       setMetadata(data);
@@ -103,15 +59,8 @@ export function useMetadata() {
       logger.info(`fetch completed in ${elapsed}s`);
       toast.success("Metadata fetched successfully");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = err instanceof Error ? err.message : "Failed to fetch metadata";
       logger.error(`fetch failed: ${errorMsg}`);
-      if (err && typeof err === "object") {
-        try {
-          logger.debug(`error details: ${JSON.stringify(err)}`);
-        } catch {
-          // ignore
-        }
-      }
       toast.error(errorMsg);
     } finally {
       setLoading(false);
@@ -212,7 +161,7 @@ export function useMetadata() {
 
     try {
       const startTime = Date.now();
-      const data = await fetchSpotifyMetadata(albumUrl, true, 1.0, 180.0);
+      const data = await fetchSpotifyMetadata(albumUrl);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       
       setMetadata(data);

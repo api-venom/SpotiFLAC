@@ -15,7 +15,7 @@ class Logger {
     const entry: LogEntry = {
       timestamp: new Date(),
       level,
-      message,
+      message: message.toLowerCase(),
     };
     this.logs.push(entry);
     if (this.logs.length > this.maxLogs) {

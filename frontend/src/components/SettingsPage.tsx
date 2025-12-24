@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { InputWithContext } from "@/components/ui/input-with-context";
 import { Label } from "@/components/ui/label";
@@ -23,20 +23,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { getSettings, getSettingsWithDefaults, saveSettings, resetToDefaultSettings, applyThemeMode, applyFont, FONT_OPTIONS, FOLDER_PRESETS, FILENAME_PRESETS, TEMPLATE_VARIABLES, type Settings as SettingsType, type FontFamily, type FolderPreset, type FilenamePreset } from "@/lib/settings";
 import { themes, applyTheme } from "@/lib/themes";
-import { SelectFolder, IsFFmpegInstalled, DownloadFFmpeg, BeginSpotifyOAuthLogin, GetSpotifyOAuthStatus, LogoutSpotifyOAuth } from "wailsjs/go/main/App";
+import { SelectFolder } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-
-type SpotifyOAuthStatus = {
-  enabled: boolean;
-  pending: boolean;
-  expires_at?: string;
-  has_refresh: boolean;
-  client_id?: string;
-  last_error?: string;
-  cooldown_msg?: string;
-};
-
-const SPOTIFY_OAUTH_CLIENT_ID = "8894061c83eb48bbb595aaa3f3c11491";
 
 // Service Icons
 const TidalIcon = () => (
@@ -65,24 +53,6 @@ export function SettingsPage() {
   const [tempSettings, setTempSettings] = useState<SettingsType>(savedSettings);
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [ffmpegInstalled, setFfmpegInstalled] = useState<boolean | null>(null);
-  const [isInstallingFFmpeg, setIsInstallingFFmpeg] = useState(false);
-  const [spotifyOAuthStatus, setSpotifyOAuthStatus] = useState<SpotifyOAuthStatus | null>(null);
-  const [isSpotifyOAuthBusy, setIsSpotifyOAuthBusy] = useState(false);
-
-  const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-  const refreshSpotifyOAuthStatus = async (): Promise<SpotifyOAuthStatus | null> => {
-    try {
-      const raw = await GetSpotifyOAuthStatus();
-      const parsed = JSON.parse(raw) as SpotifyOAuthStatus;
-      setSpotifyOAuthStatus(parsed);
-      return parsed;
-    } catch {
-      setSpotifyOAuthStatus(null);
-      return null;
-    }
-  };
 
   useEffect(() => {
     applyThemeMode(savedSettings.themeMode);
@@ -115,106 +85,17 @@ export function SettingsPage() {
         const settingsWithDefaults = await getSettingsWithDefaults();
         setSavedSettings(settingsWithDefaults);
         setTempSettings(settingsWithDefaults);
+        // Save to localStorage so it persists on reload
+        saveSettings(settingsWithDefaults);
       }
     };
     loadDefaults();
   }, []);
 
-  useEffect(() => {
-    const checkFFmpeg = async () => {
-      try {
-        const installed = await IsFFmpegInstalled();
-        setFfmpegInstalled(installed);
-      } catch {
-        setFfmpegInstalled(false);
-      }
-    };
-    checkFFmpeg();
-  }, []);
-
-  useEffect(() => {
-    refreshSpotifyOAuthStatus();
-  }, []);
-
   const handleSave = () => {
     saveSettings(tempSettings);
-    // Verify persisted settings (helps avoid "settings not saving" confusion)
-    const persisted = getSettings();
-    setSavedSettings(persisted);
-    setTempSettings(persisted);
+    setSavedSettings(tempSettings);
     toast.success("Settings saved");
-  };
-
-  const handleInstallFFmpeg = async () => {
-    try {
-      setIsInstallingFFmpeg(true);
-      const resp = await DownloadFFmpeg();
-      if (!resp?.success) {
-        toast.error(resp?.error || "Failed to install FFmpeg");
-        setFfmpegInstalled(false);
-        return;
-      }
-
-      // Re-check after install
-      const installed = await IsFFmpegInstalled();
-      setFfmpegInstalled(installed);
-      if (installed) {
-        toast.success("FFmpeg installed");
-      } else {
-        toast.warning("FFmpeg install finished, but not detected yet");
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to install FFmpeg");
-      setFfmpegInstalled(false);
-    } finally {
-      setIsInstallingFFmpeg(false);
-    }
-  };
-
-  const handleSpotifyOAuthLogin = async () => {
-    const clientID = (tempSettings.spotifyOAuthClientId || "").trim() || SPOTIFY_OAUTH_CLIENT_ID;
-
-    // Persist immediately so users don't forget to hit "Save Changes"
-    // and then wonder why OAuth isn't being used.
-    try {
-      saveSettings({ ...tempSettings, spotifyOAuthClientId: clientID });
-      const persisted = getSettings();
-      setSavedSettings(persisted);
-      setTempSettings(persisted);
-    } catch {
-      // Non-fatal; still attempt login.
-    }
-
-    try {
-      setIsSpotifyOAuthBusy(true);
-      await BeginSpotifyOAuthLogin(clientID);
-      toast.info("Opening Spotify login in your browser...");
-
-      // Poll briefly for completion to update status without extra UI.
-      for (let i = 0; i < 45; i++) {
-        await delay(1000);
-        const st = await refreshSpotifyOAuthStatus();
-        if (st?.enabled && !st.pending) break;
-        if (st?.pending === false && st?.last_error) break;
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to start Spotify login");
-    } finally {
-      setIsSpotifyOAuthBusy(false);
-    }
-  };
-
-  const handleSpotifyOAuthLogout = async () => {
-    try {
-      setIsSpotifyOAuthBusy(true);
-      await LogoutSpotifyOAuth();
-      await refreshSpotifyOAuthStatus();
-      toast.success("Logged out of Spotify");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to logout");
-    } finally {
-      setIsSpotifyOAuthBusy(false);
-    }
   };
 
   const handleReset = async () => {
@@ -232,7 +113,7 @@ export function SettingsPage() {
     try {
       const selectedPath = await SelectFolder(tempSettings.downloadPath || "");
       if (selectedPath && selectedPath.trim() !== "") {
-        setTempSettings((prev: SettingsType) => ({ ...prev, downloadPath: selectedPath }));
+        setTempSettings((prev) => ({ ...prev, downloadPath: selectedPath }));
       }
     } catch (error) {
       console.error("Error selecting folder:", error);
@@ -254,9 +135,7 @@ export function SettingsPage() {
               <InputWithContext
                 id="download-path"
                 value={tempSettings.downloadPath}
-                onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, downloadPath: e.target.value }))
-                }
+                onChange={(e) => setTempSettings((prev) => ({ ...prev, downloadPath: e.target.value }))}
                 placeholder="C:\Users\YourUsername\Music"
               />
               <Button type="button" onClick={handleBrowseFolder} className="gap-1.5">
@@ -271,9 +150,7 @@ export function SettingsPage() {
             <Label htmlFor="theme-mode">Mode</Label>
             <Select
               value={tempSettings.themeMode}
-              onValueChange={(value: "auto" | "light" | "dark") =>
-                setTempSettings((prev: SettingsType) => ({ ...prev, themeMode: value }))
-              }
+              onValueChange={(value: "auto" | "light" | "dark") => setTempSettings((prev) => ({ ...prev, themeMode: value }))}
             >
               <SelectTrigger id="theme-mode">
                 <SelectValue placeholder="Select theme mode" />
@@ -291,9 +168,7 @@ export function SettingsPage() {
             <Label htmlFor="theme">Accent</Label>
             <Select
               value={tempSettings.theme}
-              onValueChange={(value: string) =>
-                setTempSettings((prev: SettingsType) => ({ ...prev, theme: value }))
-              }
+              onValueChange={(value) => setTempSettings((prev) => ({ ...prev, theme: value }))}
             >
               <SelectTrigger id="theme">
                 <SelectValue placeholder="Select a theme" />
@@ -321,9 +196,7 @@ export function SettingsPage() {
             <Label htmlFor="font">Font</Label>
             <Select
               value={tempSettings.fontFamily}
-              onValueChange={(value: FontFamily) =>
-                setTempSettings((prev: SettingsType) => ({ ...prev, fontFamily: value }))
-              }
+              onValueChange={(value: FontFamily) => setTempSettings((prev) => ({ ...prev, fontFamily: value }))}
             >
               <SelectTrigger id="font">
                 <SelectValue placeholder="Select a font" />
@@ -344,126 +217,20 @@ export function SettingsPage() {
             <Switch
               id="sfx-enabled"
               checked={tempSettings.sfxEnabled}
-              onCheckedChange={(checked: boolean) =>
-                setTempSettings((prev: SettingsType) => ({ ...prev, sfxEnabled: checked }))
-              }
-            />
-          </div>
-
-          {/* Temporary download extension */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="use-temp-download-extension" className="cursor-pointer text-sm">Use .tmp while downloading</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="text-muted-foreground hover:text-foreground">
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Prevents partially-downloaded files being mistaken as complete.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-            <Switch
-              id="use-temp-download-extension"
-              checked={tempSettings.useTempDownloadExtension}
-              onCheckedChange={(checked: boolean) =>
-                setTempSettings((prev: SettingsType) => ({ ...prev, useTempDownloadExtension: checked }))
-              }
+              onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, sfxEnabled: checked }))}
             />
           </div>
         </div>
 
         {/* Right Column */}
         <div className="space-y-4">
-          {/* FFmpeg */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm">FFmpeg</Label>
-                <p className="text-xs text-muted-foreground">
-                  Status: {ffmpegInstalled === null ? "Checking..." : ffmpegInstalled ? "Installed" : "Not installed"}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isInstallingFFmpeg || ffmpegInstalled === true}
-                onClick={handleInstallFFmpeg}
-              >
-                {ffmpegInstalled ? "Installed" : isInstallingFFmpeg ? "Installing..." : "Install FFmpeg"}
-              </Button>
-            </div>
-            {ffmpegInstalled === false && (
-              <p className="text-xs text-muted-foreground">
-                Required for Tidal remux/transcode and some metadata operations.
-              </p>
-            )}
-          </div>
-
-          <div className="border-t" />
-
-          {/* Spotify Login (OAuth) */}
-          <div className="space-y-2">
-            <Label className="text-sm">Spotify Login (OAuth)</Label>
-
-            <div className="space-y-1">
-              <Label htmlFor="spotify-oauth-client-id" className="text-xs text-muted-foreground">Client ID</Label>
-              <InputWithContext
-                id="spotify-oauth-client-id"
-                value={SPOTIFY_OAUTH_CLIENT_ID}
-                disabled
-                placeholder={SPOTIFY_OAUTH_CLIENT_ID}
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={handleSpotifyOAuthLogin} disabled={isSpotifyOAuthBusy}>
-                {isSpotifyOAuthBusy ? "Working..." : "Login with Spotify"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleSpotifyOAuthLogout}
-                disabled={isSpotifyOAuthBusy || !(spotifyOAuthStatus?.enabled || spotifyOAuthStatus?.pending)}
-              >
-                Logout
-              </Button>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Status: {spotifyOAuthStatus?.enabled ? "Logged in" : spotifyOAuthStatus?.pending ? "Pending login" : "Not logged in"}
-              {spotifyOAuthStatus?.expires_at ? ` (expires ${new Date(spotifyOAuthStatus.expires_at).toLocaleString()})` : ""}
-              {spotifyOAuthStatus?.last_error ? ` — ${spotifyOAuthStatus.last_error}` : ""}
-            </p>
-
-            <p className="text-xs text-muted-foreground mt-2">
-              <strong>Setup Instructions:</strong>
-            </p>
-            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-              <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Spotify Developer Dashboard</a></li>
-              <li>In "Edit Settings", add Redirect URI: <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:*/callback</code> (use wildcard port or specific like <code className="bg-muted px-1 py-0.5 rounded text-xs">http://127.0.0.1:8080/callback</code>)</li>
-              <li>Click "Login with Spotify"</li>
-            </ol>
-            <p className="text-xs text-muted-foreground mt-2">
-              Once logged in, SpotiFLAC will prefer OAuth for Spotify metadata requests and only fall back to TOTP if OAuth isn't configured.
-            </p>
-          </div>
-
-          <div className="border-t" />
-
           {/* Source Selection */}
           <div className="space-y-2">
             <Label htmlFor="downloader" className="text-sm">Source</Label>
             <div className="flex gap-2">
               <Select
                 value={tempSettings.downloader}
-                onValueChange={(value: "auto" | "tidal" | "qobuz" | "amazon") =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, downloader: value }))
-                }
+                onValueChange={(value: "auto" | "tidal" | "qobuz" | "amazon") => setTempSettings((prev) => ({ ...prev, downloader: value }))}
               >
                 <SelectTrigger id="downloader" className="h-9 w-fit">
                   <SelectValue placeholder="Select a source" />
@@ -481,32 +248,11 @@ export function SettingsPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-
-              {/* Global bit-depth preference (mapped per service). */}
-              <Select
-                value={tempSettings.audioBitDepth}
-                onValueChange={(value: "auto" | "16" | "24" | "32") =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, audioBitDepth: value }))
-                }
-              >
-                <SelectTrigger className="h-9 w-fit">
-                  <SelectValue placeholder="Quality" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="24">24-bit (Best default)</SelectItem>
-                  <SelectItem value="16">16-bit (CD Quality)</SelectItem>
-                  <SelectItem value="32">32-bit (If available)</SelectItem>
-                  <SelectItem value="auto">Auto (Use source setting)</SelectItem>
-                </SelectContent>
-              </Select>
-
               {/* Quality dropdown for Tidal */}
-              {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "tidal" && (
+              {tempSettings.downloader === "tidal" && (
                 <Select
                   value={tempSettings.tidalQuality}
-                  onValueChange={(value: "LOSSLESS" | "HI_RES_LOSSLESS") =>
-                    setTempSettings((prev: SettingsType) => ({ ...prev, tidalQuality: value }))
-                  }
+                  onValueChange={(value: "LOSSLESS" | "HI_RES_LOSSLESS") => setTempSettings((prev) => ({ ...prev, tidalQuality: value }))}
                 >
                   <SelectTrigger className="h-9 w-fit">
                     <SelectValue />
@@ -518,12 +264,10 @@ export function SettingsPage() {
                 </Select>
               )}
               {/* Quality dropdown for Qobuz */}
-              {tempSettings.audioBitDepth === "auto" && tempSettings.downloader === "qobuz" && (
+              {tempSettings.downloader === "qobuz" && (
                 <Select
                   value={tempSettings.qobuzQuality}
-                  onValueChange={(value: "6" | "7" | "27") =>
-                    setTempSettings((prev: SettingsType) => ({ ...prev, qobuzQuality: value }))
-                  }
+                  onValueChange={(value: "6" | "7" | "27") => setTempSettings((prev) => ({ ...prev, qobuzQuality: value }))}
                 >
                   <SelectTrigger className="h-9 w-fit">
                     <SelectValue />
@@ -545,9 +289,7 @@ export function SettingsPage() {
               <Switch
                 id="embed-lyrics"
                 checked={tempSettings.embedLyrics}
-                onCheckedChange={(checked: boolean) =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, embedLyrics: checked }))
-                }
+                onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, embedLyrics: checked }))}
               />
             </div>
             <div className="flex items-center gap-3">
@@ -555,27 +297,7 @@ export function SettingsPage() {
               <Switch
                 id="embed-max-quality-cover"
                 checked={tempSettings.embedMaxQualityCover}
-                onCheckedChange={(checked: boolean) =>
-                  setTempSettings((prev: SettingsType) => ({ ...prev, embedMaxQualityCover: checked }))
-                }
-              />
-            </div>
-          </div>
-
-          {/* Odyssey Spatial Comms (experimental) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="odyssey-spatial" className="cursor-pointer text-sm">Odyssey Spatial Comms</Label>
-                <p className="text-xs text-muted-foreground">Experimental. Takes effect on the next track.</p>
-              </div>
-              <Switch
-                id="odyssey-spatial"
-                checked={tempSettings.odysseySpatialCommsEnabled}
-                onCheckedChange={(checked: boolean) => {
-                  setTempSettings((prev: SettingsType) => ({ ...prev, odysseySpatialCommsEnabled: checked }));
-                  toast.info("Odyssey Spatial Comms will apply on the next track");
-                }}
+                onCheckedChange={(checked) => setTempSettings(prev => ({ ...prev, embedMaxQualityCover: checked }))}
               />
             </div>
           </div>
@@ -600,7 +322,7 @@ export function SettingsPage() {
                 value={tempSettings.folderPreset}
                 onValueChange={(value: FolderPreset) => {
                   const preset = FOLDER_PRESETS[value];
-                  setTempSettings((prev: SettingsType) => ({
+                  setTempSettings(prev => ({
                     ...prev,
                     folderPreset: value,
                     folderTemplate: value === "custom" ? (prev.folderTemplate || preset.template) : preset.template
@@ -619,9 +341,7 @@ export function SettingsPage() {
               {tempSettings.folderPreset === "custom" && (
                 <InputWithContext
                   value={tempSettings.folderTemplate}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setTempSettings((prev: SettingsType) => ({ ...prev, folderTemplate: e.target.value }))
-                  }
+                  onChange={(e) => setTempSettings(prev => ({ ...prev, folderTemplate: e.target.value }))}
                   placeholder="{artist}/{album}"
                   className="h-9 text-sm flex-1"
                 />
@@ -654,7 +374,7 @@ export function SettingsPage() {
                 value={tempSettings.filenamePreset}
                 onValueChange={(value: FilenamePreset) => {
                   const preset = FILENAME_PRESETS[value];
-                  setTempSettings((prev: SettingsType) => ({
+                  setTempSettings(prev => ({
                     ...prev,
                     filenamePreset: value,
                     filenameTemplate: value === "custom" ? (prev.filenameTemplate || preset.template) : preset.template
@@ -673,9 +393,7 @@ export function SettingsPage() {
               {tempSettings.filenamePreset === "custom" && (
                 <InputWithContext
                   value={tempSettings.filenameTemplate}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setTempSettings((prev: SettingsType) => ({ ...prev, filenameTemplate: e.target.value }))
-                  }
+                  onChange={(e) => setTempSettings(prev => ({ ...prev, filenameTemplate: e.target.value }))}
                   placeholder="{track}. {title}"
                   className="h-9 text-sm flex-1"
                 />

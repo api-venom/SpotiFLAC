@@ -4,7 +4,12 @@ import { player } from "../lib/player";
 export function usePlayer() {
   const [state, setState] = useState(player.getState());
 
-  useEffect(() => player.subscribe(setState), []);
+  useEffect(() => {
+    const unsubscribe = player.subscribe(setState);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   return {
     state,

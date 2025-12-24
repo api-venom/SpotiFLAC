@@ -80,20 +80,31 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
-          # Use mpv.io official Windows builds (stable, predictable layout).
-          $mpvZip = "https://sourceforge.net/projects/mpv-player-windows/files/stable/mpv-x86_64-2024-12-15-git-6c8d9d8.7z/download"
+          # Download mpv Windows build from SourceForge.
+          # IMPORTANT: SourceForge uses redirects and can return HTML if not followed.
+          # We use an explicit output that follows redirects.
+          $mpvUrl = "https://sourceforge.net/projects/mpv-player-windows/files/stable/mpv-x86_64.7z/download"
 
-          $asset = [PSCustomObject]@{ name = "mpv.7z"; browser_download_url = $mpvZip }
+          $asset = [PSCustomObject]@{ name = "mpv.7z"; browser_download_url = $mpvUrl }
           $ext = "7z"
 
           $archive = "third_party/mpv/mpv.$ext"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+
+          # Use curl.exe because it handles redirects more predictably on GitHub runners.
+          & curl.exe -L --fail --retry 5 --retry-delay 2 -o $archive $asset.browser_download_url
+
+          # Verify we didn't download HTML.
+          $head = Get-Content -Path $archive -Encoding Byte -TotalCount 16
+          $asText = -join ($head | ForEach-Object { [char]$_ })
+          if ($asText -match "<!DOCTYPE" -or $asText -match "<html") {
+            throw "Downloaded HTML instead of mpv archive (redirect/protection)."
+          }
 
           if ($ext -eq "zip") {
             Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
           } else {
             # 7zip is available on windows-latest runner.
-            & 7z x $archive -o"third_party/mpv" -y | Out-Null
+            & 7z x $archive -o"third_party/mpv" -y
           }
 
           # Find common mpv dll names (varies by distribution).

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
+import { LyricsOverlay, type LyricsOverlayTrack } from "./LyricsOverlay";
+import { useLyrics } from "../hooks/useLyrics";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -93,6 +95,10 @@ export function FullScreenPlayer() {
   const { state, player } = usePlayer();
   const track = state.current;
 
+  const lyrics = useLyrics();
+  const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [lyricsTrack, setLyricsTrack] = useState<LyricsOverlayTrack | null>(null);
+
   const [palette, setPalette] = useState<{ a: string; b: string; c: string } | null>(null);
 
   useEffect(() => {
@@ -128,12 +134,36 @@ export function FullScreenPlayer() {
         <div className="absolute -bottom-24 left-1/3 h-[360px] w-[360px] rounded-full bg-white/10 blur-3xl animate-[spin_36s_linear_infinite]" />
       </div>
 
+      {lyricsTrack ? (
+        <LyricsOverlay
+          open={lyricsOpen}
+          onOpenChange={setLyricsOpen}
+          track={lyricsTrack}
+          ensureLyricsFile={lyrics.ensureLyricsFile}
+          loadLyrics={lyrics.loadLyrics}
+        />
+      ) : null}
+
       <div className="relative mx-auto flex h-full max-w-5xl flex-col px-6 py-6">
         <div className="flex items-center justify-between">
           <div className="text-sm opacity-80">Now Playing</div>
-          <Button variant="ghost" size="icon" onClick={() => player.setFullscreen(false)}>
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {track.spotifyId ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setLyricsTrack({ spotify_id: track.spotifyId, name: track.title, artists: track.artist });
+                  setLyricsOpen(true);
+                }}
+              >
+                <FileText className="h-4 w-4" />
+                Lyrics
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="icon" onClick={() => player.setFullscreen(false)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-10 md:grid-cols-2 md:items-center">

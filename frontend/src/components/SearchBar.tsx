@@ -154,6 +154,11 @@ export function SearchBar({
         else if (results.playlists.length > 0) setActiveTab("playlists");
       } catch (error) {
         console.error("Search failed:", error);
+        // In Wails WebView, some errors stringify poorly. Log a more useful version.
+        if (error instanceof Error) {
+          console.error("Search failed message:", error.message);
+          console.error("Search failed stack:", error.stack);
+        }
         setSearchResults(null);
       } finally {
         setIsSearching(false);

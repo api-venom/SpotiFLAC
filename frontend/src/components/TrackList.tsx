@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, CheckCircle, XCircle, FileCheck, FileText, Globe, ImageDown } from "lucide-react";
+import { Download, CheckCircle, XCircle, FileCheck, FileText, Globe, ImageDown, Play } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { player } from "@/lib/player";
 import {
   Tooltip,
   TooltipContent,
@@ -296,6 +297,33 @@ export function TrackList({
                   </td>
                   <td className="p-4 align-middle text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {track.spotify_id && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={async () => {
+                                await player.playTrack({
+                                  spotifyId: track.spotify_id!,
+                                  isrc: track.isrc,
+                                  title: track.name,
+                                  artist: track.artists,
+                                  album: track.album_name,
+                                  coverUrl: track.images,
+                                });
+                                player.setFullscreen(true);
+                              }}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Play</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+
                       {track.isrc && (
                         <Tooltip>
                           <TooltipTrigger asChild>

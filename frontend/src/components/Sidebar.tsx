@@ -3,16 +3,12 @@ import { HomeIcon } from "@/components/ui/home";
 import { SettingsIcon } from "@/components/ui/settings";
 import { ActivityIcon } from "@/components/ui/activity";
 import { TerminalIcon } from "@/components/ui/terminal";
-import { GithubIcon } from "@/components/ui/github";
-import { BlocksIcon } from "@/components/ui/blocks";
-import { CoffeeIcon } from "@/components/ui/coffee";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { openExternal } from "@/lib/utils";
 
 export type PageType = "main" | "settings" | "debug" | "audio-analysis" | "audio-converter" | "file-manager";
 
@@ -128,54 +124,6 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         </Tooltip>
       </div>
       
-      {/* Bottom icons */}
-      <div className="mt-auto flex flex-col gap-2">
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-              onClick={() => openExternal("https://github.com/afkarxyz/SpotiFLAC/issues")}
-            >
-              <GithubIcon size={20} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <p>Report Bug</p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-              onClick={() => openExternal("https://exyezed.cc/")}
-            >
-              <BlocksIcon size={20} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <p>Other Projects</p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-              onClick={() => openExternal("https://ko-fi.com/afkarxyz")}
-            >
-              <CoffeeIcon size={20} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <p>Support me on Ko-fi</p>
-          </TooltipContent>
-        </Tooltip>
-      </div>
     </div>
   );
 }

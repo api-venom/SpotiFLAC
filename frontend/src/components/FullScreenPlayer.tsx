@@ -96,7 +96,6 @@ export function FullScreenPlayer() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isRepeat, setIsRepeat] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
-  const [showEqualizer, setShowEqualizer] = useState(false);
 
   const [palette, setPalette] = useState<{ dominant: string; vibrant: string; dark: string; light: string } | null>(null);
 

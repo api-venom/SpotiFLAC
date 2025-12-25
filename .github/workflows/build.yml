@@ -234,8 +234,28 @@ jobs:
           }
 
       - name: Compress with UPX
+        shell: pwsh
         run: |
-          upx --best --lzma "build\bin\SpotiFLAC.exe"
+          $ErrorActionPreference = "Stop"
+
+          $candidates = @(
+            "build\bin\KnightMusic.exe",
+            "build\bin\Knight Music.exe",
+            "build\bin\SpotiFLAC.exe"
+          ) | Where-Object { Test-Path $_ }
+
+          if ($candidates.Count -eq 0) {
+            $fallback = Get-ChildItem -Path "build\bin" -Filter "*.exe" -File | Select-Object -First 1
+            if (-not $fallback) {
+              throw "No .exe found in build/bin for UPX"
+            }
+            $exe = $fallback.FullName
+          } else {
+            $exe = $candidates[0]
+          }
+
+          Write-Host "UPX compressing: $exe"
+          upx --best --lzma "$exe"
 
       - name: Prepare artifacts and create ZIP
         shell: pwsh
@@ -245,9 +265,25 @@ jobs:
           Write-Host "Creating distribution folder..."
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           
-          # Copy executable
-          Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
-          Write-Host "Copied SpotiFLAC.exe"
+          # Copy executable (output filename is configured in wails.json)
+          $candidates = @(
+            "build\bin\KnightMusic.exe",
+            "build\bin\Knight Music.exe",
+            "build\bin\SpotiFLAC.exe"
+          ) | Where-Object { Test-Path $_ }
+
+          if ($candidates.Count -eq 0) {
+            $fallback = Get-ChildItem -Path "build\bin" -Filter "*.exe" -File | Select-Object -First 1
+            if (-not $fallback) {
+              throw "No .exe found in build/bin"
+            }
+            $exe = $fallback.FullName
+          } else {
+            $exe = $candidates[0]
+          }
+
+          Copy-Item -Path $exe -Destination "dist\KnightMusic.exe" -Force
+          Write-Host "Copied KnightMusic.exe"
 
           # Copy ALL DLLs from build/bin (includes MPV and dependencies)
           $dllCount = 0
@@ -262,13 +298,13 @@ jobs:
           Get-ChildItem -Path "dist" | Select-Object Name,@{Name="Size (MB)";Expression={[Math]::Round($_.Length / 1MB, 2)}} | Format-Table -AutoSize
           
           # Create README for users
-          $readmeContent = "SpotiFLAC - Portable Windows Build`n`n"
+          $readmeContent = "Knight Music - Portable Windows Build`n`n"
           $readmeContent += "Quick Start:`n"
           $readmeContent += "1. Extract all files to a folder`n"
-          $readmeContent += "2. Run SpotiFLAC.exe`n"
+          $readmeContent += "2. Run KnightMusic.exe`n"
           $readmeContent += "3. Enjoy FLAC playback!`n`n"
           $readmeContent += "What's Included:`n"
-          $readmeContent += "- SpotiFLAC.exe (Main application)`n"
+          $readmeContent += "- KnightMusic.exe (Main application)`n"
           $readmeContent += "- libmpv-2.dll (MPV player for FLAC decoder)`n"
           $readmeContent += "- Other DLLs (Required dependencies)`n`n"
           $readmeContent += "Features:`n"
@@ -277,7 +313,7 @@ jobs:
           $readmeContent += "- Stream or download from Tidal`n"
           $readmeContent += "- No additional setup required`n`n"
           $readmeContent += "Important:`n"
-          $readmeContent += "- Keep all DLL files in the same folder as SpotiFLAC.exe`n"
+          $readmeContent += "- Keep all DLL files in the same folder as KnightMusic.exe`n"
           $readmeContent += "- Do not delete any DLL files`n`n"
           $readmeContent += "Troubleshooting:`n"
           $readmeContent += "If MPV does not work:`n"
@@ -290,10 +326,10 @@ jobs:
 
           # Create portable ZIP package
           Write-Host "`nCreating ZIP archive..."
-          Compress-Archive -Path "dist\*" -DestinationPath "SpotiFLAC-Windows-Portable.zip" -Force
+          Compress-Archive -Path "dist\*" -DestinationPath "KnightMusic-Windows-Portable.zip" -Force
           
-          $zipSize = [Math]::Round((Get-Item "SpotiFLAC-Windows-Portable.zip").Length / 1MB, 2)
-          Write-Host "Created SpotiFLAC-Windows-Portable.zip ($zipSize MB)"
+          $zipSize = [Math]::Round((Get-Item "KnightMusic-Windows-Portable.zip").Length / 1MB, 2)
+          Write-Host "Created KnightMusic-Windows-Portable.zip ($zipSize MB)"
           Write-Host "`nDistribution package ready!"
 
       - name: Upload folder artifacts
@@ -307,7 +343,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable-zip
-          path: SpotiFLAC-Windows-Portable.zip
+          path: KnightMusic-Windows-Portable.zip
           retention-days: 7
 
   build-macos:
@@ -379,23 +415,23 @@ jobs:
 
           # Create DMG
           create-dmg \
-            --volname "SpotiFLAC" \
+            --volname "Knight Music" \
             --window-pos 200 120 \
             --window-size 600 400 \
             --icon-size 100 \
-            --icon "SpotiFLAC.app" 175 120 \
-            --hide-extension "SpotiFLAC.app" \
+            --icon "KnightMusic.app" 175 120 \
+            --hide-extension "KnightMusic.app" \
             --app-drop-link 425 120 \
-            "dist/SpotiFLAC.dmg" \
-            "build/bin/SpotiFLAC.app" || \
+            "dist/KnightMusic.dmg" \
+            "build/bin/KnightMusic.app" || \
           # Fallback to hdiutil if create-dmg fails
-          hdiutil create -volname SpotiFLAC -srcfolder build/bin/SpotiFLAC.app -ov -format UDZO dist/SpotiFLAC.dmg
+          hdiutil create -volname "Knight Music" -srcfolder build/bin/KnightMusic.app -ov -format UDZO dist/KnightMusic.dmg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-portable
-          path: dist/SpotiFLAC.dmg
+          path: dist/KnightMusic.dmg
           retention-days: 7
 
   build-linux:
@@ -467,7 +503,7 @@ jobs:
 
       - name: Compress with UPX
         run: |
-          upx --best --lzma build/bin/SpotiFLAC
+          upx --best --lzma build/bin/KnightMusic
 
       - name: Cache appimagetool
         id: cache-appimagetool
@@ -492,34 +528,34 @@ jobs:
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
           # Copy binary
-          cp build/bin/SpotiFLAC AppDir/usr/bin/
+          cp build/bin/KnightMusic AppDir/usr/bin/
 
           # Create desktop file
-          cat > AppDir/spotiflac.desktop << 'EOF'
+          cat > AppDir/knightmusic.desktop << 'EOF'
           [Desktop Entry]
-          Name=SpotiFLAC
-          Exec=SpotiFLAC
-          Icon=spotiflac
+          Name=Knight Music
+          Exec=KnightMusic
+          Icon=knightmusic
           Type=Application
           Categories=Audio;AudioVideo;
           Comment=Get Spotify tracks in true FLAC from Tidal/Deezer
           EOF
 
-          cp AppDir/spotiflac.desktop AppDir/usr/share/applications/
+          cp AppDir/knightmusic.desktop AppDir/usr/share/applications/
 
           # Create icon
           if [ -f "build/appicon.png" ]; then
-            convert build/appicon.png -resize 256x256 AppDir/spotiflac.png
+            convert build/appicon.png -resize 256x256 AppDir/knightmusic.png
           elif [ -f "frontend/public/icon.svg" ]; then
-            convert -background none -size 256x256 frontend/public/icon.svg AppDir/spotiflac.png
+            convert -background none -size 256x256 frontend/public/icon.svg AppDir/knightmusic.png
           else
             echo "Warning: No icon found, building without icon"
           fi
 
           # Copy icon if exists
-          if [ -f "AppDir/spotiflac.png" ]; then
-            cp AppDir/spotiflac.png AppDir/usr/share/icons/hicolor/256x256/apps/
-            cp AppDir/spotiflac.png AppDir/.DirIcon
+          if [ -f "AppDir/knightmusic.png" ]; then
+            cp AppDir/knightmusic.png AppDir/usr/share/icons/hicolor/256x256/apps/
+            cp AppDir/knightmusic.png AppDir/.DirIcon
           fi
 
           # Create AppRun
@@ -529,19 +565,19 @@ jobs:
           HERE=${SELF%/*}
           export PATH="${HERE}/usr/bin/:${PATH}"
           export LD_LIBRARY_PATH="${HERE}/usr/lib/:${LD_LIBRARY_PATH}"
-          exec "${HERE}/usr/bin/SpotiFLAC" "$@"
+          exec "${HERE}/usr/bin/KnightMusic" "$@"
           EOF
           chmod +x AppDir/AppRun
 
           # Create AppImage
           mkdir -p dist
-          ARCH=x86_64 ./appimagetool --no-appstream AppDir dist/SpotiFLAC.AppImage
+          ARCH=x86_64 ./appimagetool --no-appstream AppDir dist/KnightMusic.AppImage
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-portable
-          path: dist/SpotiFLAC.AppImage
+          path: dist/KnightMusic.AppImage
           retention-days: 7
 
   create-release:
@@ -576,7 +612,7 @@ jobs:
           prerelease: false
           generate_release_notes: false
           body: |
-            ## SpotiFLAC with Full FLAC Playback Support
+            ## Knight Music with Full FLAC Playback Support
 
             ### What's New
 
@@ -596,23 +632,23 @@ jobs:
             ## Downloads
 
             ### Windows (Recommended)
-            **`SpotiFLAC-Windows-Portable.zip`** <- **Download this!**
+            **`KnightMusic-Windows-Portable.zip`** <- **Download this!**
             - Complete portable package
-            - Includes SpotiFLAC.exe + all MPV DLLs
+            - Includes KnightMusic.exe + all MPV DLLs
             - Just extract and run - no installation needed
             - FLAC playback works immediately
 
             ### Alternative Downloads
-            - `SpotiFLAC.dmg` - macOS (MPV not yet supported)
-            - `SpotiFLAC.AppImage` - Linux (includes MPV support)
+            - `KnightMusic.dmg` - macOS (MPV not yet supported)
+            - `KnightMusic.AppImage` - Linux (includes MPV support)
 
             ---
 
             ## Quick Start (Windows)
 
-            1. **Download** `SpotiFLAC-Windows-Portable.zip`
+            1. **Download** `KnightMusic-Windows-Portable.zip`
             2. **Extract** to any folder (e.g., Desktop)
-            3. **Run** `SpotiFLAC.exe`
+            3. **Run** `KnightMusic.exe`
             4. **Enjoy!** FLAC playback works immediately
 
             **That's it!** No manual DLL downloads, no configuration needed.
@@ -622,8 +658,8 @@ jobs:
             ## What's Included (Windows ZIP)
 
             ```
-            SpotiFLAC-Windows-Portable/
-            ├── SpotiFLAC.exe          <- Main application
+            KnightMusic-Windows-Portable/
+            ├── KnightMusic.exe        <- Main application
             ├── libmpv-2.dll           <- MPV player (FLAC decoder)
             ├── [other DLLs]           <- Dependencies
             └── README.txt             <- Setup instructions
@@ -667,15 +703,15 @@ jobs:
             **Ubuntu/Debian:**
             ```bash
             sudo apt install libwebkit2gtk-4.1-0 libmpv1
-            chmod +x SpotiFLAC.AppImage
-            ./SpotiFLAC.AppImage
+            chmod +x KnightMusic.AppImage
+            ./KnightMusic.AppImage
             ```
 
             **Arch Linux:**
             ```bash
             sudo pacman -S webkit2gtk-4.1 mpv
-            chmod +x SpotiFLAC.AppImage
-            ./SpotiFLAC.AppImage
+            chmod +x KnightMusic.AppImage
+            ./KnightMusic.AppImage
             ```
 
             ---
@@ -722,14 +758,14 @@ jobs:
 
             After installing the dependency, make the AppImage executable:
             ```bash
-            chmod +x SpotiFLAC.AppImage
-            ./SpotiFLAC.AppImage
+            chmod +x KnightMusic.AppImage
+            ./KnightMusic.AppImage
             ```
 
             </details>
           files: |
-            artifacts/windows-portable-zip/SpotiFLAC-Windows-Portable.zip
-            artifacts/macos-portable/SpotiFLAC.dmg
-            artifacts/linux-portable/SpotiFLAC.AppImage
+            artifacts/windows-portable-zip/KnightMusic-Windows-Portable.zip
+            artifacts/macos-portable/KnightMusic.dmg
+            artifacts/linux-portable/KnightMusic.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

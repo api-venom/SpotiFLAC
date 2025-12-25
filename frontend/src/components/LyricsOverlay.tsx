@@ -33,7 +33,6 @@ export function LyricsOverlay({
   ensureLyricsFile,
   currentPosition,
   fetchLyrics,
-  isPlaying = true,
 }: LyricsOverlayProps) {
   const palette = useCoverPalette(track?.coverUrl);
   const { state } = usePlayer();
@@ -42,18 +41,9 @@ export function LyricsOverlay({
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
   const [fetching, setFetching] = useState(false);
-  const [dotCount, setDotCount] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
 
   const timeline = useMemo(() => buildLrcTimeline(content), [content]);
-
-  // Animated dots for instrumental breaks
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDotCount((prev) => (prev + 1) % 4);
-    }, 500);
-    return () => clearInterval(interval);
-  }, []);
 
   // Find the current active line
   const activeIndex = useMemo(() => {
@@ -118,7 +108,6 @@ export function LyricsOverlay({
     }
   }, [showMenu]);
 
-  const dots = formatEllipsisDots(dotCount);
   const bgStyle = useMemo(() => buildPaletteBackgroundStyle(palette), [palette]);
 
   // Get visible lines - Skip ellipsis completely, show only lyrics

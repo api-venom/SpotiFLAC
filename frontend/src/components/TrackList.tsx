@@ -184,6 +184,43 @@ export function TrackList({
 
   return (
     <div className="space-y-4">
+      {/* Play All Button */}
+      {filteredTracks.length > 0 && filteredTracks.some(t => t.spotify_id) && (
+        <div className="flex items-center gap-4">
+          <Button
+            size="lg"
+            variant="default"
+            className="gap-2"
+            onClick={async () => {
+              const { queue } = buildPlayableQueue();
+              if (queue.length > 0) {
+                await player.setQueue(queue, 0);
+                player.setFullscreen(true);
+              }
+            }}
+          >
+            <Play className="h-5 w-5" />
+            Play All ({filteredTracks.filter(t => t.spotify_id).length} {filteredTracks.filter(t => t.spotify_id).length === 1 ? 'track' : 'tracks'})
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="gap-2"
+            onClick={async () => {
+              const { queue } = buildPlayableQueue();
+              if (queue.length > 0) {
+                await player.setQueue(queue, 0, { shuffle: true });
+                player.setFullscreen(true);
+              }
+            }}
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h5v5H4V4zM15 4h5v5h-5V4zM4 15h5v5H4v-5zM15 10h5v5h-5v-5z" />
+            </svg>
+            Shuffle Play
+          </Button>
+        </div>
+      )}
       <div className="rounded-md border">
         <div className="overflow-x-auto">
           <table className="w-full">

@@ -5,9 +5,10 @@ package backend
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/mpv
-#cgo windows LDFLAGS: -L${SRCDIR}/.. -lmpv-2
+#cgo windows LDFLAGS: -L${SRCDIR} -lmpv
 #cgo linux LDFLAGS: -lmpv
-#cgo darwin LDFLAGS: -lmpv
+#cgo darwin CFLAGS: -I/opt/homebrew/include -I/usr/local/include
+#cgo darwin LDFLAGS: -L/opt/homebrew/lib -L/usr/local/lib -lmpv
 
 #include <stdlib.h>
 #include <stdint.h>

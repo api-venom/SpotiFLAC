@@ -168,18 +168,28 @@ jobs:
           # Also keep the main libmpv dll explicitly (some archives have it in a different subfolder)
           Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path $dst (Split-Path -Leaf $env:MPV_DLL_PATH))
 
-          # Copy MPV header for CGO compilation
+          # Copy MPV headers for CGO compilation
           $headerDst = "backend\\mpv"
           New-Item -ItemType Directory -Force -Path $headerDst | Out-Null
-          if ($env:MPV_HEADER_PATH) {
-            Copy-Item -Force -Path "$env:MPV_HEADER_PATH" -Destination (Join-Path $headerDst "client.h")
-            Write-Host "Copied client.h to backend/mpv/ for CGO compilation"
-          } else {
-            Write-Host "Warning: MPV_HEADER_PATH not set, CGO compilation may fail"
-          }
+          
+          # Copy all headers from include/mpv directory
+          Copy-Item -Force -Path "$env:MPV_INCLUDE_DIR\\*" -Destination $headerDst
+          Write-Host "Copied MPV headers to backend/mpv/ for CGO compilation"
+          Get-ChildItem -Path $headerDst | Select-Object Name | Format-Table -AutoSize | Out-Host
 
-          # Also copy the DLL to backend directory for CGO linking during build
-          Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path "backend" (Split-Path -Leaf $env:MPV_DLL_PATH))
+          # Find and copy import library (.lib or .dll.a) for CGO linking
+          Write-Host "Searching for MPV import library..."
+          $libFile = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "libmpv.dll.a","libmpv-2.dll.a","libmpv.lib","mpv.lib" -File | Select-Object -First 1
+          
+          if ($libFile) {
+            Write-Host "Found import library: $($libFile.FullName)"
+            Copy-Item -Force -Path $libFile.FullName -Destination "backend\libmpv.dll.a"
+            Write-Host "Copied import library to backend/ for CGO linking"
+          } else {
+            Write-Host "Warning: No import library found, will try direct DLL linking"
+            # Copy the DLL to backend directory as fallback
+            Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path "backend" (Split-Path -Leaf $env:MPV_DLL_PATH))
+          }
 
           Write-Host "Staged mpv runtime files:"
           Get-ChildItem -Path $dst | Select-Object Name,Length | Format-Table -AutoSize
@@ -278,17 +288,36 @@ jobs:
           pnpm install
           pnpm run generate-icon
 
+      # Copy MPV headers for CGO compilation
+      - name: Copy MPV headers for CGO
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          # Ensure Homebrew MPV is installed
+          brew update
+          brew install mpv
+          
+          # Copy headers to backend/mpv directory for CGO compilation
+          mkdir -p backend/mpv
+          MPV_INCLUDE=$(brew --prefix)/include/mpv
+          if [ -d "$MPV_INCLUDE" ]; then
+            cp -f "$MPV_INCLUDE"/*.h backend/mpv/
+            echo "Copied MPV headers from $MPV_INCLUDE to backend/mpv/"
+            ls -la backend/mpv/
+          else
+            echo "Error: MPV headers not found at $MPV_INCLUDE" >&2
+            exit 1
+          fi
+
       - name: Build application
         run: wails build -platform darwin/universal
 
       # Bundle mpv (libmpv) into the app bundle so FLAC playback works on fresh machines.
-      - name: Download and bundle mpv runtime
+      - name: Bundle mpv runtime
         shell: bash
         run: |
           set -euo pipefail
-
-          brew update
-          brew install mpv
 
           APP="build/bin/SpotiFLAC.app"
           FRAMEWORKS="$APP/Contents/Frameworks"

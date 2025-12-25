@@ -580,6 +580,11 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 	return "", fmt.Errorf("download URL not found in response")
 }
 
+// GetTidalFileURL is an alias for GetDownloadURL for streaming compatibility
+func (t *TidalDownloader) GetTidalFileURL(trackID int64, quality string) (string, error) {
+	return t.GetDownloadURL(trackID, quality)
+}
+
 func (t *TidalDownloader) DownloadAlbumArt(albumID string) ([]byte, error) {
 	albumID = strings.ReplaceAll(albumID, "-", "/")
 	// Decode base64 API URL

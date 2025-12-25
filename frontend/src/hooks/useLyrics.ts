@@ -102,13 +102,16 @@ export function useLyrics() {
           newSet.delete(spotifyId);
           return newSet;
         });
+        return response.file;
       } else {
         toast.error(response.error || "Failed to download lyrics");
         setFailedLyrics((prev) => new Set(prev).add(spotifyId));
+        return null;
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download lyrics");
       setFailedLyrics((prev) => new Set(prev).add(spotifyId));
+      return null;
     } finally {
       setDownloadingLyricsTrack(null);
     }
@@ -210,6 +213,9 @@ export function useLyrics() {
         });
 
         if (response.success) {
+          if (response.file) {
+            setLyricsFiles((prev) => ({ ...prev, [id]: response.file! }));
+          }
           if (response.already_exists) {
             skipped++;
             setSkippedLyrics((prev) => new Set(prev).add(id));

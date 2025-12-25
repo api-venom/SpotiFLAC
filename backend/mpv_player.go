@@ -130,6 +130,7 @@ func (p *mpvPlayerStub) Close() error {
 }
 
 // ValidateHiResFLAC is a sanity check helper.
+// NOTE: This accepts both CD-quality (16-bit/44.1kHz) and hi-res (24-bit/96kHz+) FLAC files
 func ValidateHiResFLAC(sampleRate int, bitDepth int) (bool, string) {
 	if sampleRate <= 0 {
 		return false, "missing sample rate"
@@ -137,11 +138,12 @@ func ValidateHiResFLAC(sampleRate int, bitDepth int) (bool, string) {
 	if bitDepth <= 0 {
 		return false, "missing bit depth"
 	}
-	if sampleRate < 48000 {
-		return false, fmt.Sprintf("sample rate too low for hi-res: %d", sampleRate)
+	// Accept CD quality: 44.1kHz/16-bit minimum (standard FLAC)
+	if sampleRate < 44100 {
+		return false, fmt.Sprintf("sample rate too low for lossless audio: %d (minimum 44.1kHz)", sampleRate)
 	}
-	if bitDepth < 24 {
-		return false, fmt.Sprintf("bit depth too low for hi-res: %d", bitDepth)
+	if bitDepth < 16 {
+		return false, fmt.Sprintf("bit depth too low for lossless audio: %d (minimum 16-bit)", bitDepth)
 	}
 	return true, ""
 }

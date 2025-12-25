@@ -523,6 +523,7 @@ func (t *TidalDownloader) GetTrackInfoByID(trackID int64) (*TidalTrack, error) {
 func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string, error) {
 	fmt.Println("Fetching URL...")
 
+	// Try requested quality first
 	url := fmt.Sprintf("%s/track/?id=%d&quality=%s", t.apiURL, trackID, quality)
 	fmt.Printf("Tidal API URL: %s\n", url)
 
@@ -535,6 +536,13 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 
 	if resp.StatusCode != 200 {
 		fmt.Printf("✗ Tidal API returned status code: %d\n", resp.StatusCode)
+		
+		// If HI_RES_LOSSLESS (24-bit) fails, try fallback to LOSSLESS (16-bit)
+		if quality == "HI_RES_LOSSLESS" || quality == "HI_RES" {
+			fmt.Println("⚠ Hi-res not available, trying standard lossless (16-bit)...")
+			return t.GetDownloadURL(trackID, "LOSSLESS")
+		}
+		
 		return "", fmt.Errorf("API returned status code: %d", resp.StatusCode)
 	}
 
@@ -561,11 +569,25 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 			bodyStr = bodyStr[:200] + "..."
 		}
 		fmt.Printf("✗ Failed to decode Tidal API response: %v (response: %s)\n", err, bodyStr)
+		
+		// If HI_RES_LOSSLESS fails to parse, try fallback to LOSSLESS
+		if quality == "HI_RES_LOSSLESS" || quality == "HI_RES" {
+			fmt.Println("⚠ Hi-res response invalid, trying standard lossless (16-bit)...")
+			return t.GetDownloadURL(trackID, "LOSSLESS")
+		}
+		
 		return "", fmt.Errorf("failed to decode response: %w (response: %s)", err, bodyStr)
 	}
 
 	if len(apiResponses) == 0 {
 		fmt.Println("✗ Tidal API returned empty response")
+		
+		// If HI_RES_LOSSLESS fails, try fallback to LOSSLESS
+		if quality == "HI_RES_LOSSLESS" || quality == "HI_RES" {
+			fmt.Println("⚠ Hi-res not available, trying standard lossless (16-bit)...")
+			return t.GetDownloadURL(trackID, "LOSSLESS")
+		}
+		
 		return "", fmt.Errorf("no download URL in response")
 	}
 
@@ -577,6 +599,13 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 	}
 
 	fmt.Println("✗ No valid download URL in Tidal API response")
+	
+	// If HI_RES_LOSSLESS fails, try fallback to LOSSLESS
+	if quality == "HI_RES_LOSSLESS" || quality == "HI_RES" {
+		fmt.Println("⚠ Hi-res not available, trying standard lossless (16-bit)...")
+		return t.GetDownloadURL(trackID, "LOSSLESS")
+	}
+	
 	return "", fmt.Errorf("download URL not found in response")
 }
 

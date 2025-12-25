@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { X } from "lucide-react";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { buildLrcTimeline, findActiveIndex, getLineProgress, formatEllipsisDots } from "@/lib/lyrics/lrc";
 import { buildPaletteBackgroundStyle } from "@/lib/cover/palette";
@@ -163,114 +164,152 @@ export function LyricsOverlay({
         {/* Backdrop blur overlay */}
         <div className="absolute inset-0 backdrop-blur-3xl bg-black/30" />
 
-        <DialogHeader className="px-6 pt-6 pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <DialogTitle className="truncate text-white">{track ? track.name : "Lyrics"}</DialogTitle>
-              {track ? (
-                <p className="text-sm text-white/60 truncate">{track.artists}</p>
-              ) : null}
-            </div>
-            <Button variant="outline" onClick={() => onOpenChange(false)} className="bg-white/10 text-white border-white/20 hover:bg-white/20">
-              Close
-            </Button>
-          </div>
-        </DialogHeader>
+        {/* Header with close button */}
+        <div className="absolute top-6 right-6 z-10">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onOpenChange(false)}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 rounded-full"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
 
-        <div
-          ref={containerRef}
-          className="relative px-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 scroll-smooth"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.3) transparent" }}
-        >
-          {loading || fetching ? (
-            <div className="py-16 text-center text-white/60 text-xl">
-              {fetching ? "Fetching lyrics..." : "Loading lyrics…"}
-            </div>
-          ) : error ? (
-            <div className="py-16 text-center text-white/60 text-xl">{error}</div>
-          ) : (
-            <div className="max-w-4xl mx-auto py-[33vh] px-8">
-              {timeline.map((l, idx) => {
-                const isActive = idx === activeIndex;
-                const isPast = idx < activeIndex;
-                const isFuture = idx > activeIndex;
-                const progress = lineProgress[idx] || 0;
-                
-                const isEllipsis = l.kind === "ellipsis";
-                const displayText = isEllipsis ? (isPlaying ? dots : "") : l.text;
-                
-                // Hide ellipsis lines if empty
-                if (isEllipsis && !displayText) return null;
-                
-                return (
-                  <div
-                    key={`${idx}-${l.t}`}
-                    ref={isActive ? activeLyricsRef : null}
-                    className={cn(
-                      "relative transition-all duration-500 ease-out",
-                      isActive && "mb-4 text-4xl md:text-5xl lg:text-6xl",
-                      !isActive && "mb-2 text-2xl md:text-3xl lg:text-4xl",
-                      "font-bold leading-tight"
-                    )}
-                  >
-                    {/* Background text (gray for future, dimmed for past) */}
-                    <div
-                      className={cn(
-                        "transition-all duration-500 break-words"
-                      )}
-                      style={{
-                        color: isPast ? "#888" : isFuture ? "#666" : "#999",
-                        opacity: isPast ? 0.4 : isFuture ? 0.5 : 1,
-                        wordBreak: "break-word",
-                        overflowWrap: "break-word",
-                      }}
-                    >
-                      {displayText}
-                    </div>
-                    
-                    {/* Foreground text (white) with smooth fill animation for active line */}
-                    {isActive && progress > 0 && (
-                      <div
-                        className="absolute inset-0 overflow-hidden transition-all duration-150"
-                        style={{
-                          clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
-                        }}
-                      >
-                        <div
-                          className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight break-words"
-                          style={{
-                            color: "#FFFFFF",
-                            textShadow: "0 2px 20px rgba(255,255,255,0.5), 0 0 40px rgba(255,255,255,0.3)",
-                            wordBreak: "break-word",
-                            overflowWrap: "break-word",
-                          }}
-                        >
-                          {displayText}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Past lines shown in white with reduced opacity */}
-                    {isPast && (
-                      <div className="absolute inset-0">
-                        <div
-                          className="text-2xl md:text-3xl lg:text-4xl font-bold leading-tight break-words"
-                          style={{
-                            color: "#FFFFFF",
-                            opacity: 0.6,
-                            wordBreak: "break-word",
-                            overflowWrap: "break-word",
-                          }}
-                        >
-                          {displayText}
-                        </div>
-                      </div>
-                    )}
+        {/* Main Content - Side by Side Layout like Image 2 */}
+        <div className="relative h-full flex items-center justify-center p-12">
+          <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            
+            {/* Left Side - Album Art & Track Info */}
+            <div className="flex flex-col items-center lg:items-start gap-6">
+              {/* Album Art */}
+              <div className="relative w-full max-w-md aspect-square">
+                {track?.coverUrl ? (
+                  <img
+                    src={track.coverUrl}
+                    alt={track.name}
+                    className="w-full h-full object-cover rounded-2xl shadow-2xl"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-white/5 to-white/10 rounded-2xl flex items-center justify-center">
+                    <div className="text-6xl text-white/20">♫</div>
                   </div>
-                );
-              })}
+                )}
+              </div>
+              
+              {/* Track Info */}
+              <div className="w-full max-w-md">
+                <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 truncate">
+                  {track?.name || "Lyrics"}
+                </h1>
+                <h2 className="text-xl md:text-2xl text-white/70 truncate">
+                  {track?.artists}
+                </h2>
+                {track && (
+                  <p className="text-sm text-white/50 mt-4">
+                    My Dear Melancholy,
+                  </p>
+                )}
+              </div>
             </div>
-          )}
+
+            {/* Right Side - Lyrics */}
+            <div
+              ref={containerRef}
+              className="h-full max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden scroll-smooth pr-4"
+              style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.3) transparent" }}
+            >
+              {loading || fetching ? (
+                <div className="py-16 text-white/60 text-xl">
+                  {fetching ? "Fetching lyrics..." : "Loading lyrics…"}
+                </div>
+              ) : error ? (
+                <div className="py-16 text-white/60 text-xl">{error}</div>
+              ) : (
+                <div className="py-8">
+                  {timeline.map((l, idx) => {
+                    const isActive = idx === activeIndex;
+                    const isPast = idx < activeIndex;
+                    const isFuture = idx > activeIndex;
+                    const progress = lineProgress[idx] || 0;
+                    
+                    const isEllipsis = l.kind === "ellipsis";
+                    const displayText = isEllipsis ? (isPlaying ? dots : "") : l.text;
+                    
+                    // Hide ellipsis lines if empty
+                    if (isEllipsis && !displayText) return null;
+                    
+                    return (
+                      <div
+                        key={`${idx}-${l.t}`}
+                        ref={isActive ? activeLyricsRef : null}
+                        className={cn(
+                          "relative transition-all duration-500 ease-out text-left",
+                          isActive && "mb-6 text-4xl md:text-5xl lg:text-6xl",
+                          !isActive && "mb-3 text-xl md:text-2xl lg:text-3xl",
+                          "font-bold leading-tight"
+                        )}
+                      >
+                        {/* Background text (gray for future, dimmed for past) */}
+                        <div
+                          className={cn(
+                            "transition-all duration-500 break-words"
+                          )}
+                          style={{
+                            color: isPast ? "#888" : isFuture ? "#666" : "#999",
+                            opacity: isPast ? 0.5 : isFuture ? 0.6 : 1,
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                          }}
+                        >
+                          {displayText}
+                        </div>
+                        
+                        {/* Foreground text (white) with smooth fill animation for active line */}
+                        {isActive && progress > 0 && (
+                          <div
+                            className="absolute inset-0 overflow-hidden transition-all duration-150"
+                            style={{
+                              clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
+                            }}
+                          >
+                            <div
+                              className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight break-words"
+                              style={{
+                                color: "#FFFFFF",
+                                textShadow: "0 2px 20px rgba(255,255,255,0.5), 0 0 40px rgba(255,255,255,0.3)",
+                                wordBreak: "break-word",
+                                overflowWrap: "break-word",
+                              }}
+                            >
+                              {displayText}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Past lines shown in white with reduced opacity */}
+                        {isPast && (
+                          <div className="absolute inset-0">
+                            <div
+                              className="text-xl md:text-2xl lg:text-3xl font-bold leading-tight break-words"
+                              style={{
+                                color: "#FFFFFF",
+                                opacity: 0.7,
+                                wordBreak: "break-word",
+                                overflowWrap: "break-word",
+                              }}
+                            >
+                              {displayText}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

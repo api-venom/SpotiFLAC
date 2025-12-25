@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";

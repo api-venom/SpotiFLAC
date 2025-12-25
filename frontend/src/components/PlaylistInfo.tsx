@@ -95,6 +95,30 @@ export function PlaylistInfo({
   downloadedLyrics,
   failedLyrics,
   skippedLyrics,
+  downloadingLyricsTrack,
+  checkingAvailabilityTrack,
+  availabilityMap,
+  downloadedCovers,
+  failedCovers,
+  skippedCovers,
+  downloadingCoverTrack,
+  isBulkDownloadingCovers,
+  isBulkDownloadingLyrics,
+  onSearchChange,
+  onSortChange,
+  onToggleTrack,
+  onToggleSelectAll,
+  onDownloadTrack,
+  onDownloadLyrics,
+  onDownloadCover,
+  onCheckAvailability,
+  onDownloadAllLyrics,
+  onDownloadAllCovers,
+  onDownloadAll,
+  onDownloadSelected,
+  onStopDownload,
+  onOpenFolder,
+  onPageChange,
   onAlbumClick,
   onArtistClick,
   onTrackClick,
@@ -140,31 +164,6 @@ export function PlaylistInfo({
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {playableQueue.length > 0 && (
-                  <>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        await player.setQueue(playableQueue, 0);
-                        player.setFullscreen(true);
-                      }}
-                    >
-                      <Play className="h-4 w-4" />
-                      Play
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        await player.setQueue(playableQueue, 0, { shuffle: true });
-                        player.setFullscreen(true);
-                      }}
-                    >
-                      <Shuffle className="h-4 w-4" />
-                      Shuffle
-                    </Button>
-                  </>
-                )}
-
                 {sourceUrl ? (
                   <Button
                     variant={pinnedNow ? "secondary" : "outline"}

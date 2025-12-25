@@ -93,6 +93,30 @@ export function ArtistInfo({
   downloadedLyrics,
   failedLyrics,
   skippedLyrics,
+  downloadingLyricsTrack,
+  checkingAvailabilityTrack,
+  availabilityMap,
+  downloadedCovers,
+  failedCovers,
+  skippedCovers,
+  downloadingCoverTrack,
+  isBulkDownloadingCovers,
+  isBulkDownloadingLyrics,
+  onSearchChange,
+  onSortChange,
+  onToggleTrack,
+  onToggleSelectAll,
+  onDownloadTrack,
+  onDownloadLyrics,
+  onDownloadCover,
+  onCheckAvailability,
+  onDownloadAllLyrics,
+  onDownloadAllCovers,
+  onDownloadAll,
+  onDownloadSelected,
+  onStopDownload,
+  onOpenFolder,
+  onAlbumClick,
   onArtistClick,
   onPageChange,
   onTrackClick,
@@ -137,30 +161,6 @@ export function ArtistInfo({
                 )}
               </div>
 
-              {playableQueue.length > 0 && (
-                <div className="flex gap-2 flex-wrap pt-2">
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      await player.setQueue(playableQueue, 0);
-                      player.setFullscreen(true);
-                    }}
-                  >
-                    <Play className="h-4 w-4" />
-                    Play
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      await player.setQueue(playableQueue, 0, { shuffle: true });
-                      player.setFullscreen(true);
-                    }}
-                  >
-                    <Shuffle className="h-4 w-4" />
-                    Shuffle
-                  </Button>
-                </div>
-              )}
             </div>
           </div>
         </CardContent>
@@ -212,33 +212,6 @@ export function ArtistInfo({
                 ) : (
                   <Download className="h-4 w-4" />
                 )}
-
-                  {playableQueue.length > 0 && (
-                    <div className="sticky bottom-4 z-10">
-                      <div className="bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border border-border/60 rounded-xl p-3 flex gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={async () => {
-                            await player.setQueue(playableQueue, 0);
-                            player.setFullscreen(true);
-                          }}
-                        >
-                          <Play className="h-4 w-4" />
-                          Play All
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={async () => {
-                            await player.setQueue(playableQueue, 0, { shuffle: true });
-                            player.setFullscreen(true);
-                          }}
-                        >
-                          <Shuffle className="h-4 w-4" />
-                          Shuffle
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 Download All
               </Button>
               {selectedTracks.length > 0 && (
@@ -348,6 +321,33 @@ export function ArtistInfo({
             onArtistClick={onArtistClick}
             onTrackClick={onTrackClick}
           />
+
+          {playableQueue.length > 0 && (
+            <div className="sticky bottom-4 z-10 mt-4">
+              <div className="bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border border-border/60 rounded-xl p-3 flex gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    await player.setQueue(playableQueue, 0);
+                    player.setFullscreen(true);
+                  }}
+                >
+                  <Play className="h-4 w-4" />
+                  Play All
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    await player.setQueue(playableQueue, 0, { shuffle: true });
+                    player.setFullscreen(true);
+                  }}
+                >
+                  <Shuffle className="h-4 w-4" />
+                  Shuffle
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -18,6 +18,9 @@ type App struct {
 
 	// local stream server (for playback)
 	stream *backend.StreamServer
+	
+	// MPV player for native audio playback
+	mpvPlayer backend.MPVPlayer
 }
 
 // NewApp creates a new App application struct
@@ -34,6 +37,9 @@ func (a *App) startup(ctx context.Context) {
 	// It binds to 127.0.0.1 on an ephemeral port and supports range requests for seeking.
 	a.stream = backend.NewStreamServer()
 	a.stream.Start()
+	
+	// Initialize MPV player for native audio playback
+	a.mpvPlayer = backend.NewMPVPlayer()
 }
 
 // SpotifyMetadataRequest represents the request structure for fetching Spotify metadata

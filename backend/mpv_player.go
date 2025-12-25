@@ -8,15 +8,13 @@ import (
 )
 
 // NOTE:
-// This is a scaffolding for integrating libmpv (headless audio) into the Wails app.
-// The full integration requires CGO bindings to libmpv (mpv-2.dll on Windows)
-// and proper packaging of the dll + its dependencies.
-//
-// We keep an interface so the rest of the app can be wired now, while the actual
-// libmpv bridge can be implemented in a follow-up commit once the dll layout is finalized.
+// This file defines the MPV player interface and provides a stub implementation
+// when libmpv is not available. The real implementation is in mpv_libmpv.go
+// which requires CGO and libmpv (mpv-2.dll on Windows).
 
 var (
 	ErrMPVNotImplemented = errors.New("mpv player backend not implemented yet")
+	useMPVStub           = false // Set to true if libmpv is not available
 )
 
 // MPVPlayer is the backend interface used by the frontend player controller.

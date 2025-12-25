@@ -72,7 +72,7 @@ jobs:
           choco install upx -y
 
       # Fetch mpv runtime for bundled hi-res FLAC playback.
-      # Restored near the default/original position (after UPX install).
+      # Using curl to fetch from GitHub API and extract headers + DLL
       - name: Download mpv runtime
         shell: pwsh
         run: |
@@ -80,13 +80,26 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "third_party/mpv" | Out-Null
 
-          $releases = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-          $json = Invoke-RestMethod -Uri $releases
+          Write-Host "Fetching MPV latest release from GitHub API..."
+          $apiUrl = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          
+          # Use curl to fetch the API response
+          & curl.exe -L --fail --retry 5 --retry-delay 2 -o "third_party/mpv/api_response.json" $apiUrl
+          
+          $json = Get-Content "third_party/mpv/api_response.json" -Raw | ConvertFrom-Json
 
-          # For embedding we need the *dev* build (includes libmpv dll).
+          # For embedding we need the *dev* build (includes libmpv dll + headers)
+          # Prefer x86_64 non-v3 for maximum compatibility
           $asset = $json.assets |
-            Where-Object { $_.name -match '^mpv-dev-x86_64(-v3)?-.*\.(7z|zip)$' } |
+            Where-Object { $_.name -match '^mpv-dev-x86_64-\d{8}-git-[a-f0-9]+\.7z$' } |
             Select-Object -First 1
+
+          if (-not $asset) {
+            # Fallback to v3 or any x86_64 dev build
+            $asset = $json.assets |
+              Where-Object { $_.name -match '^mpv-dev-x86_64(-v3)?-.*\.7z$' } |
+              Select-Object -First 1
+          }
 
           if (-not $asset) {
             Write-Host "Available assets:"
@@ -94,8 +107,7 @@ jobs:
             throw "Could not find mpv-dev-x86_64 build asset in shinchiro/mpv-winbuild-cmake latest release"
           }
 
-          $ext = if ($asset.name -match "\.zip$") { "zip" } else { "7z" }
-          $archive = "third_party/mpv/mpv.$ext"
+          $archive = "third_party/mpv/mpv-dev.7z"
 
           Write-Host "Downloading mpv asset: $($asset.name)"
           Write-Host "URL: $($asset.browser_download_url)"
@@ -106,23 +118,40 @@ jobs:
           $sizeMB = [Math]::Round(($bytes.Length / 1MB), 2)
           Write-Host "Downloaded mpv archive size: ${sizeMB}MB"
 
-          if ($ext -eq "zip") {
-            Expand-Archive -Path $archive -DestinationPath "third_party/mpv" -Force
-          } else {
-            & 7z x $archive -o"third_party/mpv" -y
-          }
+          Write-Host "Extracting archive..."
+          & 7z x $archive -o"third_party/mpv" -y
 
-          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "libmpv-2.dll","libmpv-1.dll","mpv-2.dll","mpv-1.dll" -File | Select-Object -First 1
+          Write-Host "Searching for libmpv DLL..."
+          $dll = Get-ChildItem -Path "third_party/mpv" -Recurse -Include "libmpv-2.dll","libmpv-1.dll" -File | Select-Object -First 1
           if (-not $dll) {
             Write-Host "Extracted mpv tree:"
-            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 6 | Select-Object FullName | Out-Host
+            Get-ChildItem -Path "third_party/mpv" -Recurse -Depth 4 | Select-Object FullName | Out-Host
             throw "libmpv dll missing from mpv-dev archive"
           }
 
+          Write-Host "Found libmpv DLL: $($dll.FullName)"
+
+          # Find include/mpv directory with headers
+          Write-Host "Searching for MPV headers..."
+          $includeDir = Get-ChildItem -Path "third_party/mpv" -Recurse -Filter "mpv" -Directory |
+            Where-Object { $_.Parent.Name -eq "include" } |
+            Select-Object -First 1
+
+          if (-not $includeDir) {
+            Write-Host "Warning: include/mpv directory not found, checking for client.h directly:"
+            Get-ChildItem -Path "third_party/mpv" -Recurse -Filter "client.h" | Select-Object FullName | Out-Host
+            throw "MPV headers (include/mpv/) missing from mpv-dev archive"
+          }
+
+          Write-Host "Found MPV include directory: $($includeDir.FullName)"
+          Write-Host "Headers in directory:"
+          Get-ChildItem -Path $includeDir.FullName | Select-Object Name | Format-Table -AutoSize | Out-Host
+
           "MPV_DLL_PATH=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MPV_DLL_DIR=$($dll.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MPV_INCLUDE_DIR=$($includeDir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # Stage mpv runtime into a deterministic folder so we can `//go:embed` it into a single exe.
+      # Stage mpv runtime and headers for CGO compilation
       - name: Stage mpv runtime for embedding
         shell: pwsh
         run: |
@@ -138,6 +167,19 @@ jobs:
 
           # Also keep the main libmpv dll explicitly (some archives have it in a different subfolder)
           Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path $dst (Split-Path -Leaf $env:MPV_DLL_PATH))
+
+          # Copy MPV header for CGO compilation
+          $headerDst = "backend\\mpv"
+          New-Item -ItemType Directory -Force -Path $headerDst | Out-Null
+          if ($env:MPV_HEADER_PATH) {
+            Copy-Item -Force -Path "$env:MPV_HEADER_PATH" -Destination (Join-Path $headerDst "client.h")
+            Write-Host "Copied client.h to backend/mpv/ for CGO compilation"
+          } else {
+            Write-Host "Warning: MPV_HEADER_PATH not set, CGO compilation may fail"
+          }
+
+          # Also copy the DLL to backend directory for CGO linking during build
+          Copy-Item -Force -Path "$env:MPV_DLL_PATH" -Destination (Join-Path "backend" (Split-Path -Leaf $env:MPV_DLL_PATH))
 
           Write-Host "Staged mpv runtime files:"
           Get-ChildItem -Path $dst | Select-Object Name,Length | Format-Table -AutoSize
@@ -336,7 +378,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2 imagemagick upx-ucl
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2 imagemagick upx-ucl libmpv-dev
 
           # Create symlink for webkit2gtk-4.0 -> webkit2gtk-4.1 (Ubuntu 24.04 compatibility)
           sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc

@@ -42,8 +42,6 @@ export function LyricsOverlay({
   const [content, setContent] = useState<string>("");
   const [fetching, setFetching] = useState(false);
   const [dotCount, setDotCount] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const activeLyricsRef = useRef<HTMLDivElement>(null);
 
   const timeline = useMemo(() => buildLrcTimeline(content), [content]);
 
@@ -59,25 +57,6 @@ export function LyricsOverlay({
   const activeIndex = useMemo(() => {
     return findActiveIndex(timeline, currentPosition, 0.1);
   }, [timeline, currentPosition]);
-
-  // Auto-scroll - position active line in upper third of screen (like image 2)
-  useEffect(() => {
-    if (activeIndex >= 0 && activeLyricsRef.current && containerRef.current) {
-      const container = containerRef.current;
-      const activeElement = activeLyricsRef.current;
-      
-      const containerHeight = container.clientHeight;
-      const elementTop = activeElement.offsetTop;
-      
-      // Position active line in upper third (similar to image 2)
-      const scrollTop = elementTop - (containerHeight / 3);
-      
-      container.scrollTo({
-        top: scrollTop,
-        behavior: "smooth",
-      });
-    }
-  }, [activeIndex]);
 
   // Calculate progress for current and next line
   const lineProgress = useMemo(() => {
@@ -128,6 +107,34 @@ export function LyricsOverlay({
   const dots = formatEllipsisDots(dotCount);
   const bgStyle = useMemo(() => buildPaletteBackgroundStyle(palette), [palette]);
 
+  // Get visible lines (previous, current, next 2-3 lines)
+  const visibleLines = useMemo(() => {
+    const lines = [];
+    const start = Math.max(0, activeIndex - 1);
+    const end = Math.min(timeline.length, activeIndex + 4);
+    
+    for (let i = start; i < end; i++) {
+      const line = timeline[i];
+      if (!line) continue;
+      
+      const isEllipsis = line.kind === "ellipsis";
+      const displayText = isEllipsis ? (isPlaying ? dots : "") : line.text;
+      
+      // Skip empty ellipsis
+      if (isEllipsis && !displayText) continue;
+      
+      lines.push({
+        text: displayText,
+        index: i,
+        isActive: i === activeIndex,
+        isPast: i < activeIndex,
+        progress: lineProgress[i] || 0,
+      });
+    }
+    
+    return lines;
+  }, [timeline, activeIndex, isPlaying, dots, lineProgress]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="relative p-0 gap-0 max-w-none w-screen h-[100dvh] rounded-none border-0 text-white overflow-hidden" style={bgStyle}>
@@ -171,14 +178,14 @@ export function LyricsOverlay({
           </Button>
         </div>
 
-        {/* Main Content - Side by Side Layout like Image 2 */}
-        <div className="relative h-full flex items-center justify-center p-12">
-          <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+        {/* Main Content - Side by Side Layout */}
+        <div className="relative h-full flex items-center justify-center p-8 md:p-12">
+          <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             
             {/* Left Side - Album Art & Track Info */}
             <div className="flex flex-col items-center lg:items-start gap-6">
               {/* Album Art */}
-              <div className="relative w-full max-w-md aspect-square">
+              <div className="relative w-full max-w-sm lg:max-w-md aspect-square">
                 {track?.coverUrl ? (
                   <img
                     src={track.coverUrl}
@@ -193,11 +200,11 @@ export function LyricsOverlay({
               </div>
               
               {/* Track Info */}
-              <div className="w-full max-w-md">
-                <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 truncate">
+              <div className="w-full max-w-sm lg:max-w-md text-center lg:text-left">
+                <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2 truncate">
                   {track?.name || "Lyrics"}
                 </h1>
-                <h2 className="text-xl md:text-2xl text-white/70 truncate">
+                <h2 className="text-lg md:text-xl lg:text-2xl text-white/70 truncate">
                   {track?.artists}
                 </h2>
                 {track && (
@@ -208,100 +215,96 @@ export function LyricsOverlay({
               </div>
             </div>
 
-            {/* Right Side - Lyrics */}
-            <div
-              ref={containerRef}
-              className="h-full max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden scroll-smooth pr-4"
-              style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.3) transparent" }}
-            >
+            {/* Right Side - Lyrics (Centered, One at a Time) */}
+            <div className="flex flex-col items-center justify-center h-full space-y-8 px-4">
               {loading || fetching ? (
-                <div className="py-16 text-white/60 text-xl">
+                <div className="text-center text-white/60 text-xl">
                   {fetching ? "Fetching lyrics..." : "Loading lyrics…"}
                 </div>
               ) : error ? (
-                <div className="py-16 text-white/60 text-xl">{error}</div>
+                <div className="text-center text-white/60 text-xl">{error}</div>
               ) : (
-                <div className="py-8">
-                  {timeline.map((l, idx) => {
-                    const isActive = idx === activeIndex;
-                    const isPast = idx < activeIndex;
-                    const isFuture = idx > activeIndex;
-                    const progress = lineProgress[idx] || 0;
-                    
-                    const isEllipsis = l.kind === "ellipsis";
-                    const displayText = isEllipsis ? (isPlaying ? dots : "") : l.text;
-                    
-                    // Hide ellipsis lines if empty
-                    if (isEllipsis && !displayText) return null;
+                <>
+                  {visibleLines.map((line, idx) => {
+                    // Show bullet for past lines
+                    const showBullet = line.isPast && idx === 0;
                     
                     return (
                       <div
-                        key={`${idx}-${l.t}`}
-                        ref={isActive ? activeLyricsRef : null}
+                        key={line.index}
                         className={cn(
-                          "relative transition-all duration-500 ease-out text-left",
-                          isActive && "mb-6 text-4xl md:text-5xl lg:text-6xl",
-                          !isActive && "mb-3 text-xl md:text-2xl lg:text-3xl",
-                          "font-bold leading-tight"
+                          "relative transition-all duration-500 ease-out text-center w-full",
+                          line.isActive && "scale-100",
+                          !line.isActive && "scale-90"
                         )}
                       >
+                        {/* Bullet for previous line */}
+                        {showBullet && (
+                          <div className="text-center mb-6 text-white/40 text-4xl">
+                            •
+                          </div>
+                        )}
+                        
                         {/* Background text (gray for future, dimmed for past) */}
                         <div
                           className={cn(
-                            "transition-all duration-500 break-words"
+                            "transition-all duration-500 font-bold leading-tight px-4",
+                            line.isActive && "text-4xl sm:text-5xl md:text-6xl lg:text-7xl",
+                            !line.isActive && "text-2xl sm:text-3xl md:text-4xl"
                           )}
                           style={{
-                            color: isPast ? "#888" : isFuture ? "#666" : "#999",
-                            opacity: isPast ? 0.5 : isFuture ? 0.6 : 1,
-                            wordBreak: "break-word",
-                            overflowWrap: "break-word",
+                            color: line.isPast ? "#888" : line.isActive ? "#999" : "#666",
+                            opacity: line.isPast ? 0.5 : !line.isActive ? 0.6 : 1,
                           }}
                         >
-                          {displayText}
+                          {line.text}
                         </div>
                         
                         {/* Foreground text (white) with smooth fill animation for active line */}
-                        {isActive && progress > 0 && (
+                        {line.isActive && line.progress > 0 && (
                           <div
                             className="absolute inset-0 overflow-hidden transition-all duration-150"
                             style={{
-                              clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
+                              clipPath: `inset(0 ${(1 - line.progress) * 100}% 0 0)`,
                             }}
                           >
                             <div
-                              className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight break-words"
+                              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold leading-tight px-4"
                               style={{
                                 color: "#FFFFFF",
                                 textShadow: "0 2px 20px rgba(255,255,255,0.5), 0 0 40px rgba(255,255,255,0.3)",
-                                wordBreak: "break-word",
-                                overflowWrap: "break-word",
                               }}
                             >
-                              {displayText}
+                              {line.text}
                             </div>
                           </div>
                         )}
                         
                         {/* Past lines shown in white with reduced opacity */}
-                        {isPast && (
+                        {line.isPast && (
                           <div className="absolute inset-0">
                             <div
-                              className="text-xl md:text-2xl lg:text-3xl font-bold leading-tight break-words"
+                              className="text-2xl sm:text-3xl md:text-4xl font-bold leading-tight px-4"
                               style={{
                                 color: "#FFFFFF",
-                                opacity: 0.7,
-                                wordBreak: "break-word",
-                                overflowWrap: "break-word",
+                                opacity: 0.6,
                               }}
                             >
-                              {displayText}
+                              {line.text}
                             </div>
+                          </div>
+                        )}
+                        
+                        {/* Bullet for current line with upcoming lines */}
+                        {!line.isActive && !line.isPast && idx > 0 && (
+                          <div className="text-center my-4 text-white/30 text-2xl">
+                            •
                           </div>
                         )}
                       </div>
                     );
                   })}
-                </div>
+                </>
               )}
             </div>
           </div>

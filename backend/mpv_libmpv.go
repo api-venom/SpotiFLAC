@@ -10,6 +10,7 @@ package backend
 #cgo darwin LDFLAGS: -lmpv
 
 #include <stdlib.h>
+#include <stdint.h>
 #include "client.h"
 */
 import "C"

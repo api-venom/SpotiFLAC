@@ -57,6 +57,11 @@ type mpvPlayerStub struct {
 }
 
 func NewMPVPlayer() MPVPlayer {
+	// Try to create real MPV player implementation (only available with CGO build)
+	if impl, err := NewMPVPlayerImpl(); err == nil {
+		return impl
+	}
+	// Fall back to stub if MPV is not available
 	return &mpvPlayerStub{status: MPVStatus{State: "stopped", Volume: 100}}
 }
 

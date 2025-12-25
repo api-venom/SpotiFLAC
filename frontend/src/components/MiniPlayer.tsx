@@ -1,6 +1,5 @@
 import { Play, Pause, SkipBack, SkipForward, Maximize2 } from "lucide-react";
 import { Button } from "./ui/button";
-import { cn } from "@/lib/utils";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useEffect, useState } from "react";
 

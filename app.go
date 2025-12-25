@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -252,6 +253,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 
 	// Fallback: if we have track metadata, check if file already exists by filename
 	if req.TrackName != "" && req.ArtistName != "" {
+		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.FilenameFormat, req.TrackNumber, req.Position, req.SpotifyDiscNumber, req.UseAlbumTrackNumber)
 		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.FilenameFormat, req.TrackNumber, req.Position, req.SpotifyDiscNumber, req.UseAlbumTrackNumber)
 		expectedPath := filepath.Join(req.OutputDir, expectedFilename)
 
@@ -645,11 +647,15 @@ type LyricsDownloadRequest struct {
 	AlbumName           string `json:"album_name"`
 	AlbumArtist         string `json:"album_artist"`
 	ReleaseDate         string `json:"release_date"`
+	AlbumName           string `json:"album_name"`
+	AlbumArtist         string `json:"album_artist"`
+	ReleaseDate         string `json:"release_date"`
 	OutputDir           string `json:"output_dir"`
 	FilenameFormat      string `json:"filename_format"`
 	TrackNumber         bool   `json:"track_number"`
 	Position            int    `json:"position"`
 	UseAlbumTrackNumber bool   `json:"use_album_track_number"`
+	DiscNumber          int    `json:"disc_number"`
 	DiscNumber          int    `json:"disc_number"`
 }
 
@@ -670,11 +676,15 @@ func (a *App) DownloadLyrics(req LyricsDownloadRequest) (backend.LyricsDownloadR
 		AlbumName:           req.AlbumName,
 		AlbumArtist:         req.AlbumArtist,
 		ReleaseDate:         req.ReleaseDate,
+		AlbumName:           req.AlbumName,
+		AlbumArtist:         req.AlbumArtist,
+		ReleaseDate:         req.ReleaseDate,
 		OutputDir:           req.OutputDir,
 		FilenameFormat:      req.FilenameFormat,
 		TrackNumber:         req.TrackNumber,
 		Position:            req.Position,
 		UseAlbumTrackNumber: req.UseAlbumTrackNumber,
+		DiscNumber:          req.DiscNumber,
 		DiscNumber:          req.DiscNumber,
 	}
 
@@ -697,10 +707,14 @@ type CoverDownloadRequest struct {
 	AlbumName      string `json:"album_name"`
 	AlbumArtist    string `json:"album_artist"`
 	ReleaseDate    string `json:"release_date"`
+	AlbumName      string `json:"album_name"`
+	AlbumArtist    string `json:"album_artist"`
+	ReleaseDate    string `json:"release_date"`
 	OutputDir      string `json:"output_dir"`
 	FilenameFormat string `json:"filename_format"`
 	TrackNumber    bool   `json:"track_number"`
 	Position       int    `json:"position"`
+	DiscNumber     int    `json:"disc_number"`
 	DiscNumber     int    `json:"disc_number"`
 }
 
@@ -721,10 +735,14 @@ func (a *App) DownloadCover(req CoverDownloadRequest) (backend.CoverDownloadResp
 		AlbumName:      req.AlbumName,
 		AlbumArtist:    req.AlbumArtist,
 		ReleaseDate:    req.ReleaseDate,
+		AlbumName:      req.AlbumName,
+		AlbumArtist:    req.AlbumArtist,
+		ReleaseDate:    req.ReleaseDate,
 		OutputDir:      req.OutputDir,
 		FilenameFormat: req.FilenameFormat,
 		TrackNumber:    req.TrackNumber,
 		Position:       req.Position,
+		DiscNumber:     req.DiscNumber,
 		DiscNumber:     req.DiscNumber,
 	}
 

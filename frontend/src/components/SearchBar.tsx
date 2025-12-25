@@ -13,8 +13,11 @@ import type { HistoryItem } from "@/components/FetchHistory";
 import { SearchSpotify, SearchSpotifyByType } from "../../wailsjs/go/main/App";
 import { backend } from "../../wailsjs/go/models";
 import { cn } from "@/lib/utils";
+<<<<<<< HEAD
 import { getAutoCountryCode } from "@/lib/country";
 import { logger } from "@/lib/logger";
+=======
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
 
 type ResultTab = "tracks" | "albums" | "artists" | "playlists";
 
@@ -62,6 +65,7 @@ export function SearchBar({
     artists: false,
     playlists: false,
   });
+<<<<<<< HEAD
   const [market, setMarket] = useState<string>("US");
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,6 +81,10 @@ export function SearchBar({
     };
   }, []);
 
+=======
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
   // Load recent searches from localStorage
   useEffect(() => {
     try {
@@ -133,6 +141,7 @@ export function SearchBar({
     }
 
     searchTimeoutRef.current = setTimeout(async () => {
+<<<<<<< HEAD
       const q = searchQuery.trim();
       setIsSearching(true);
       logger.info(`search: ${q}`, "api");
@@ -157,6 +166,15 @@ export function SearchBar({
         setLastSearchedQuery(q);
         saveRecentSearch(q);
 
+=======
+      setIsSearching(true);
+      try {
+        const results = await SearchSpotify({ query: searchQuery, limit: SEARCH_LIMIT });
+        setSearchResults(results);
+        setLastSearchedQuery(searchQuery.trim());
+        saveRecentSearch(searchQuery.trim());
+        
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
         // Check if there might be more results
         setHasMore({
           tracks: results.tracks.length === SEARCH_LIMIT,
@@ -164,14 +182,22 @@ export function SearchBar({
           artists: results.artists.length === SEARCH_LIMIT,
           playlists: results.playlists.length === SEARCH_LIMIT,
         });
+<<<<<<< HEAD
 
+=======
+        
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
         // Auto-select first tab with results
         if (results.tracks.length > 0) setActiveTab("tracks");
         else if (results.albums.length > 0) setActiveTab("albums");
         else if (results.artists.length > 0) setActiveTab("artists");
         else if (results.playlists.length > 0) setActiveTab("playlists");
       } catch (error) {
+<<<<<<< HEAD
         logger.exception(error, `search failed: ${q}`, "api");
+=======
+        console.error("Search failed:", error);
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
         setSearchResults(null);
       } finally {
         setIsSearching(false);
@@ -183,7 +209,11 @@ export function SearchBar({
         clearTimeout(searchTimeoutRef.current);
       }
     };
+<<<<<<< HEAD
   }, [searchQuery, searchMode, lastSearchedQuery, market]);
+=======
+  }, [searchQuery, searchMode, lastSearchedQuery]);
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
 
   const handleLoadMore = async () => {
     if (!searchResults || !lastSearchedQuery || isLoadingMore) return;
@@ -204,7 +234,10 @@ export function SearchBar({
         search_type: typeMap[activeTab],
         limit: SEARCH_LIMIT,
         offset: currentCount,
+<<<<<<< HEAD
         market,
+=======
+>>>>>>> 57640d85d25ac1e8bc0cab725f465ec7192bbf8e
       });
 
       if (moreResults.length > 0) {

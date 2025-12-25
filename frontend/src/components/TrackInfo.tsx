@@ -29,8 +29,7 @@ interface TrackInfoProps {
   failedCover?: boolean;
   skippedCover?: boolean;
   onDownload: (isrc: string, name: string, artists: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
-  onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
-  onViewLyrics?: (name: string, artists: string, spotifyId?: string) => void;
+  onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string) => void;
   onCheckAvailability?: (spotifyId: string, isrc?: string) => void;
   onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName?: string, playlistName?: string, position?: number, trackId?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
   onOpenFolder: () => void;
@@ -155,48 +154,6 @@ export function TrackInfo({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Download Lyric</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {track.spotify_id && onViewLyrics && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={() => onViewLyrics(track.name, track.artists, track.spotify_id)}
-                        variant="outline"
-                      >
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>View Lyrics</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {track.images && onDownloadCover && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={() => onDownloadCover(track.images, track.name, track.artists, track.album_name, undefined, undefined, track.spotify_id, track.album_artist, track.release_date, track.disc_number)}
-                        variant="outline"
-                        disabled={downloadingCover}
-                      >
-                        {downloadingCover ? (
-                          <Spinner />
-                        ) : skippedCover ? (
-                          <FileCheck className="h-4 w-4 text-yellow-500" />
-                        ) : downloadedCover ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                        ) : failedCover ? (
-                          <XCircle className="h-4 w-4 text-red-500" />
-                        ) : (
-                          <ImageDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Download Cover</p>
                     </TooltipContent>
                   </Tooltip>
                 )}

@@ -195,7 +195,16 @@ jobs:
           Get-ChildItem -Path $dst | Select-Object Name,Length | Format-Table -AutoSize
 
       - name: Build application
-        run: wails build -platform windows/amd64
+        shell: pwsh
+        run: |
+          # Add MPV DLL directory to PATH so CGO can find dependencies during build
+          $env:PATH = "$env:MPV_DLL_DIR;$env:PATH"
+          
+          # Also set CGO environment
+          $env:CGO_ENABLED = "1"
+          
+          Write-Host "Building with PATH including: $env:MPV_DLL_DIR"
+          wails build -platform windows/amd64
 
       - name: Bundle mpv runtime next to exe
         shell: pwsh
@@ -288,49 +297,12 @@ jobs:
           pnpm install
           pnpm run generate-icon
 
-      # Copy MPV headers for CGO compilation
-      - name: Copy MPV headers for CGO
-        shell: bash
-        run: |
-          set -euo pipefail
-          
-          # Ensure Homebrew MPV is installed
-          brew update
-          brew install mpv
-          
-          # Copy headers to backend/mpv directory for CGO compilation
-          mkdir -p backend/mpv
-          MPV_INCLUDE=$(brew --prefix)/include/mpv
-          if [ -d "$MPV_INCLUDE" ]; then
-            cp -f "$MPV_INCLUDE"/*.h backend/mpv/
-            echo "Copied MPV headers from $MPV_INCLUDE to backend/mpv/"
-            ls -la backend/mpv/
-          else
-            echo "Error: MPV headers not found at $MPV_INCLUDE" >&2
-            exit 1
-          fi
-
+      # macOS: Skip MPV integration for now (universal binary complexity)
+      # Build with stub implementation
       - name: Build application
-        run: wails build -platform darwin/universal
-
-      # Bundle mpv (libmpv) into the app bundle so FLAC playback works on fresh machines.
-      - name: Bundle mpv runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APP="build/bin/SpotiFLAC.app"
-          FRAMEWORKS="$APP/Contents/Frameworks"
-          mkdir -p "$FRAMEWORKS"
-
-          LIBMPV_PATH="$(brew --prefix)/lib/libmpv.dylib"
-          if [ ! -f "$LIBMPV_PATH" ]; then
-            echo "libmpv.dylib not found at $LIBMPV_PATH" >&2
-            exit 1
-          fi
-
-          cp -f "$LIBMPV_PATH" "$FRAMEWORKS/"
-          install_name_tool -id "@rpath/libmpv.dylib" "$FRAMEWORKS/libmpv.dylib" || true
+        env:
+          CGO_ENABLED: "0"
+        run: wails build -platform darwin/universal -tags stub
 
       - name: Create DMG
         run: |

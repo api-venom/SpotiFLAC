@@ -242,7 +242,8 @@ jobs:
             "build/bin/KnightMusic.exe",
             "build/bin/Knight Music.exe",
             "build/bin/SpotiFLAC.exe"
-          ) | Where-Object { Test-Path $_ }
+          )
+          $candidates = @($candidates | Where-Object { Test-Path $_ })
 
           if ($candidates.Count -eq 0) {
             $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1
@@ -270,7 +271,8 @@ jobs:
             "build/bin/KnightMusic.exe",
             "build/bin/Knight Music.exe",
             "build/bin/SpotiFLAC.exe"
-          ) | Where-Object { Test-Path $_ }
+          )
+          $candidates = @($candidates | Where-Object { Test-Path $_ })
 
           if ($candidates.Count -eq 0) {
             $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1

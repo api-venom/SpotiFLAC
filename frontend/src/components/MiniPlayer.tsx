@@ -199,7 +199,7 @@ export function MiniPlayer() {
               </div>
             ) : (
               <div className="text-white/40 text-sm font-semibold mb-1">
-                {state.isPlaying ? dots : "..."}
+                {state.isPlaying ? dots : ""}
               </div>
             )}
             

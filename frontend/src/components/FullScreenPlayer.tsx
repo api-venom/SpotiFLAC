@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
@@ -7,6 +7,7 @@ import { useLyrics } from "../hooks/useLyrics";
 import { cn } from "@/lib/utils";
 import { buildPaletteBackgroundStyle } from "@/lib/cover/palette";
 import { useCoverPalette } from "@/hooks/useCoverPalette";
+import { EqualizerControls } from "./EqualizerControls";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -20,6 +21,8 @@ export function FullScreenPlayer() {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [lyricsTrack, setLyricsTrack] = useState<LyricsOverlayTrack | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const palette = useCoverPalette(track?.coverUrl);
 
@@ -29,6 +32,20 @@ export function FullScreenPlayer() {
   const handleFetchLyrics = async (spotifyId: string, trackName: string, artistName: string) => {
     await lyrics.handleDownloadLyrics(spotifyId, trackName, artistName);
   };
+
+  // Close menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showMenu]);
 
   if (!state.isFullscreen || !track) return null;
 
@@ -63,6 +80,7 @@ export function FullScreenPlayer() {
           ensureLyricsFile={lyrics.ensureLyricsFile}
           currentPosition={state.position}
           fetchLyrics={handleFetchLyrics}
+          isPlaying={state.isPlaying}
         />
       ) : null}
 
@@ -84,14 +102,21 @@ export function FullScreenPlayer() {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
+          <div className="flex items-center gap-2 relative" ref={menuRef}>
+            <Button
+              variant="ghost"
               size="icon"
+              onClick={() => setShowMenu(!showMenu)}
               className="hover:bg-white/10 text-white/70 hover:text-white"
             >
               <MoreHorizontal className="h-5 w-5" />
             </Button>
+            
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-black/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-4 z-50 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+                <EqualizerControls useMPV={state.useMPV} />
+              </div>
+            )}
           </div>
         </div>
 

@@ -64,7 +64,7 @@ export function LyricsOverlay({
     return findActiveIndex(timeline, currentPosition, 0.1);
   }, [timeline, currentPosition]);
 
-  // Auto-scroll with smoother animation and better centering
+  // Auto-scroll - position active line in upper third of screen (like image 2)
   useEffect(() => {
     if (activeIndex >= 0 && activeLyricsRef.current && containerRef.current) {
       const container = containerRef.current;
@@ -72,10 +72,9 @@ export function LyricsOverlay({
       
       const containerHeight = container.clientHeight;
       const elementTop = activeElement.offsetTop;
-      const elementHeight = activeElement.clientHeight;
       
-      // Center the active line vertically
-      const scrollTop = elementTop - (containerHeight / 2) + (elementHeight / 2);
+      // Position active line in upper third (similar to image 2)
+      const scrollTop = elementTop - (containerHeight / 3);
       
       container.scrollTo({
         top: scrollTop,
@@ -190,51 +189,47 @@ export function LyricsOverlay({
           ) : error ? (
             <div className="py-16 text-center text-white/60 text-xl">{error}</div>
           ) : (
-            <div className="max-w-5xl mx-auto py-[50vh] px-4">
+            <div className="max-w-4xl mx-auto py-[33vh] px-8">
               {timeline.map((l, idx) => {
                 const isActive = idx === activeIndex;
-                const isNext = idx === activeIndex + 1;
                 const isPast = idx < activeIndex;
-                const isFuture = idx > activeIndex + 1;
+                const isFuture = idx > activeIndex;
                 const progress = lineProgress[idx] || 0;
                 
                 const isEllipsis = l.kind === "ellipsis";
-                const displayText = isEllipsis ? (isActive && isPlaying ? dots : "...") : l.text;
+                const displayText = isEllipsis ? (isPlaying ? dots : "") : l.text;
+                
+                // Hide ellipsis lines if empty
+                if (isEllipsis && !displayText) return null;
                 
                 return (
                   <div
                     key={`${idx}-${l.t}`}
                     ref={isActive ? activeLyricsRef : null}
                     className={cn(
-                      "relative transition-all duration-700 ease-out text-center",
-                      isActive && "py-8 text-4xl md:text-6xl lg:text-7xl scale-100 my-4",
-                      isNext && "py-6 text-3xl md:text-5xl lg:text-6xl scale-95 opacity-80 my-3",
-                      (isPast || isFuture) && "py-4 text-2xl md:text-4xl lg:text-5xl scale-90 my-2",
-                      "font-bold tracking-tight leading-tight"
+                      "relative transition-all duration-500 ease-out",
+                      isActive && "mb-4 text-4xl md:text-5xl lg:text-6xl",
+                      !isActive && "mb-2 text-2xl md:text-3xl lg:text-4xl",
+                      "font-bold leading-tight"
                     )}
                   >
-                    {/* Background text (gray) */}
+                    {/* Background text (gray for future, dimmed for past) */}
                     <div
                       className={cn(
-                        "transition-all duration-700 break-words",
-                        isPast && "opacity-40",
-                        isActive && "opacity-100",
-                        isNext && "opacity-60",
-                        isFuture && "opacity-25"
+                        "transition-all duration-500 break-words"
                       )}
                       style={{
-                        color: isPast ? "#777" : (isActive || isNext) ? "#999" : "#666",
-                        textShadow: isActive ? "0 0 30px rgba(0,0,0,0.7), 0 4px 8px rgba(0,0,0,0.5)" : "none",
+                        color: isPast ? "#888" : isFuture ? "#666" : "#999",
+                        opacity: isPast ? 0.4 : isFuture ? 0.5 : 1,
                         wordBreak: "break-word",
                         overflowWrap: "break-word",
-                        hyphens: "auto"
                       }}
                     >
                       {displayText}
                     </div>
                     
-                    {/* Foreground text (white) with smooth fill animation */}
-                    {(isActive || isNext) && progress > 0 && (
+                    {/* Foreground text (white) with smooth fill animation for active line */}
+                    {isActive && progress > 0 && (
                       <div
                         className="absolute inset-0 overflow-hidden transition-all duration-150"
                         style={{
@@ -242,17 +237,12 @@ export function LyricsOverlay({
                         }}
                       >
                         <div
-                          className={cn(
-                            "font-bold tracking-tight leading-tight transition-all duration-700 break-words text-center",
-                            isActive && "py-8 text-4xl md:text-6xl lg:text-7xl",
-                            isNext && "py-6 text-3xl md:text-5xl lg:text-6xl opacity-50"
-                          )}
+                          className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight break-words"
                           style={{
                             color: "#FFFFFF",
-                            textShadow: "0 0 40px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.4), 0 4px 12px rgba(255,255,255,0.3)",
+                            textShadow: "0 2px 20px rgba(255,255,255,0.5), 0 0 40px rgba(255,255,255,0.3)",
                             wordBreak: "break-word",
                             overflowWrap: "break-word",
-                            hyphens: "auto"
                           }}
                         >
                           {displayText}
@@ -260,20 +250,16 @@ export function LyricsOverlay({
                       </div>
                     )}
                     
-                    {/* Past lines in white with fade */}
+                    {/* Past lines shown in white with reduced opacity */}
                     {isPast && (
                       <div className="absolute inset-0">
                         <div
-                          className={cn(
-                            "py-4 text-2xl md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight transition-all duration-700 break-words text-center"
-                          )}
+                          className="text-2xl md:text-3xl lg:text-4xl font-bold leading-tight break-words"
                           style={{
                             color: "#FFFFFF",
-                            opacity: 0.5,
-                            textShadow: "0 0 15px rgba(255,255,255,0.25)",
+                            opacity: 0.6,
                             wordBreak: "break-word",
                             overflowWrap: "break-word",
-                            hyphens: "auto"
                           }}
                         >
                           {displayText}

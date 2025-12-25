@@ -377,9 +377,9 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error)
 	// Try Tidal first - use the downloader's GetTidalFileURL method to get stream URL
 	if urls.TidalURL != "" {
 		// Extract Tidal track ID from URL
-		trackID := extractTidalTrackID(urls.TidalURL)
-		if trackID == "" {
-			return "", fmt.Errorf("invalid Tidal URL format")
+		trackID, err := extractTidalTrackID(urls.TidalURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid Tidal URL format: %w", err)
 		}
 		
 		// Use Tidal downloader to get authenticated stream URL
@@ -389,24 +389,13 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error)
 			quality = "LOSSLESS"
 		}
 		
-		// Get download URL using the same logic as downloads
-		downloadURL, err := downloader.GetTidalFileURL(trackID, quality)
+		// Get stream URL using the new method
+		streamURL, err := downloader.GetTidalFileURL(trackID, quality)
 		if err != nil {
 			return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
 		}
 		
-		// Handle manifest or direct URL
-		if strings.HasPrefix(downloadURL, "MANIFEST:") {
-			// For manifests, we need to parse and return the first segment URL
-			// This is complex - for now just return error
-			return "", fmt.Errorf("manifest-based streams not yet supported for playback")
-		}
-		
-		if strings.HasPrefix(downloadURL, "DIRECT:") {
-			downloadURL = strings.TrimPrefix(downloadURL, "DIRECT:")
-		}
-		
-		return downloadURL, nil
+		return streamURL, nil
 	}
 
 	// Amazon not yet supported
@@ -417,17 +406,21 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error)
 	return "", fmt.Errorf("no provider URL available")
 }
 
-func extractTidalTrackID(tidalURL string) string {
+func extractTidalTrackID(tidalURL string) (int64, error) {
 	// Extract track ID from URLs like:
 	// https://listen.tidal.com/track/123456
 	// https://tidal.com/browse/track/123456
 	parts := strings.Split(tidalURL, "/track/")
 	if len(parts) != 2 {
-		return ""
+		return 0, fmt.Errorf("URL does not contain /track/")
 	}
 	// Remove any query parameters
-	trackID := strings.Split(parts[1], "?")[0]
-	return trackID
+	trackIDStr := strings.Split(parts[1], "?")[0]
+	trackID, err := strconv.ParseInt(trackIDStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse track ID: %w", err)
+	}
+	return trackID, nil
 }
 
 func newToken() string {

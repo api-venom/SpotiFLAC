@@ -572,6 +572,16 @@ func (a *App) MPVGetStatus() (backend.MPVStatus, error) {
 	return a.mpvPlayer.Status(a.ctx)
 }
 
+// MPVSetEqualizer sets audio equalizer settings
+// bands is a map of frequency (Hz) to gain (dB), e.g. {"1000": 2.5, "2000": -1.0}
+// preamp is the pre-amplification gain in dB (applied to all bands)
+func (a *App) MPVSetEqualizer(presetName string, bands map[string]float64, preamp float64) error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.SetEqualizer(a.ctx, presetName, bands, preamp)
+}
+
 // Quit closes the application
 func (a *App) Quit() {
 	if a.mpvPlayer != nil {

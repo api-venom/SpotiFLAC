@@ -9,6 +9,7 @@ type MPVMethods = {
   MPVStop?: () => Promise<void>;
   MPVSeek?: (seconds: number) => Promise<void>;
   MPVSetVolume?: (volume: number) => Promise<void>;
+  MPVSetEqualizer?: (presetName: string, bands: Record<string, number>, preamp: number) => Promise<void>;
   MPVGetStatus?: () => Promise<any>;
 };
 
@@ -37,6 +38,8 @@ async function getMPVMethods(): Promise<MPVMethods> {
       MPVSeek: appModule.MPVSeek,
       // @ts-ignore
       MPVSetVolume: appModule.MPVSetVolume,
+      // @ts-ignore
+      MPVSetEqualizer: appModule.MPVSetEqualizer,
       // @ts-ignore
       MPVGetStatus: appModule.MPVGetStatus,
     };
@@ -130,8 +133,11 @@ class PlayerService {
       position: 0,
       volume: 1,
       isFullscreen: false,
-      useMPV: false, // Try HTML5 audio first
+      useMPV: false, // Will be auto-detected
     };
+    
+    // Auto-detect MPV availability and prefer it for better audio quality (EQ, etc.)
+    this.initializeMPVPreference();
 
     this.audio.addEventListener("loadedmetadata", () => {
       this.state.duration = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
@@ -153,6 +159,24 @@ class PlayerService {
       this.state.isPlaying = false;
       this.emit();
     });
+  }
+  
+  private async initializeMPVPreference() {
+    // Check if MPV is available
+    try {
+      const methods = await getMPVMethods();
+      const hasMPV = methods.MPVLoadTrack && methods.MPVPlay && methods.MPVGetStatus;
+      
+      if (hasMPV) {
+        logger.info("MPV player detected - using as default for better audio quality (EQ support)", "player");
+        this.state.useMPV = true;
+        this.emit();
+      } else {
+        logger.info("MPV not available - using HTML5 audio", "player");
+      }
+    } catch (err) {
+      logger.debug("MPV initialization check failed, using HTML5 audio", "player");
+    }
   }
 
   subscribe(fn: Listener) {
@@ -474,6 +498,23 @@ class PlayerService {
         }
       }
     }
+  }
+  
+  // Set audio equalizer (only works with MPV backend)
+  // bands: frequency in Hz -> gain in dB, e.g. { "1000": 2.5, "2000": -1.0 }
+  // preamp: pre-amplification gain in dB (applied to all bands)
+  async setEqualizer(presetName: string, bands: Record<string, number>, preamp: number = 0) {
+    if (!this.state.useMPV) {
+      throw new Error("Equalizer is only available with MPV backend");
+    }
+    
+    const methods = await getMPVMethods();
+    if (!methods.MPVSetEqualizer) {
+      throw new Error("MPV equalizer method not available");
+    }
+    
+    await methods.MPVSetEqualizer(presetName, bands, preamp);
+    logger.info(`Equalizer set: ${presetName} (preamp: ${preamp}dB)`, "player");
   }
 }
 

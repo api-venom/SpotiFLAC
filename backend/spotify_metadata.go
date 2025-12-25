@@ -776,25 +776,10 @@ func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, next
 }
 
 func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
-	body, _, _, err := c.getSpotifyBodyWithRetries(ctx, endpoint, token)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(body, dst)
-}
-
-func (c *SpotifyMetadataClient) getSpotifyBodyWithRetries(ctx context.Context, endpoint, token string) ([]byte, http.Header, int, error) {
-	const maxAttempts = 8
-	const maxBodySnippet = 2048
-
-	var lastStatus int
-	var lastHeaders http.Header
-	var lastBody []byte
-
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return nil, nil, 0, err
+			return err
 		}
 		headers := c.baseHeaders()
 		for key, values := range headers {
@@ -808,86 +793,27 @@ func (c *SpotifyMetadataClient) getSpotifyBodyWithRetries(ctx context.Context, e
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			if attempt < maxAttempts-1 {
-				if err := sleepWithContext(ctx, c.retryBackoff(attempt)); err != nil {
-					return nil, nil, 0, err
-				}
-				continue
-			}
-			return nil, nil, 0, err
+			return err
 		}
-
-		lastStatus = resp.StatusCode
-		lastHeaders = resp.Header.Clone()
-
-		body, readErr := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if readErr != nil {
-			return nil, nil, 0, readErr
+		if err != nil {
+			return err
 		}
-		lastBody = body
 
-		// Honor rate limit, but avoid infinite loops.
 		if resp.StatusCode == http.StatusTooManyRequests {
-			if attempt < maxAttempts-1 {
-				if err := sleepWithContext(ctx, parseRetryAfter(resp.Header.Get("Retry-After"))); err != nil {
-					return nil, nil, 0, err
-				}
-				continue
+			if err := sleepWithContext(ctx, parseRetryAfter(resp.Header.Get("Retry-After"))); err != nil {
+				return err
 			}
-			return nil, lastHeaders, lastStatus, fmt.Errorf("spotify API rate limited (429) for %s", endpoint)
-		}
-
-		// Retry transient upstream failures.
-		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout || resp.StatusCode == http.StatusInternalServerError {
-			if attempt < maxAttempts-1 {
-				if err := sleepWithContext(ctx, c.retryBackoff(attempt)); err != nil {
-					return nil, nil, 0, err
-				}
-				continue
-			}
+			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			snippet := body
-			if len(snippet) > maxBodySnippet {
-				snippet = snippet[:maxBodySnippet]
-			}
-			return nil, lastHeaders, lastStatus, fmt.Errorf("spotify API returned status %d for %s: %s", resp.StatusCode, endpoint, strings.TrimSpace(string(snippet)))
+			return fmt.Errorf("spotify API returned status %d for %s", resp.StatusCode, endpoint)
 		}
 
-		return body, lastHeaders, lastStatus, nil
+		return json.Unmarshal(body, dst)
 	}
-
-	// Should be unreachable.
-	snippet := lastBody
-	if len(snippet) > maxBodySnippet {
-		snippet = snippet[:maxBodySnippet]
-	}
-	return nil, lastHeaders, lastStatus, fmt.Errorf("spotify API request failed after retries for %s (last status %d): %s", endpoint, lastStatus, strings.TrimSpace(string(snippet)))
-}
-
-func (c *SpotifyMetadataClient) retryBackoff(attempt int) time.Duration {
-	// Exponential backoff with small jitter.
-	base := 250 * time.Millisecond
-	maxDelay := 3 * time.Second
-	d := base * time.Duration(1<<minInt(attempt, 6))
-	if d > maxDelay {
-		d = maxDelay
-	}
-
-	c.rngMu.Lock()
-	jitter := time.Duration(c.rng.Intn(150)) * time.Millisecond
-	c.rngMu.Unlock()
-
-	return d + jitter
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (c *SpotifyMetadataClient) baseHeaders() http.Header {
@@ -1168,6 +1094,7 @@ func maxInt(a, b int) int {
 	return b
 }
 
+
 // SearchResult represents a single search result item
 type SearchResult struct {
 	ID          string `json:"id"`
@@ -1257,22 +1184,8 @@ type searchPlaylistsResponse struct {
 	} `json:"playlists"`
 }
 
-func normalizeMarket(market string) (string, bool) {
-	market = strings.TrimSpace(market)
-	if len(market) != 2 {
-		return "", false
-	}
-	market = strings.ToUpper(market)
-	for _, r := range market {
-		if r < 'A' || r > 'Z' {
-			return "", false
-		}
-	}
-	return market, true
-}
-
 // Search performs a search on Spotify and returns results for tracks, albums, artists, and playlists
-func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit int, market string) (*SearchResponse, error) {
+func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit int) (*SearchResponse, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
 	}
@@ -1289,8 +1202,6 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist,playlist&limit=%d", encodedQuery, limit)
-	// Market parameter removed - Spotify returns global results when not specified
-	// Previously caused 502 errors with invalid market codes like "EN"
 
 	response := &SearchResponse{
 		Tracks:    make([]SearchResult, 0),
@@ -1299,15 +1210,10 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		Playlists: make([]SearchResult, 0),
 	}
 
-	body, _, _, err := c.getSpotifyBodyWithRetries(ctx, searchURL, token)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	// Unmarshal once per type from the same response body (single network call).
+	// Fetch tracks
 	var tracksResp searchTracksResponse
-	if err := json.Unmarshal(body, &tracksResp); err != nil {
-		return nil, fmt.Errorf("search failed to parse tracks: %w", err)
+	if err := c.getJSON(ctx, searchURL, token, &tracksResp); err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
 	for _, item := range tracksResp.Tracks.Items {
@@ -1324,8 +1230,9 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		})
 	}
 
+	// Fetch albums
 	var albumsResp searchAlbumsResponse
-	if err := json.Unmarshal(body, &albumsResp); err == nil {
+	if err := c.getJSON(ctx, searchURL, token, &albumsResp); err == nil {
 		for _, item := range albumsResp.Albums.Items {
 			response.Albums = append(response.Albums, SearchResult{
 				ID:          item.ID,
@@ -1340,8 +1247,9 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		}
 	}
 
+	// Fetch artists
 	var artistsResp searchArtistsResponse
-	if err := json.Unmarshal(body, &artistsResp); err == nil {
+	if err := c.getJSON(ctx, searchURL, token, &artistsResp); err == nil {
 		for _, item := range artistsResp.Artists.Items {
 			response.Artists = append(response.Artists, SearchResult{
 				ID:          item.ID,
@@ -1353,8 +1261,9 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		}
 	}
 
+	// Fetch playlists
 	var playlistsResp searchPlaylistsResponse
-	if err := json.Unmarshal(body, &playlistsResp); err == nil {
+	if err := c.getJSON(ctx, searchURL, token, &playlistsResp); err == nil {
 		for _, item := range playlistsResp.Playlists.Items {
 			response.Playlists = append(response.Playlists, SearchResult{
 				ID:          item.ID,
@@ -1372,13 +1281,13 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 }
 
 // SearchSpotify is a convenience wrapper for the Search method
-func SearchSpotify(ctx context.Context, query string, limit int, market string) (*SearchResponse, error) {
+func SearchSpotify(ctx context.Context, query string, limit int) (*SearchResponse, error) {
 	client := NewSpotifyMetadataClient()
-	return client.Search(ctx, query, limit, market)
+	return client.Search(ctx, query, limit)
 }
 
 // SearchByType searches for a specific type (track, album, artist, playlist) with offset support
-func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, searchType string, limit int, offset int, market string) ([]SearchResult, error) {
+func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
 	}
@@ -1398,8 +1307,6 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=%s&limit=%d&offset=%d", encodedQuery, searchType, limit, offset)
-	// Market parameter removed - Spotify returns global results when not specified
-	// Previously caused 502 errors with invalid market codes like "EN"
 
 	results := make([]SearchResult, 0)
 
@@ -1477,7 +1384,7 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 }
 
 // SearchSpotifyByType is a convenience wrapper for SearchByType
-func SearchSpotifyByType(ctx context.Context, query string, searchType string, limit int, offset int, market string) ([]SearchResult, error) {
+func SearchSpotifyByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
 	client := NewSpotifyMetadataClient()
-	return client.SearchByType(ctx, query, searchType, limit, offset, market)
+	return client.SearchByType(ctx, query, searchType, limit, offset)
 }

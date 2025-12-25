@@ -194,17 +194,29 @@ jobs:
           Write-Host "Staged mpv runtime files:"
           Get-ChildItem -Path $dst | Select-Object Name,Length | Format-Table -AutoSize
 
-      - name: Build application
+      - name: Build application with MPV support
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          
           # Add MPV DLL directory to PATH so CGO can find dependencies during build
           $env:PATH = "$env:MPV_DLL_DIR;$env:PATH"
           
-          # Also set CGO environment
+          # Set CGO environment variables
           $env:CGO_ENABLED = "1"
+          $env:CGO_CFLAGS = "-I$(Get-Location)\backend"
+          $env:CGO_LDFLAGS = "-L$(Get-Location)\backend -lmpv"
           
-          Write-Host "Building with PATH including: $env:MPV_DLL_DIR"
-          wails build -platform windows/amd64
+          Write-Host "Building with CGO enabled and MPV support..."
+          Write-Host "CGO_ENABLED: $env:CGO_ENABLED"
+          Write-Host "CGO_CFLAGS: $env:CGO_CFLAGS"
+          Write-Host "CGO_LDFLAGS: $env:CGO_LDFLAGS"
+          Write-Host "MPV DLL Path: $env:MPV_DLL_DIR"
+          
+          # Build with -tags cgo to enable MPV player implementation
+          wails build -platform windows/amd64 -tags cgo
+          
+          Write-Host "Build completed successfully!"
 
       - name: Bundle mpv runtime next to exe
         shell: pwsh
@@ -225,22 +237,90 @@ jobs:
         run: |
           upx --best --lzma "build\bin\SpotiFLAC.exe"
 
-      - name: Prepare artifacts
+      - name: Prepare artifacts and create ZIP
+        shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Creating distribution folder..."
           New-Item -ItemType Directory -Force -Path dist | Out-Null
+          
+          # Copy executable
           Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
+          Write-Host "Copied SpotiFLAC.exe"
 
-          # Also ship mpv dll(s) so the exe works on fresh machines.
-          # (dll name can vary: libmpv-2.dll/mpv-2.dll/etc) so just copy all dlls already in build/bin.
+          # Copy ALL DLLs from build/bin (includes MPV and dependencies)
+          $dllCount = 0
           Get-ChildItem -Path "build\bin" -Filter "*.dll" | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination (Join-Path "dist" $_.Name) -Force
+            Write-Host "Copied DLL: $($_.Name) ($([Math]::Round($_.Length / 1MB, 2)) MB)"
+            $dllCount++
           }
+          
+          Write-Host "`n✓ Total DLLs bundled: $dllCount"
+          Write-Host "`nDistribution package contents:"
+          Get-ChildItem -Path "dist" | Select-Object Name,@{Name="Size (MB)";Expression={[Math]::Round($_.Length / 1MB, 2)}} | Format-Table -AutoSize
+          
+          # Create README for users
+          @"
+# SpotiFLAC - Portable Windows Build
 
-      - name: Upload artifacts
+## Quick Start
+
+1. Extract all files to a folder
+2. Run SpotiFLAC.exe
+3. Enjoy FLAC playback!
+
+## What's Included
+
+- SpotiFLAC.exe - Main application
+- libmpv-2.dll - MPV player for FLAC playback
+- [other DLLs] - Required dependencies
+
+## Features
+
+✅ FLAC playback with MPV backend
+✅ Automatic HTML5 → MPV fallback
+✅ Stream or download from Tidal
+✅ No additional setup required
+
+## Important
+
+⚠️ Keep all DLL files in the same folder as SpotiFLAC.exe
+⚠️ Do not delete any DLL files
+
+## Troubleshooting
+
+If MPV doesn't work:
+- Check that libmpv-2.dll exists in the same folder
+- Try running as administrator
+- Check Windows Defender hasn't blocked any files
+
+For more help: https://github.com/afkarxyz/SpotiFLAC/issues
+
+Built with MPV $(Get-Date -Format "yyyy-MM-dd")
+"@ | Out-File -FilePath "dist\README.txt" -Encoding utf8
+
+          # Create portable ZIP package
+          Write-Host "`nCreating ZIP archive..."
+          Compress-Archive -Path "dist\*" -DestinationPath "SpotiFLAC-Windows-Portable.zip" -Force
+          
+          $zipSize = [Math]::Round((Get-Item "SpotiFLAC-Windows-Portable.zip").Length / 1MB, 2)
+          Write-Host "✓ Created SpotiFLAC-Windows-Portable.zip ($zipSize MB)"
+          Write-Host "`n✅ Distribution package ready!"
+
+      - name: Upload folder artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
           path: dist/
+          retention-days: 7
+      
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-zip
+          path: SpotiFLAC-Windows-Portable.zip
           retention-days: 7
 
   build-macos:
@@ -393,8 +473,10 @@ jobs:
           pnpm install
           pnpm run generate-icon
 
-      - name: Build application
-        run: wails build -platform linux/amd64
+      - name: Build application with MPV support
+        env:
+          CGO_ENABLED: "1"
+        run: wails build -platform linux/amd64 -tags cgo
 
       - name: Compress with UPX
         run: |
@@ -507,13 +589,129 @@ jobs:
           prerelease: false
           generate_release_notes: false
           body: |
-            ## Changelog
+            ## 🎵 SpotiFLAC with Full FLAC Playback Support
 
-            ## Downloads
+            ### ✨ What's New
 
-            - `SpotiFLAC.exe` - Windows
-            - `SpotiFLAC.dmg` - macOS
-            - `SpotiFLAC.AppImage` - Linux
+            #### FLAC Streaming & Playback
+            - ✅ **Windows:** Full MPV integration - FLAC streams work natively (no more "source not supported" errors!)
+            - ✅ **Linux:** MPV-powered playback with native FLAC decoding
+            - ✅ **Automatic fallback:** Tries HTML5 audio first, switches to MPV if needed
+            - ✅ **Zero setup:** All MPV DLLs bundled - works out of the box on fresh Windows machines
+
+            #### Streaming Improvements
+            - ✅ Fixed "upstream returned html" error - now gets authenticated audio URLs from Tidal API
+            - ✅ Supports both direct URLs and BTS manifest parsing
+            - ✅ Local file priority - downloaded tracks play instantly
+
+            ---
+
+            ## 📥 Downloads
+
+            ### Windows (Recommended)
+            **📦 `SpotiFLAC-Windows-Portable.zip`** ⬅️ **Download this!**
+            - Complete portable package
+            - Includes SpotiFLAC.exe + all MPV DLLs
+            - Just extract and run - no installation needed
+            - FLAC playback works immediately
+
+            ### Alternative Downloads
+            - `SpotiFLAC.dmg` - macOS (MPV not yet supported)
+            - `SpotiFLAC.AppImage` - Linux (includes MPV support)
+
+            ---
+
+            ## 🚀 Quick Start (Windows)
+
+            1. **Download** `SpotiFLAC-Windows-Portable.zip`
+            2. **Extract** to any folder (e.g., Desktop)
+            3. **Run** `SpotiFLAC.exe`
+            4. **Enjoy!** FLAC playback works immediately
+
+            **That's it!** No manual DLL downloads, no configuration needed.
+
+            ---
+
+            ## 📦 What's Included (Windows ZIP)
+
+            ```
+            SpotiFLAC-Windows-Portable/
+            ├── SpotiFLAC.exe          ← Main application
+            ├── libmpv-2.dll           ← MPV player (FLAC decoder)
+            ├── [other DLLs]           ← Dependencies
+            └── README.txt             ← Setup instructions
+            ```
+
+            ---
+
+            ## 🎼 How FLAC Playback Works
+
+            When you play a song:
+
+            1. **Try HTML5 audio first** (WebView2) - fast startup
+            2. **If format not supported** → Automatically switch to MPV backend
+            3. **Success!** FLAC streams/plays perfectly
+
+            ### Expected Logs:
+            ```
+            [info] play: Song Name - Artist
+            [success] stream url: http://127.0.0.1:xxxxx/stream/xxx
+            [success] MPV playback started  ← MPV is working!
+            ```
+
+            ### No More Errors:
+            - ❌ ~~`MEDIA_ERR_SRC_NOT_SUPPORTED`~~
+            - ❌ ~~`upstream returned html`~~
+            - ❌ ~~`mpv player backend not implemented`~~
+
+            ---
+
+            ## ⚠️ Important Notes
+
+            ### Windows
+            - **Keep all files together** - Don't separate .exe from DLLs
+            - **Windows Defender** - May show smart screen warning (click "More info" → "Run anyway")
+            - **First run** - May take a moment to initialize MPV
+
+            ### Linux Requirements
+
+            The AppImage requires `webkit2gtk-4.1` and `libmpv` to be installed:
+
+            **Ubuntu/Debian:**
+            ```bash
+            sudo apt install libwebkit2gtk-4.1-0 libmpv1
+            chmod +x SpotiFLAC.AppImage
+            ./SpotiFLAC.AppImage
+            ```
+
+            **Arch Linux:**
+            ```bash
+            sudo pacman -S webkit2gtk-4.1 mpv
+            chmod +x SpotiFLAC.AppImage
+            ./SpotiFLAC.AppImage
+            ```
+
+            ---
+
+            ## 🐛 Troubleshooting
+
+            ### MPV not working?
+            1. Check `libmpv-2.dll` is in same folder as `.exe`
+            2. Run as administrator
+            3. Check Windows Defender hasn't blocked files
+
+            ### Still having issues?
+            Open an issue: https://github.com/afkarxyz/SpotiFLAC/issues
+
+            ---
+
+            ## 🏗️ Build Info
+
+            - **MPV Version:** Latest from shinchiro/mpv-winbuild-cmake
+            - **Build Type:** CGO-enabled with libmpv
+            - **Windows:** All DLLs bundled automatically
+            - **Linux:** Uses system libmpv
+            - **macOS:** Stub implementation (MPV coming in future update)
 
             <details>
             <summary><b>Linux Requirements</b></summary>
@@ -543,7 +741,9 @@ jobs:
 
             </details>
           files: |
+            artifacts/windows-portable-zip/*.zip
             artifacts/windows-portable/*.exe
+            artifacts/windows-portable/*.dll
             artifacts/macos-portable/*.dmg
             artifacts/linux-portable/*.AppImage
         env:

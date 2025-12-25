@@ -242,9 +242,66 @@ func (p *mpvPlayerImpl) SetVolume(ctx context.Context, volume float64) error {
 }
 
 func (p *mpvPlayerImpl) SetEqualizer(ctx context.Context, presetName string, bands map[string]float64, preamp float64) error {
-	// MPV equalizer is more complex - would need lavfi filters
-	// For now, return not implemented
-	return ErrMPVNotImplemented
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return ErrMPVAlreadyClosed
+	}
+
+	// Build equalizer filter string for MPV
+	// MPV uses lavfi/ffmpeg audio filters: af=lavfi=[equalizer=...]
+	// 10-band equalizer: 32, 64, 125, 250, 500, 1k, 2k, 4k, 8k, 16k Hz
+	//
+	// Format: equalizer=f=32:width_type=q:width=1:g=0:f=64:width_type=q:width=1:g=0:...
+	
+	// Default bands if not provided
+	defaultBands := map[string]float64{
+		"32":    0,
+		"64":    0,
+		"125":   0,
+		"250":   0,
+		"500":   0,
+		"1000":  0,
+		"2000":  0,
+		"4000":  0,
+		"8000":  0,
+		"16000": 0,
+	}
+	
+	// Merge provided bands with defaults
+	for k, v := range bands {
+		defaultBands[k] = v
+	}
+	
+	// Build filter string
+	filterParts := []string{}
+	frequencies := []string{"32", "64", "125", "250", "500", "1000", "2000", "4000", "8000", "16000"}
+	
+	for _, freq := range frequencies {
+		gain := defaultBands[freq]
+		// Apply preamp to each band
+		totalGain := gain + preamp
+		filterParts = append(filterParts, fmt.Sprintf("f=%s:width_type=q:width=1:g=%.1f", freq, totalGain))
+	}
+	
+	eqFilter := "equalizer=" + fmt.Sprintf("%s", filterParts[0])
+	for i := 1; i < len(filterParts); i++ {
+		eqFilter += ":" + filterParts[i]
+	}
+	
+	// Set audio filter
+	cName := C.CString("af")
+	defer C.free(unsafe.Pointer(cName))
+	cValue := C.CString(eqFilter)
+	defer C.free(unsafe.Pointer(cValue))
+	
+	ret := C.mpv_set_property(p.handle, cName, C.MPV_FORMAT_STRING, unsafe.Pointer(&cValue))
+	if ret < 0 {
+		return fmt.Errorf("mpv_set_property(af) failed: %s", mpvError(ret))
+	}
+	
+	return nil
 }
 
 func (p *mpvPlayerImpl) Status(ctx context.Context) (MPVStatus, error) {

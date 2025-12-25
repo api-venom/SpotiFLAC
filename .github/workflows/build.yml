@@ -223,14 +223,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $bin = "build\\bin"
+          $bin = "build/bin"
           if (-not (Test-Path $bin)) { throw "Missing build/bin" }
 
           Copy-Item -Path "$env:MPV_DLL_PATH" -Destination (Join-Path $bin (Split-Path -Leaf $env:MPV_DLL_PATH)) -Force
 
           # Best effort: also copy any dlls sitting next to the mpv dll.
           Get-ChildItem -Path "$env:MPV_DLL_DIR" -Filter "*.dll" | ForEach-Object {
-            Copy-Item -Path $_.FullName -Destination "$bin\\$($_.Name)" -Force
+            Copy-Item -Path $_.FullName -Destination "$bin/$($_.Name)" -Force
           }
 
       - name: Compress with UPX
@@ -239,13 +239,13 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $candidates = @(
-            "build\bin\KnightMusic.exe",
-            "build\bin\Knight Music.exe",
-            "build\bin\SpotiFLAC.exe"
+            "build/bin/KnightMusic.exe",
+            "build/bin/Knight Music.exe",
+            "build/bin/SpotiFLAC.exe"
           ) | Where-Object { Test-Path $_ }
 
           if ($candidates.Count -eq 0) {
-            $fallback = Get-ChildItem -Path "build\bin" -Filter "*.exe" -File | Select-Object -First 1
+            $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1
             if (-not $fallback) {
               throw "No .exe found in build/bin for UPX"
             }
@@ -267,13 +267,13 @@ jobs:
           
           # Copy executable (output filename is configured in wails.json)
           $candidates = @(
-            "build\bin\KnightMusic.exe",
-            "build\bin\Knight Music.exe",
-            "build\bin\SpotiFLAC.exe"
+            "build/bin/KnightMusic.exe",
+            "build/bin/Knight Music.exe",
+            "build/bin/SpotiFLAC.exe"
           ) | Where-Object { Test-Path $_ }
 
           if ($candidates.Count -eq 0) {
-            $fallback = Get-ChildItem -Path "build\bin" -Filter "*.exe" -File | Select-Object -First 1
+            $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1
             if (-not $fallback) {
               throw "No .exe found in build/bin"
             }
@@ -282,12 +282,12 @@ jobs:
             $exe = $candidates[0]
           }
 
-          Copy-Item -Path $exe -Destination "dist\KnightMusic.exe" -Force
+          Copy-Item -Path $exe -Destination "dist/KnightMusic.exe" -Force
           Write-Host "Copied KnightMusic.exe"
 
           # Copy ALL DLLs from build/bin (includes MPV and dependencies)
           $dllCount = 0
-          Get-ChildItem -Path "build\bin" -Filter "*.dll" | ForEach-Object {
+          Get-ChildItem -Path "build/bin" -Filter "*.dll" | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination (Join-Path "dist" $_.Name) -Force
             Write-Host "Copied DLL: $($_.Name) ($([Math]::Round($_.Length / 1MB, 2)) MB)"
             $dllCount++

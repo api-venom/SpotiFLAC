@@ -40,6 +40,23 @@ async function getMPVMethods(): Promise<MPVMethods> {
       // @ts-ignore
       MPVGetStatus: appModule.MPVGetStatus,
     };
+    
+    // Check if methods actually exist
+    const hasLoad = typeof mpvMethods.MPVLoadTrack === 'function';
+    const hasPlay = typeof mpvMethods.MPVPlay === 'function';
+    const hasStatus = typeof mpvMethods.MPVGetStatus === 'function';
+    
+    logger.debug(
+      `MPV methods check: MPVLoadTrack=${hasLoad} MPVPlay=${hasPlay} MPVGetStatus=${hasStatus}`,
+      "player"
+    );
+    
+    if (!hasLoad || !hasPlay) {
+      logger.error("MPV methods found in module but are undefined (stub build?)", "player");
+      mpvMethods = {};
+      return {};
+    }
+    
     logger.debug("MPV methods loaded successfully", "player");
     return mpvMethods;
   } catch (e) {

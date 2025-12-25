@@ -514,8 +514,69 @@ func (a *App) CancelAllQueuedItems() {
 	backend.CancelAllQueuedItems()
 }
 
+// MPV Player methods for frontend integration
+
+// MPVLoadTrack loads a track URL into the MPV player
+func (a *App) MPVLoadTrack(url string, headers map[string]string) error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.Load(a.ctx, url, headers)
+}
+
+// MPVPlay starts playback
+func (a *App) MPVPlay() error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.Play(a.ctx)
+}
+
+// MPVPause pauses playback
+func (a *App) MPVPause() error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.Pause(a.ctx)
+}
+
+// MPVStop stops playback
+func (a *App) MPVStop() error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.Stop(a.ctx)
+}
+
+// MPVSeek seeks to a specific position in seconds
+func (a *App) MPVSeek(seconds float64) error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.SeekSeconds(a.ctx, seconds)
+}
+
+// MPVSetVolume sets the playback volume (0-100)
+func (a *App) MPVSetVolume(volume float64) error {
+	if a.mpvPlayer == nil {
+		return fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.SetVolume(a.ctx, volume)
+}
+
+// MPVGetStatus returns the current playback status
+func (a *App) MPVGetStatus() (backend.MPVStatus, error) {
+	if a.mpvPlayer == nil {
+		return backend.MPVStatus{}, fmt.Errorf("MPV player not initialized")
+	}
+	return a.mpvPlayer.Status(a.ctx)
+}
+
 // Quit closes the application
 func (a *App) Quit() {
+	if a.mpvPlayer != nil {
+		a.mpvPlayer.Close()
+	}
 	if a.stream != nil {
 		a.stream.Stop()
 	}

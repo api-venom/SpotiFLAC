@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { X, MoreHorizontal } from "lucide-react";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
-import { buildLrcTimeline, findActiveIndex, getLineProgress, formatEllipsisDots } from "@/lib/lyrics/lrc";
+import { buildLrcTimeline, findActiveIndex, getLineProgress } from "@/lib/lyrics/lrc";
 import { buildPaletteBackgroundStyle } from "@/lib/cover/palette";
 import { useCoverPalette } from "@/hooks/useCoverPalette";
 import { EqualizerControls } from "./EqualizerControls";

@@ -745,6 +745,10 @@ function App() {
           onOpenChange={setLyricsOverlayOpen}
           track={lyricsOverlayTrack}
           ensureLyricsFile={ensureLyricsFile}
+          currentPosition={0}
+          fetchLyrics={async (spotifyId, trackName, artistName) => {
+            await lyrics.handleDownloadLyrics(spotifyId, trackName, artistName);
+          }}
         />
 
         <FullScreenPlayer />

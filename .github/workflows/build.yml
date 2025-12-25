@@ -476,7 +476,7 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
       - name: Build application with MPV support
         env:
           CGO_ENABLED: "1"
-        run: wails build -platform linux/amd64 -tags cgo
+        run: wails build -platform linux/amd64 -tags=cgo
 
       - name: Compress with UPX
         run: |
@@ -741,10 +741,8 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
 
             </details>
           files: |
-            artifacts/windows-portable-zip/*.zip
-            artifacts/windows-portable/*.exe
-            artifacts/windows-portable/*.dll
-            artifacts/macos-portable/*.dmg
-            artifacts/linux-portable/*.AppImage
+            artifacts/windows-portable-zip/SpotiFLAC-Windows-Portable.zip
+            artifacts/macos-portable/SpotiFLAC.dmg
+            artifacts/linux-portable/SpotiFLAC.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

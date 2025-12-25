@@ -260,7 +260,6 @@ export function LyricsOverlay({
               <div className="w-full max-w-5xl space-y-0">
                 {visibleLines.map((line, idx) => {
                   const isFirst = idx === 0;
-                  const isLast = idx === visibleLines.length - 1;
                   
                   return (
                     <div key={line.index} className="w-full">

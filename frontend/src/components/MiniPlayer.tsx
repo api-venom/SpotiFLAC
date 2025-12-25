@@ -1,7 +1,9 @@
 import { Play, Pause, SkipBack, SkipForward, Maximize2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { usePlayer } from "@/hooks/usePlayer";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { ReadTextFile } from "../../wailsjs/go/main/App";
+import { useLyrics } from "@/hooks/useLyrics";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -43,10 +45,40 @@ async function extractDominantColor(url?: string): Promise<string | null> {
   });
 }
 
+type ParsedLine = { t: number | null; text: string };
+
+function parseLRC(content: string): ParsedLine[] {
+  const lines = content.split(/\r?\n/);
+  const out: ParsedLine[] = [];
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line) continue;
+
+    const m = line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$/);
+    if (!m) {
+      out.push({ t: null, text: line });
+      continue;
+    }
+
+    const min = Number(m[1]);
+    const sec = Number(m[2]);
+    const frac = m[3] ? Number(m[3].padEnd(3, "0")) : 0;
+    const t = min * 60 + sec + frac / 1000;
+    const text = (m[4] || "").trim();
+    if (text) out.push({ t, text });
+  }
+
+  return out;
+}
+
 export function MiniPlayer() {
   const { state, player } = usePlayer();
   const track = state.current;
   const [bgColor, setBgColor] = useState<string | null>(null);
+  const lyrics = useLyrics();
+  const [lyricsContent, setLyricsContent] = useState<string>("");
+  const [dotCount, setDotCount] = useState(0);
 
   useEffect(() => {
     if (track?.coverUrl) {
@@ -56,94 +88,218 @@ export function MiniPlayer() {
     }
   }, [track?.coverUrl]);
 
+  // Load lyrics
+  useEffect(() => {
+    if (!track?.spotifyId) {
+      setLyricsContent("");
+      return;
+    }
+
+    (async () => {
+      try {
+        const filePath = await lyrics.ensureLyricsFile(track.spotifyId);
+        if (filePath) {
+          const text = await ReadTextFile(filePath);
+          setLyricsContent(text || "");
+        } else {
+          setLyricsContent("");
+        }
+      } catch {
+        setLyricsContent("");
+      }
+    })();
+  }, [track?.spotifyId, lyrics]);
+
+  // Animated dots for instrumental breaks
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotCount((prev) => (prev + 1) % 4);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const parsed = useMemo(() => parseLRC(lyricsContent), [lyricsContent]);
+
+  // Find current and next lyrics
+  const { currentLine, nextLine, currentProgress, nextProgress } = useMemo(() => {
+    if (!parsed.length || state.position === 0) {
+      return { currentLine: null, nextLine: null, currentProgress: 0, nextProgress: 0 };
+    }
+
+    let currentIdx = -1;
+    for (let i = 0; i < parsed.length; i++) {
+      if (parsed[i].t !== null && parsed[i].t! <= state.position) {
+        currentIdx = i;
+      } else if (parsed[i].t !== null && parsed[i].t! > state.position) {
+        break;
+      }
+    }
+
+    const current = currentIdx >= 0 ? parsed[currentIdx] : null;
+    const next = currentIdx >= 0 && currentIdx + 1 < parsed.length ? parsed[currentIdx + 1] : null;
+
+    let currProg = 0;
+    let nextProg = 0;
+
+    if (current && current.t !== null) {
+      const startTime = current.t;
+      const endTime = next?.t ?? (startTime + 3);
+      const elapsed = state.position - startTime;
+      const duration = endTime - startTime;
+      currProg = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
+
+      if (next && next.t !== null) {
+        const nextDuration = next.t - startTime;
+        nextProg = nextDuration > 0 ? Math.min(1, Math.max(0, elapsed / nextDuration)) : 0;
+      }
+    }
+
+    return { currentLine: current, nextLine: next, currentProgress: currProg, nextProgress: nextProg };
+  }, [parsed, state.position]);
+
   if (!track || state.isFullscreen) return null;
 
   const progress = state.duration > 0 ? clamp01(state.position / state.duration) : 0;
 
+  // Solid background with extracted color
   const bgStyle = bgColor 
     ? {
-        background: `linear-gradient(135deg, ${bgColor}dd 0%, ${bgColor}aa 50%, ${bgColor}88 100%)`,
+        backgroundColor: bgColor,
+        opacity: 0.95,
       }
     : {
-        background: "linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(20, 20, 30, 0.95) 100%)",
+        backgroundColor: "rgba(25, 25, 35, 0.95)",
       };
+
+  const dots = ".".repeat(dotCount);
 
   return (
     <div 
-      className="fixed top-10 left-14 right-0 z-40 border-b border-white/10 backdrop-blur-xl"
+      className="fixed top-10 left-14 right-0 z-40 border-b border-white/20 shadow-2xl"
       style={bgStyle}
     >
       {/* Progress bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10">
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
         <div 
-          className="h-full bg-white/90 transition-all duration-200"
+          className="h-full bg-white/95 transition-all duration-100 ease-linear"
           style={{ width: `${progress * 100}%` }}
         />
       </div>
 
-      <div className="px-4 py-2 flex items-center gap-4">
+      <div className="px-4 py-3 flex items-center gap-6">
         {/* Album Art & Info */}
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-4 flex-1 min-w-0 max-w-md">
           {track.coverUrl && (
             <img 
               src={track.coverUrl} 
               alt={track.title}
-              className="w-12 h-12 rounded-lg shadow-lg object-cover flex-shrink-0"
+              className="w-14 h-14 rounded-xl shadow-2xl object-cover flex-shrink-0 ring-2 ring-white/20"
             />
           )}
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-white truncate text-sm">
+            <div className="font-bold text-white truncate text-base drop-shadow-lg">
               {track.title}
             </div>
-            <div className="text-white/70 truncate text-xs">
+            <div className="text-white/90 truncate text-sm drop-shadow-md">
               {track.artist}
             </div>
           </div>
         </div>
+
+        {/* Lyrics Display - Two Lines */}
+        {parsed.length > 0 && (
+          <div className="flex-1 min-w-0 max-w-2xl">
+            {/* Current line */}
+            {currentLine ? (
+              <div className="relative mb-1">
+                {/* Background text */}
+                <div className="text-white/40 text-sm font-semibold truncate">
+                  {currentLine.text}
+                </div>
+                {/* Filled text */}
+                <div 
+                  className="absolute inset-0 overflow-hidden"
+                  style={{ clipPath: `inset(0 ${(1 - currentProgress) * 100}% 0 0)` }}
+                >
+                  <div className="text-white text-sm font-semibold truncate drop-shadow-lg">
+                    {currentLine.text}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-white/40 text-sm font-semibold mb-1">
+                {state.isPlaying ? dots : "···"}
+              </div>
+            )}
+            
+            {/* Next line with subtle fill */}
+            {nextLine ? (
+              <div className="relative">
+                {/* Background text */}
+                <div className="text-white/25 text-xs font-medium truncate">
+                  {nextLine.text}
+                </div>
+                {/* Subtle pre-fill animation */}
+                <div 
+                  className="absolute inset-0 overflow-hidden opacity-60"
+                  style={{ clipPath: `inset(0 ${(1 - nextProgress * 0.3) * 100}% 0 0)` }}
+                >
+                  <div className="text-white/50 text-xs font-medium truncate">
+                    {nextLine.text}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-white/20 text-xs font-medium">
+                {state.isPlaying ? "♪" : ""}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Playback Controls */}
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 hover:bg-white/10 text-white/90 hover:text-white"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
           >
-            <SkipBack className="h-4 w-4" />
+            <SkipBack className="h-4 w-4 drop-shadow" />
           </Button>
 
           <Button
             onClick={() => player.togglePlay()}
             size="icon"
-            className="h-9 w-9 rounded-full bg-white hover:bg-white/90 text-black hover:scale-105 transition-all shadow-lg"
+            className="h-11 w-11 rounded-full bg-white hover:bg-white/90 text-black hover:scale-110 transition-all shadow-2xl"
           >
             {state.isPlaying ? (
-              <Pause className="h-4 w-4 fill-current" />
+              <Pause className="h-5 w-5 fill-current" />
             ) : (
-              <Play className="h-4 w-4 fill-current ml-0.5" />
+              <Play className="h-5 w-5 fill-current ml-0.5" />
             )}
           </Button>
 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 hover:bg-white/10 text-white/90 hover:text-white"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
           >
-            <SkipForward className="h-4 w-4" />
+            <SkipForward className="h-4 w-4 drop-shadow" />
           </Button>
         </div>
 
         {/* Time & Fullscreen */}
         <div className="flex items-center gap-4">
-          <div className="text-xs text-white/70 font-mono min-w-[4rem] text-right">
+          <div className="text-sm text-white font-mono min-w-[5rem] text-right drop-shadow-lg">
             {formatTime(state.position)} / {formatTime(state.duration)}
           </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => player.setFullscreen(true)}
-            className="h-8 w-8 hover:bg-white/10 text-white/70 hover:text-white"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
           >
-            <Maximize2 className="h-4 w-4" />
+            <Maximize2 className="h-5 w-5 drop-shadow" />
           </Button>
         </div>
       </div>

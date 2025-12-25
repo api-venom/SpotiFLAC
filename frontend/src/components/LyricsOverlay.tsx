@@ -47,8 +47,9 @@ interface LyricsOverlayProps {
   onOpenChange: (open: boolean) => void;
   track: LyricsOverlayTrack | null;
   ensureLyricsFile: (spotifyId: string) => Promise<string | null>;
-  currentPosition: number; // Current playback position in seconds
+  currentPosition: number;
   fetchLyrics?: (spotifyId: string, trackName: string, artistName: string) => Promise<void>;
+  isPlaying?: boolean;
 }
 
 export function LyricsOverlay({
@@ -58,43 +59,51 @@ export function LyricsOverlay({
   ensureLyricsFile,
   currentPosition,
   fetchLyrics,
+  isPlaying = true,
 }: LyricsOverlayProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
   const [fetching, setFetching] = useState(false);
+  const [dotCount, setDotCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeLyricsRef = useRef<HTMLDivElement>(null);
 
   const parsed = useMemo(() => parseLRC(content), [content]);
 
-  // Find the current active line based on playback position
+  // Animated dots for instrumental breaks
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotCount((prev) => (prev + 1) % 4);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Find the current active line
   const activeIndex = useMemo(() => {
     if (!parsed.length) return -1;
     
-    // Find the last line whose timestamp is <= currentPosition
     let idx = -1;
     for (let i = 0; i < parsed.length; i++) {
-      if (parsed[i].t !== null && parsed[i].t! <= currentPosition) {
+      if (parsed[i].t !== null && parsed[i].t! <= currentPosition + 0.1) {
         idx = i;
-      } else if (parsed[i].t !== null && parsed[i].t! > currentPosition) {
+      } else if (parsed[i].t !== null && parsed[i].t! > currentPosition + 0.1) {
         break;
       }
     }
     return idx;
   }, [parsed, currentPosition]);
 
-  // Auto-scroll to active lyrics
+  // Auto-scroll with smoother animation
   useEffect(() => {
     if (activeIndex >= 0 && activeLyricsRef.current && containerRef.current) {
       const container = containerRef.current;
       const activeElement = activeLyricsRef.current;
       
-      // Smooth scroll to keep active lyrics centered
       const containerHeight = container.clientHeight;
       const elementTop = activeElement.offsetTop;
       const elementHeight = activeElement.clientHeight;
-      const scrollTop = elementTop - containerHeight / 2 + elementHeight / 2;
+      const scrollTop = elementTop - containerHeight / 3; // Position at upper third
       
       container.scrollTo({
         top: scrollTop,
@@ -103,23 +112,31 @@ export function LyricsOverlay({
     }
   }, [activeIndex]);
 
-  // Calculate progress for the current line (for fill animation)
-  const currentLineProgress = useMemo(() => {
-    if (activeIndex < 0 || !parsed[activeIndex]) return 0;
+  // Calculate progress for current and next line
+  const lineProgress = useMemo(() => {
+    const result: Record<number, number> = {};
     
-    const currentLine = parsed[activeIndex];
-    const nextLine = parsed[activeIndex + 1];
+    if (activeIndex >= 0 && parsed[activeIndex]) {
+      const currentLine = parsed[activeIndex];
+      const nextLine = parsed[activeIndex + 1];
+      
+      if (currentLine.t !== null) {
+        const startTime = currentLine.t;
+        const endTime = nextLine?.t ?? (startTime + 3);
+        const elapsed = currentPosition - startTime;
+        const duration = endTime - startTime;
+        
+        result[activeIndex] = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
+        
+        // Pre-fill next line slightly
+        if (nextLine && nextLine.t !== null) {
+          const nextDuration = nextLine.t - startTime;
+          result[activeIndex + 1] = nextDuration > 0 ? Math.min(0.3, Math.max(0, elapsed / nextDuration)) : 0;
+        }
+      }
+    }
     
-    if (currentLine.t === null) return 0;
-    
-    const startTime = currentLine.t;
-    const endTime = nextLine?.t ?? (startTime + 3); // Default 3 seconds if no next line
-    
-    const elapsed = currentPosition - startTime;
-    const duration = endTime - startTime;
-    
-    if (duration <= 0) return 1;
-    return Math.min(1, Math.max(0, elapsed / duration));
+    return result;
   }, [activeIndex, parsed, currentPosition]);
 
   useEffect(() => {
@@ -133,15 +150,13 @@ export function LyricsOverlay({
       try {
         let filePath = await ensureLyricsFile(track.spotify_id);
         
-        // If no lyrics file exists, try to fetch it
         if (!filePath && fetchLyrics) {
           setFetching(true);
           try {
             await fetchLyrics(track.spotify_id, track.name, track.artists);
-            // Try again to get the file path
             filePath = await ensureLyricsFile(track.spotify_id);
           } catch (fetchErr) {
-            // Ignore fetch errors, we'll show the "not available" error below
+            // Ignore
           } finally {
             setFetching(false);
           }
@@ -164,6 +179,8 @@ export function LyricsOverlay({
       cancelled = true;
     };
   }, [open, track?.spotify_id, ensureLyricsFile, fetchLyrics]);
+
+  const dots = ".".repeat(dotCount);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,62 +207,84 @@ export function LyricsOverlay({
           ) : error ? (
             <div className="py-16 text-center text-white/60">{error}</div>
           ) : (
-            <div className="max-w-3xl mx-auto py-32">
+            <div className="max-w-4xl mx-auto py-32">
               {parsed.map((l, idx) => {
                 const isActive = idx === activeIndex;
+                const isNext = idx === activeIndex + 1;
                 const isPast = idx < activeIndex;
-                const isFuture = idx > activeIndex;
+                const isFuture = idx > activeIndex + 1;
+                const progress = lineProgress[idx] || 0;
+                
+                // Show empty line with dots for instrumental breaks
+                const displayText = l.text || (isActive && isPlaying ? dots : "···");
                 
                 return (
                   <div
                     key={`${idx}-${l.t ?? "x"}`}
                     ref={isActive ? activeLyricsRef : null}
                     className={cn(
-                      "py-3 text-3xl md:text-5xl font-bold tracking-tight transition-all duration-300 relative",
-                      isActive && "scale-105",
-                      !isActive && "scale-95"
+                      "relative transition-all duration-500 ease-out",
+                      isActive && "py-6 text-5xl md:text-7xl scale-100",
+                      isNext && "py-4 text-4xl md:text-6xl scale-95 opacity-90",
+                      (isPast || isFuture) && "py-3 text-3xl md:text-5xl scale-90",
+                      "font-bold tracking-tight"
                     )}
                   >
                     {/* Background text (gray) */}
                     <div
                       className={cn(
-                        "transition-opacity duration-500",
-                        isPast && "opacity-40",
+                        "transition-all duration-500",
+                        isPast && "opacity-30",
                         isActive && "opacity-100",
-                        isFuture && "opacity-30"
+                        isNext && "opacity-70",
+                        isFuture && "opacity-20"
                       )}
-                      style={{ color: isPast ? "#666" : isFuture ? "#555" : "#888" }}
+                      style={{ 
+                        color: isPast ? "#666" : (isActive || isNext) ? "#888" : "#555",
+                        textShadow: isActive ? "0 0 20px rgba(0,0,0,0.5)" : "none"
+                      }}
                     >
-                      {l.text}
+                      {displayText}
                     </div>
                     
-                    {/* Foreground text (white) with fill animation */}
-                    {isActive && (
+                    {/* Foreground text (white) with smooth fill animation */}
+                    {(isActive || isNext) && progress > 0 && (
                       <div
-                        className="absolute inset-0 overflow-hidden"
+                        className="absolute inset-0 overflow-hidden transition-all duration-100"
                         style={{
-                          clipPath: `inset(0 ${(1 - currentLineProgress) * 100}% 0 0)`,
+                          clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
                         }}
                       >
                         <div
-                          className="py-3 text-3xl md:text-5xl font-bold tracking-tight"
-                          style={{ color: "#FFFFFF" }}
+                          className={cn(
+                            "font-bold tracking-tight transition-all duration-500",
+                            isActive && "py-6 text-5xl md:text-7xl",
+                            isNext && "py-4 text-4xl md:text-6xl opacity-60"
+                          )}
+                          style={{ 
+                            color: "#FFFFFF",
+                            textShadow: "0 0 30px rgba(255,255,255,0.5), 0 0 10px rgba(255,255,255,0.3)"
+                          }}
                         >
-                          {l.text}
+                          {displayText}
                         </div>
                       </div>
                     )}
                     
-                    {/* Past lines in white */}
+                    {/* Past lines in white with fade */}
                     {isPast && (
-                      <div
-                        className="absolute inset-0"
-                      >
+                      <div className="absolute inset-0">
                         <div
-                          className="py-3 text-3xl md:text-5xl font-bold tracking-tight"
-                          style={{ color: "#FFFFFF", opacity: 0.5 }}
+                          className={cn(
+                            "py-3 text-3xl md:text-5xl font-bold tracking-tight transition-all duration-500"
+                          )}
+                          style={{ 
+                            color: "#FFFFFF", 
+                            opacity: 0.4,
+                            textShadow: "0 0 10px rgba(255,255,255,0.2)"
+                          }}
                         >
-                          {l.text}
+                          {displayText}
                         </div>
                       </div>
                     )}

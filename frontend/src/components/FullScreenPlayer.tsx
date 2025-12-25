@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, Settings } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
 import { LyricsOverlay, type LyricsOverlayTrack } from "./LyricsOverlay";
 import { useLyrics } from "../hooks/useLyrics";
+import { EqualizerControls } from "./EqualizerControls";
 import { cn } from "@/lib/utils";
 
 function clamp01(n: number) {

@@ -25,12 +25,19 @@ async function getMPVMethods(): Promise<MPVMethods> {
     // @ts-ignore - Wails bindings are generated at build time
     const appModule = await import("../../wailsjs/go/main/App");
     mpvMethods = {
+      // @ts-ignore - MPV methods may not exist in stub builds
       MPVLoadTrack: appModule.MPVLoadTrack,
+      // @ts-ignore
       MPVPlay: appModule.MPVPlay,
+      // @ts-ignore
       MPVPause: appModule.MPVPause,
+      // @ts-ignore
       MPVStop: appModule.MPVStop,
+      // @ts-ignore
       MPVSeek: appModule.MPVSeek,
+      // @ts-ignore
       MPVSetVolume: appModule.MPVSetVolume,
+      // @ts-ignore
       MPVGetStatus: appModule.MPVGetStatus,
     };
     logger.debug("MPV methods loaded successfully", "player");

@@ -159,7 +159,7 @@ func (a *App) SearchSpotify(req SpotifySearchRequest) (*backend.SearchResponse, 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return backend.SearchSpotify(ctx, req.Query, req.Limit, req.Market)
+	return backend.SearchSpotify(ctx, req.Query, req.Limit)
 }
 
 // SpotifySearchByTypeRequest represents the request for searching by specific type with offset
@@ -188,7 +188,7 @@ func (a *App) SearchSpotifyByType(req SpotifySearchByTypeRequest) ([]backend.Sea
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return backend.SearchSpotifyByType(ctx, req.Query, req.SearchType, req.Limit, req.Offset, req.Market)
+	return backend.SearchSpotifyByType(ctx, req.Query, req.SearchType, req.Limit, req.Offset)
 }
 
 // DownloadTrack downloads a track by ISRC

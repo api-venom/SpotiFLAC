@@ -183,7 +183,7 @@ jobs:
           
           if ($libFile) {
             Write-Host "Found import library: $($libFile.FullName)"
-            Copy-Item -Force -Path $libFile.FullName -Destination "backend\libmpv.dll.a"
+            Copy-Item -Force -Path $libFile.FullName -Destination "backend/libmpv.dll.a"
             Write-Host "Copied import library to backend/ for CGO linking"
           } else {
             Write-Host "Warning: No import library found, will try direct DLL linking"
@@ -204,8 +204,8 @@ jobs:
           
           # Set CGO environment variables
           $env:CGO_ENABLED = "1"
-          $env:CGO_CFLAGS = "-I$(Get-Location)\backend"
-          $env:CGO_LDFLAGS = "-L$(Get-Location)\backend -lmpv"
+          $env:CGO_CFLAGS = "-I$(Get-Location)/backend"
+          $env:CGO_LDFLAGS = "-L$(Get-Location)/backend -lmpv"
           
           Write-Host "Building with CGO enabled and MPV support..."
           Write-Host "CGO_ENABLED: $env:CGO_ENABLED"

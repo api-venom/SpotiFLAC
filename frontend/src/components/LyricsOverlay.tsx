@@ -102,7 +102,6 @@ export function LyricsOverlay({
       
       const containerHeight = container.clientHeight;
       const elementTop = activeElement.offsetTop;
-      const elementHeight = activeElement.clientHeight;
       const scrollTop = elementTop - containerHeight / 3; // Position at upper third
       
       container.scrollTo({

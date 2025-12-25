@@ -121,11 +121,11 @@ export function LyricsOverlay({
   const dots = formatEllipsisDots(dotCount);
   const bgStyle = useMemo(() => buildPaletteBackgroundStyle(palette), [palette]);
 
-  // Get visible lines - ONLY show ellipsis when active and playing
+  // Get visible lines - Skip ellipsis completely, show only lyrics
   const visibleLines = useMemo(() => {
     const lines = [];
-    const start = Math.max(0, activeIndex - 1);
-    const end = Math.min(timeline.length, activeIndex + 3);
+    const start = Math.max(0, activeIndex - 2);
+    const end = Math.min(timeline.length, activeIndex + 6);
     
     for (let i = start; i < end; i++) {
       const line = timeline[i];
@@ -134,20 +134,8 @@ export function LyricsOverlay({
       const isEllipsis = line.kind === "ellipsis";
       const isLineActive = i === activeIndex;
       
-      // Only show ellipsis if it's active AND playing
+      // Skip ellipsis completely - don't show three dots
       if (isEllipsis) {
-        if (isLineActive && isPlaying) {
-          // Show animated dots for active ellipsis
-          lines.push({
-            text: dots,
-            index: i,
-            isActive: true,
-            isPast: false,
-            isEllipsis: true,
-            progress: lineProgress[i] || 0,
-          });
-        }
-        // Skip ellipsis completely if not active or not playing
         continue;
       }
       
@@ -162,7 +150,7 @@ export function LyricsOverlay({
     }
     
     return lines;
-  }, [timeline, activeIndex, isPlaying, dots, lineProgress]);
+  }, [timeline, activeIndex, lineProgress]);
 
   if (!open) return null;
 
@@ -257,78 +245,37 @@ export function LyricsOverlay({
             ) : error ? (
               <div className="text-center text-white/60 text-xl">{error}</div>
             ) : (
-              <div className="w-full max-w-5xl space-y-0">
-                {visibleLines.map((line, idx) => {
-                  const isFirst = idx === 0;
+              <div className="w-full max-w-7xl space-y-4">
+                {visibleLines.map((line) => {
+                  // For ellipsis, show as fully white immediately
+                  const showFullWhite = line.isEllipsis || (line.isActive && line.progress > 0);
                   
                   return (
-                    <div key={line.index} className="w-full">
-                      {/* Previous line with bullet above */}
-                      {line.isPast && isFirst && (
-                        <div className="text-center mb-6">
-                          <div className="text-white/20 text-4xl mb-4">•</div>
-                        </div>
+                    <div
+                      key={line.index}
+                      className={cn(
+                        "relative text-center w-full transition-all duration-500 ease-out",
+                        line.isActive ? "scale-110" : "scale-100"
                       )}
-                      
-                      {/* Lyric Line */}
+                    >
                       <div
-                        className={cn(
-                          "relative text-center transition-all duration-500 ease-out w-full",
-                          line.isActive ? "mb-8" : "mb-6"
-                        )}
+                        className="inline-block max-w-full px-6"
+                        style={{
+                          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
+                          fontWeight: 700,
+                          fontSize: "clamp(2rem, 4vw, 3.5rem)",
+                          lineHeight: 1.3,
+                          letterSpacing: "-0.01em",
+                          WebkitFontSmoothing: "antialiased",
+                          MozOsxFontSmoothing: "grayscale",
+                          textRendering: "optimizeLegibility",
+                          color: line.isPast ? "#FFFFFF" : showFullWhite ? "#FFFFFF" : line.isActive ? "#999999" : "#666666",
+                          opacity: line.isPast ? 0.35 : line.isActive ? 1 : 0.45,
+                          textShadow: showFullWhite && !line.isPast ? "0 0 40px rgba(255,255,255,0.5)" : "none",
+                          transition: "all 500ms cubic-bezier(0.4, 0, 0.2, 1)",
+                        }}
                       >
-                        {/* Background text */}
-                        <div
-                          className={cn(
-                            "font-bold leading-tight transition-all duration-500 px-4",
-                            line.isActive && "text-5xl sm:text-6xl md:text-7xl",
-                            !line.isActive && "text-2xl sm:text-3xl md:text-4xl"
-                          )}
-                          style={{
-                            color: line.isPast ? "#888" : line.isActive ? "#bbb" : "#666",
-                            opacity: line.isPast ? 0.5 : !line.isActive ? 0.6 : 1,
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          {line.text}
-                        </div>
-                        
-                        {/* White fill animation for active line */}
-                        {line.isActive && line.progress > 0 && (
-                          <div
-                            className="absolute inset-0 overflow-hidden transition-all duration-150"
-                            style={{
-                              clipPath: `inset(0 ${(1 - line.progress) * 100}% 0 0)`,
-                            }}
-                          >
-                            <div
-                              className="text-5xl sm:text-6xl md:text-7xl font-bold leading-tight px-4"
-                              style={{
-                                color: "#FFFFFF",
-                                textShadow: "0 0 40px rgba(255,255,255,0.5), 0 0 80px rgba(255,255,255,0.3)",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {line.text}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Past lines in white */}
-                        {line.isPast && (
-                          <div className="absolute inset-0">
-                            <div
-                              className="text-2xl sm:text-3xl md:text-4xl font-bold leading-tight px-4"
-                              style={{
-                                color: "#FFFFFF",
-                                opacity: 0.6,
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {line.text}
-                            </div>
-                          </div>
-                        )}
+                        {line.text}
                       </div>
                     </div>
                   );

@@ -208,8 +208,18 @@ func (p *mpvPlayerImpl) SeekSeconds(ctx context.Context, seconds float64) error 
 		return ErrMPVAlreadyClosed
 	}
 
+	// Check if a file is loaded
+	if p.currentState == "stopped" || p.durationSec == 0 {
+		// File not loaded yet, just update local position
+		p.positionSec = seconds
+		return nil
+	}
+
 	if err := p.setDoubleProperty("time-pos", seconds); err != nil {
-		return err
+		// Property unavailable - file may not be loaded yet
+		// Update local position and continue
+		p.positionSec = seconds
+		return nil
 	}
 
 	p.positionSec = seconds

@@ -580,6 +580,43 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 	return "", fmt.Errorf("download URL not found in response")
 }
 
+// GetTidalFileURL retrieves a playable stream URL for a Tidal track without downloading
+// This is used for streaming playback via the stream server
+func (t *TidalDownloader) GetTidalFileURL(trackID int64, quality string) (string, error) {
+	downloadURL, err := t.GetDownloadURL(trackID, quality)
+	if err != nil {
+		return "", err
+	}
+
+	// Handle manifest-based streams (v2 API)
+	if strings.HasPrefix(downloadURL, "MANIFEST:") {
+		manifestB64 := strings.TrimPrefix(downloadURL, "MANIFEST:")
+		
+		// Parse manifest to extract first direct URL
+		directURL, initURL, mediaURLs, err := parseManifest(manifestB64)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse manifest for streaming: %w", err)
+		}
+
+		// If BTS format with direct URL, return it
+		if directURL != "" {
+			return directURL, nil
+		}
+
+		// For DASH format, we need to return the init segment URL
+		// Note: Streaming DASH content is complex - would need HLS/DASH player
+		// For now, return error indicating this track needs downloading
+		if initURL != "" && len(mediaURLs) > 0 {
+			return "", fmt.Errorf("DASH manifest detected - streaming not supported, please download track first")
+		}
+
+		return "", fmt.Errorf("invalid manifest format")
+	}
+
+	// Direct URL (v1 API) - can be streamed directly
+	return downloadURL, nil
+}
+
 func (t *TidalDownloader) DownloadAlbumArt(albumID string) ([]byte, error) {
 	albumID = strings.ReplaceAll(albumID, "-", "/")
 	// Decode base64 API URL

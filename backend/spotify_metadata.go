@@ -1289,9 +1289,8 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist,playlist&limit=%d", encodedQuery, limit)
-	if m, ok := normalizeMarket(market); ok {
-		searchURL += "&market=" + url.QueryEscape(m)
-	}
+	// Market parameter removed - Spotify returns global results when not specified
+	// Previously caused 502 errors with invalid market codes like "EN"
 
 	response := &SearchResponse{
 		Tracks:    make([]SearchResult, 0),
@@ -1399,9 +1398,8 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 
 	encodedQuery := url.QueryEscape(query)
 	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=%s&limit=%d&offset=%d", encodedQuery, searchType, limit, offset)
-	if m, ok := normalizeMarket(market); ok {
-		searchURL += "&market=" + url.QueryEscape(m)
-	}
+	// Market parameter removed - Spotify returns global results when not specified
+	// Previously caused 502 errors with invalid market codes like "EN"
 
 	results := make([]SearchResult, 0)
 

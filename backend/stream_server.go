@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -366,31 +367,67 @@ func contentTypeFromPath(p string) string {
 }
 
 func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error) {
-	// This project already has a SongLink client + provider downloaders.
-	// For now, use SongLink to pick a provider URL and then ask the provider
-	// downloader to give us a direct streamable URL.
-	//
-	// NOTE: Many provider URLs will not be directly playable without auth.
-	// We keep this function conservative: resolve to "some" URL and let
-	// future work enrich this with provider-auth headers or signed urls.
+	// Get Tidal URL from SongLink, then use Tidal API to get actual stream URL
 	client := NewSongLinkClient()
 	urls, err := client.GetAllURLsFromSpotify(spotifyID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to resolve provider URLs: %w", err)
 	}
 
-	// Prefer Tidal, then Amazon.
-	// (SongLinkURLs in this repo currently exposes only Tidal + Amazon.)
+	// Try Tidal first - use the downloader's GetTidalFileURL method to get stream URL
 	if urls.TidalURL != "" {
-		return urls.TidalURL, nil
-	}
-	if urls.AmazonURL != "" {
-		return urls.AmazonURL, nil
+		// Extract Tidal track ID from URL
+		trackID := extractTidalTrackID(urls.TidalURL)
+		if trackID == "" {
+			return "", fmt.Errorf("invalid Tidal URL format")
+		}
+		
+		// Use Tidal downloader to get authenticated stream URL
+		downloader := NewTidalDownloader("")
+		quality := audioFormat
+		if quality == "" {
+			quality = "LOSSLESS"
+		}
+		
+		// Get download URL using the same logic as downloads
+		downloadURL, err := downloader.GetTidalFileURL(trackID, quality)
+		if err != nil {
+			return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
+		}
+		
+		// Handle manifest or direct URL
+		if strings.HasPrefix(downloadURL, "MANIFEST:") {
+			// For manifests, we need to parse and return the first segment URL
+			// This is complex - for now just return error
+			return "", fmt.Errorf("manifest-based streams not yet supported for playback")
+		}
+		
+		if strings.HasPrefix(downloadURL, "DIRECT:") {
+			downloadURL = strings.TrimPrefix(downloadURL, "DIRECT:")
+		}
+		
+		return downloadURL, nil
 	}
 
-	_ = isrc
-	_ = audioFormat
-	return "", fmt.Errorf("no provider url available")
+	// Amazon not yet supported
+	if urls.AmazonURL != "" {
+		return "", fmt.Errorf("amazon streaming not yet implemented")
+	}
+
+	return "", fmt.Errorf("no provider URL available")
+}
+
+func extractTidalTrackID(tidalURL string) string {
+	// Extract track ID from URLs like:
+	// https://listen.tidal.com/track/123456
+	// https://tidal.com/browse/track/123456
+	parts := strings.Split(tidalURL, "/track/")
+	if len(parts) != 2 {
+		return ""
+	}
+	// Remove any query parameters
+	trackID := strings.Split(parts[1], "?")[0]
+	return trackID
 }
 
 func newToken() string {

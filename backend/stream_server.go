@@ -395,6 +395,19 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error)
 			return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
 		}
 		
+		// If the stream URL is a manifest (DASH/BTS format), parse it to get the direct URL
+		if strings.HasPrefix(streamURL, "MANIFEST:") {
+			manifestB64 := strings.TrimPrefix(streamURL, "MANIFEST:")
+			directURL, _, _, err := parseManifest(manifestB64)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse Tidal manifest: %w", err)
+			}
+			if directURL == "" {
+				return "", fmt.Errorf("manifest contains DASH segments (not supported for streaming, download recommended)")
+			}
+			return directURL, nil
+		}
+		
 		return streamURL, nil
 	}
 

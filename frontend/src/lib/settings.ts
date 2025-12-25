@@ -145,7 +145,7 @@ async function fetchDefaultPath(): Promise<string> {
   }
 }
 
-const SETTINGS_KEY = "spotiflac-settings";
+const SETTINGS_KEY = "knightmusic-settings";
 
 export function getSettings(): Settings {
   try {

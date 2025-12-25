@@ -1,6 +1,6 @@
 type CountryCache = { country: string; ts: number };
 
-const CACHE_KEY = "spotiflac-country-cache";
+const CACHE_KEY = "knightmusic-country-cache";
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const FALLBACK_COUNTRY = "US";
 

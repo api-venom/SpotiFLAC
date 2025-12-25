@@ -46,11 +46,16 @@ import { useCover } from "@/hooks/useCover";
 import { useAvailability } from "@/hooks/useAvailability";
 import { useDownloadQueueDialog } from "@/hooks/useDownloadQueueDialog";
 import { usePlayer } from "@/hooks/usePlayer";
+import { migrateLegacyStorageKeys } from "@/lib/storage/migrate";
 
-const HISTORY_KEY = "spotiflac_fetch_history";
+const HISTORY_KEY = "knightmusic_fetch_history";
 const MAX_HISTORY = 5;
 
 function App() {
+  useEffect(() => {
+    migrateLegacyStorageKeys();
+  }, []);
+
   const [currentPage, setCurrentPage] = useState<PageType>("main");
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
@@ -76,9 +81,9 @@ function App() {
   const downloadQueue = useDownloadQueueDialog();
   const { state: playerState } = usePlayer();
 
-  const openLyricsOverlay = (name: string, artists: string, spotifyId?: string) => {
+  const openLyricsOverlay = (name: string, artists: string, spotifyId?: string, coverUrl?: string) => {
     if (!spotifyId) return;
-    setLyricsOverlayTrack({ spotify_id: spotifyId, name, artists });
+    setLyricsOverlayTrack({ spotify_id: spotifyId, name, artists, coverUrl });
     setLyricsOverlayOpen(true);
   };
 
@@ -141,7 +146,7 @@ function App() {
   const checkForUpdates = async () => {
     try {
       const response = await fetch(
-        "https://api.github.com/repos/afkarxyz/SpotiFLAC/releases/latest"
+        "https://api.github.com/repos/afkarxyz/Knight-Music/releases/latest"
       );
       const data = await response.json();
       const latestVersion = data.tag_name?.replace(/^v/, "") || "";
@@ -348,13 +353,34 @@ function App() {
           failedCover={cover.failedCovers.has(track.spotify_id || "")}
           skippedCover={cover.skippedCovers.has(track.spotify_id || "")}
           onDownload={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, albumArtist, releaseDate, discNumber) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, undefined, undefined, albumArtist, releaseDate, discNumber)
+          onDownloadLyrics={(spotifyId, name, artists, albumName) =>
+            lyrics.handleDownloadLyrics(
+              spotifyId,
+              name,
+              artists,
+              albumName,
+              undefined,
+              undefined,
+              track.album_artist,
+              track.release_date,
+              track.disc_number
+            )
           }
-          onViewLyrics={(name, artists, spotifyId) => openLyricsOverlay(name, artists, spotifyId)}
+          onViewLyrics={(name, artists, spotifyId, coverUrl) => openLyricsOverlay(name, artists, spotifyId, coverUrl)}
           onCheckAvailability={availability.checkAvailability}
           onDownloadCover={(coverUrl, trackName, artistName, albumName, _playlistName, _position, trackId, albumArtist, releaseDate, discNumber) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, undefined, undefined, trackId, albumArtist, releaseDate, discNumber)
+            cover.handleDownloadCover(
+              coverUrl,
+              trackName,
+              artistName,
+              albumName,
+              undefined,
+              undefined,
+              trackId,
+              albumArtist,
+              releaseDate,
+              discNumber
+            )
           }
           onOpenFolder={handleOpenFolder}
         />
@@ -433,6 +459,7 @@ function App() {
       const { playlist_info, track_list } = metadata.metadata;
       return (
         <PlaylistInfo
+          sourceUrl={spotifyUrl}
           playlistInfo={playlist_info}
           trackList={track_list}
           searchQuery={searchQuery}

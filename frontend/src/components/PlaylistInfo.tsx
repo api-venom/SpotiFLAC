@@ -1,14 +1,18 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FolderOpen, ImageDown, FileText } from "lucide-react";
+import { Download, FolderOpen, ImageDown, FileText, Play, Shuffle, Pin, PinOff } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SearchAndSort } from "./SearchAndSort";
 import { TrackList } from "./TrackList";
 import { DownloadProgress } from "./DownloadProgress";
 import type { TrackMetadata, TrackAvailability } from "@/types/api";
+import { player, type PlayerTrack } from "@/lib/player";
+import { usePinnedPlaylists } from "@/hooks/usePinnedPlaylists";
+import { isPlaylistPinned } from "@/lib/pinned-playlists";
 
 interface PlaylistInfoProps {
+  sourceUrl?: string;
   playlistInfo: {
     owner: {
       name: string;
@@ -72,6 +76,7 @@ interface PlaylistInfoProps {
 }
 
 export function PlaylistInfo({
+  sourceUrl,
   playlistInfo,
   trackList,
   searchQuery,
@@ -118,6 +123,20 @@ export function PlaylistInfo({
   onArtistClick,
   onTrackClick,
 }: PlaylistInfoProps) {
+  const { pinned, togglePinned } = usePinnedPlaylists();
+  const pinnedNow = isPlaylistPinned(pinned, sourceUrl);
+
+  const playableQueue: PlayerTrack[] = trackList
+    .filter((t) => Boolean(t.spotify_id))
+    .map((t) => ({
+      spotifyId: t.spotify_id!,
+      isrc: t.isrc,
+      title: t.name,
+      artist: t.artists,
+      album: t.album_name,
+      coverUrl: t.images,
+    }));
+
   return (
     <div className="space-y-6">
       <Card>
@@ -145,6 +164,47 @@ export function PlaylistInfo({
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
+                {playableQueue.length > 0 && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={async () => {
+                        await player.setQueue(playableQueue, 0);
+                        player.setFullscreen(true);
+                      }}
+                    >
+                      <Play className="h-4 w-4" />
+                      Play
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={async () => {
+                        await player.setQueue(playableQueue, 0, { shuffle: true });
+                        player.setFullscreen(true);
+                      }}
+                    >
+                      <Shuffle className="h-4 w-4" />
+                      Shuffle
+                    </Button>
+                  </>
+                )}
+
+                {sourceUrl ? (
+                  <Button
+                    variant={pinnedNow ? "secondary" : "outline"}
+                    onClick={() =>
+                      togglePinned({
+                        url: sourceUrl,
+                        name: playlistInfo.owner.name,
+                        imageUrl: playlistInfo.owner.images,
+                      })
+                    }
+                  >
+                    {pinnedNow ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                    {pinnedNow ? "Unpin" : "Pin"}
+                  </Button>
+                ) : null}
+
                 <Button onClick={onDownloadAll} disabled={isDownloading}>
                   {isDownloading && bulkDownloadType === "all" ? (
                     <Spinner />

@@ -97,7 +97,7 @@ const FORMAT_PRESETS: Record<string, { label: string; template: string }> = {
   "custom": { label: "Custom...", template: "{title} - {artist}" },
 };
 
-const STORAGE_KEY = "spotiflac_file_manager_state";
+const STORAGE_KEY = "knightmusic_file_manager_state";
 const DEFAULT_PRESET = "title-artist";
 const DEFAULT_CUSTOM_FORMAT = "{title} - {artist}";
 

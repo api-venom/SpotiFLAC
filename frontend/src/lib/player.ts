@@ -77,6 +77,8 @@ export type PlayerTrack = {
   coverUrl?: string;
 };
 
+export type RepeatMode = "off" | "all" | "one";
+
 type InternalState = {
   current?: PlayerTrack;
   isPlaying: boolean;
@@ -85,6 +87,11 @@ type InternalState = {
   volume: number;
   isFullscreen: boolean;
   useMPV: boolean; // Whether to use MPV backend or HTML5 audio
+
+  queue: PlayerTrack[];
+  queueIndex: number; // -1 when no queue
+  shuffle: boolean;
+  repeat: RepeatMode;
 };
 
 type Listener = (s: InternalState) => void;
@@ -94,6 +101,8 @@ class PlayerService {
   private state: InternalState;
   private listeners = new Set<Listener>();
   private mpvStatusInterval?: ReturnType<typeof setInterval>;
+  private queueBase: PlayerTrack[] = [];
+  private lastMPVState: string | null = null;
 
   constructor() {
     this.audio = new Audio();
@@ -134,6 +143,11 @@ class PlayerService {
       volume: 1,
       isFullscreen: false,
       useMPV: false, // Will be auto-detected
+
+      queue: [],
+      queueIndex: -1,
+      shuffle: false,
+      repeat: "off",
     };
     
     // Auto-detect MPV availability and prefer it for better audio quality (EQ, etc.)
@@ -156,9 +170,94 @@ class PlayerService {
       this.emit();
     });
     this.audio.addEventListener("ended", () => {
-      this.state.isPlaying = false;
-      this.emit();
+      // HTML5 ended event is a reliable place to auto-advance.
+      this.handleEnded().catch(() => {
+        this.state.isPlaying = false;
+        this.emit();
+      });
     });
+  }
+
+  private emitWithQueueDerivedState() {
+    // Ensure invariants.
+    if (this.state.queueIndex >= this.state.queue.length) {
+      this.state.queueIndex = this.state.queue.length - 1;
+    }
+    if (this.state.queueIndex < -1) {
+      this.state.queueIndex = -1;
+    }
+    this.emit();
+  }
+
+  private buildQueueFromBase(startIndex: number, shuffle: boolean): { queue: PlayerTrack[]; index: number } {
+    const base = this.queueBase.slice();
+    if (base.length === 0) {
+      return { queue: [], index: -1 };
+    }
+
+    const safeStart = Math.min(Math.max(0, startIndex), base.length - 1);
+    if (!shuffle) {
+      return { queue: base, index: safeStart };
+    }
+
+    // Shuffle while keeping the selected track as the first play item.
+    const start = base[safeStart];
+    const rest = base.filter((_, i) => i !== safeStart);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = rest[i];
+      rest[i] = rest[j];
+      rest[j] = tmp;
+    }
+    return { queue: [start, ...rest], index: 0 };
+  }
+
+  private async playNow(track: PlayerTrack, opts?: { audioFormat?: string; downloadDir?: string }) {
+    this.state.current = track;
+    this.emitWithQueueDerivedState();
+    await this.playTrackInternal(track, opts);
+  }
+
+  private async handleEnded() {
+    if (this.state.repeat === "one" && this.state.current) {
+      // Restart current track.
+      this.seek(0);
+      if (!this.state.isPlaying) {
+        await this.togglePlay();
+      }
+      return;
+    }
+
+    const hasQueue = this.state.queueIndex >= 0 && this.state.queue.length > 0;
+    if (!hasQueue) {
+      this.state.isPlaying = false;
+      this.emitWithQueueDerivedState();
+      return;
+    }
+
+    const nextIndex = this.state.queueIndex + 1;
+    if (nextIndex < this.state.queue.length) {
+      await this.playAtIndex(nextIndex);
+      return;
+    }
+
+    if (this.state.repeat === "all" && this.state.queue.length > 0) {
+      await this.playAtIndex(0);
+      return;
+    }
+
+    this.state.isPlaying = false;
+    this.emitWithQueueDerivedState();
+  }
+
+  private async playAtIndex(index: number, opts?: { audioFormat?: string; downloadDir?: string }) {
+    if (this.state.queue.length === 0) return;
+    const i = Math.min(Math.max(0, index), this.state.queue.length - 1);
+    const track = this.state.queue[i];
+    if (!track) return;
+
+    this.state.queueIndex = i;
+    await this.playNow(track, opts);
   }
   
   private async initializeMPVPreference() {
@@ -241,14 +340,27 @@ class PlayerService {
         if (!methods.MPVGetStatus) return;
         
         const status = await methods.MPVGetStatus();
+
+        const prevState = this.lastMPVState;
+        this.lastMPVState = status.state || null;
         
         // Update state from MPV status
         this.state.isPlaying = status.state === "playing";
         this.state.position = status.position_sec || 0;
         this.state.duration = status.duration_sec || 0;
         this.state.volume = (status.volume || 100) / 100;
-        
-        this.emit();
+
+        this.emitWithQueueDerivedState();
+
+        // Auto-advance when MPV transitions from playing->stopped near EOF.
+        if (
+          prevState === "playing" &&
+          status.state === "stopped" &&
+          this.state.duration > 0 &&
+          this.state.position >= Math.max(0, this.state.duration - 0.25)
+        ) {
+          this.handleEnded().catch(() => {});
+        }
       } catch (err) {
         // Silently fail - MPV might not be initialized yet
       }
@@ -298,9 +410,7 @@ class PlayerService {
     }
   }
 
-  async playTrack(track: PlayerTrack, opts?: { audioFormat?: string; downloadDir?: string }) {
-    this.state.current = track;
-    this.emit();
+  private async playTrackInternal(track: PlayerTrack, opts?: { audioFormat?: string; downloadDir?: string }) {
 
     logger.info(`play: ${track.title} - ${track.artist}`, "player");
     logger.debug(`spotifyId=${track.spotifyId} isrc=${track.isrc || ""}`, "player");
@@ -321,13 +431,18 @@ class PlayerService {
 
     // Try HTML5 audio element
     try {
+      // Prefer a format the current WebView can actually decode.
+      // Many WebViews (notably macOS WKWebView) can't decode FLAC reliably.
+      const canFlac = this.audio.canPlayType("audio/flac");
+      const defaultHtml5Format = canFlac ? "LOSSLESS" : "HIGH"; // HIGH maps to AAC for Tidal
+
       const url = await GetStreamURL({
         spotify_id: track.spotifyId,
         isrc: track.isrc || "",
         track_name: track.title,
         artist_name: track.artist,
         album_name: track.album || "",
-        audio_format: opts?.audioFormat || "LOSSLESS",
+        audio_format: opts?.audioFormat || defaultHtml5Format,
         download_dir: opts?.downloadDir || "",
       } as any);
 
@@ -336,7 +451,6 @@ class PlayerService {
       // Quick capability checks (most important for FLAC/hi-res).
       // If the WebView can't decode the MIME/container, it will throw NotSupportedError.
       const canOgg = this.audio.canPlayType('audio/ogg; codecs="vorbis"');
-      const canFlac = this.audio.canPlayType("audio/flac");
       const canMp3 = this.audio.canPlayType("audio/mpeg");
       logger.debug(`canPlayType: flac=${canFlac} mp3=${canMp3} ogg=${canOgg}`, "player");
 
@@ -367,6 +481,90 @@ class PlayerService {
       
       throw err;
     }
+  }
+
+  async playTrack(track: PlayerTrack, opts?: { audioFormat?: string; downloadDir?: string }) {
+    // Single-track play: resets the queue to just this track.
+    this.queueBase = [track];
+    this.state.shuffle = false;
+    this.state.queue = [track];
+    this.state.queueIndex = 0;
+    await this.playNow(track, opts);
+  }
+
+  async setQueue(tracks: PlayerTrack[], startIndex: number, opts?: { shuffle?: boolean; audioFormat?: string; downloadDir?: string }) {
+    const cleaned = (tracks || []).filter((t) => t && t.spotifyId);
+    this.queueBase = cleaned;
+    const shuffle = Boolean(opts?.shuffle);
+    const built = this.buildQueueFromBase(startIndex, shuffle);
+    this.state.shuffle = shuffle;
+    this.state.queue = built.queue;
+    this.state.queueIndex = built.index;
+    const current = this.state.queue[this.state.queueIndex];
+    if (current) {
+      await this.playNow(current, { audioFormat: opts?.audioFormat, downloadDir: opts?.downloadDir });
+    } else {
+      this.emitWithQueueDerivedState();
+    }
+  }
+
+  async next() {
+    if (this.state.repeat === "one" && this.state.current) {
+      this.seek(0);
+      return;
+    }
+    if (this.state.queue.length === 0 || this.state.queueIndex < 0) return;
+    const nextIndex = this.state.queueIndex + 1;
+    if (nextIndex < this.state.queue.length) {
+      await this.playAtIndex(nextIndex);
+      return;
+    }
+    if (this.state.repeat === "all" && this.state.queue.length > 0) {
+      await this.playAtIndex(0);
+    }
+  }
+
+  async previous() {
+    // Common UX: if you're more than a couple seconds in, restart current.
+    if (this.state.position > 3) {
+      this.seek(0);
+      return;
+    }
+    if (this.state.queue.length === 0 || this.state.queueIndex < 0) {
+      this.seek(0);
+      return;
+    }
+    const prevIndex = this.state.queueIndex - 1;
+    if (prevIndex >= 0) {
+      await this.playAtIndex(prevIndex);
+      return;
+    }
+    this.seek(0);
+  }
+
+  toggleShuffle() {
+    if (this.queueBase.length <= 1) {
+      this.state.shuffle = !this.state.shuffle;
+      this.emitWithQueueDerivedState();
+      return;
+    }
+
+    const current = this.state.current;
+    const currentBaseIndex = current
+      ? this.queueBase.findIndex((t) => t.spotifyId === current.spotifyId)
+      : 0;
+
+    const nextShuffle = !this.state.shuffle;
+    const built = this.buildQueueFromBase(Math.max(0, currentBaseIndex), nextShuffle);
+    this.state.shuffle = nextShuffle;
+    this.state.queue = built.queue;
+    this.state.queueIndex = built.index;
+    this.emitWithQueueDerivedState();
+  }
+
+  cycleRepeat() {
+    this.state.repeat = this.state.repeat === "off" ? "all" : this.state.repeat === "all" ? "one" : "off";
+    this.emitWithQueueDerivedState();
   }
 
   async togglePlay() {

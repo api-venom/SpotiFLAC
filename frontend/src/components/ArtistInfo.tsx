@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FolderOpen, ImageDown, FileText } from "lucide-react";
+import { Download, FolderOpen, ImageDown, FileText, Play, Shuffle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SearchAndSort } from "./SearchAndSort";
 import { TrackList } from "./TrackList";
 import { DownloadProgress } from "./DownloadProgress";
 import type { TrackMetadata, TrackAvailability } from "@/types/api";
+import { player, type PlayerTrack } from "@/lib/player";
 
 interface ArtistInfoProps {
   artistInfo: {
@@ -120,6 +121,17 @@ export function ArtistInfo({
   onPageChange,
   onTrackClick,
 }: ArtistInfoProps) {
+  const playableQueue: PlayerTrack[] = trackList
+    .filter((t) => Boolean(t.spotify_id))
+    .map((t) => ({
+      spotifyId: t.spotify_id!,
+      isrc: t.isrc,
+      title: t.name,
+      artist: t.artists,
+      album: t.album_name,
+      coverUrl: t.images,
+    }));
+
   return (
     <div className="space-y-6">
       <Card>
@@ -148,6 +160,31 @@ export function ArtistInfo({
                   </>
                 )}
               </div>
+
+              {playableQueue.length > 0 && (
+                <div className="flex gap-2 flex-wrap pt-2">
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      await player.setQueue(playableQueue, 0);
+                      player.setFullscreen(true);
+                    }}
+                  >
+                    <Play className="h-4 w-4" />
+                    Play
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      await player.setQueue(playableQueue, 0, { shuffle: true });
+                      player.setFullscreen(true);
+                    }}
+                  >
+                    <Shuffle className="h-4 w-4" />
+                    Shuffle
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

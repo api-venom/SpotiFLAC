@@ -4,6 +4,7 @@ import { usePlayer } from "@/hooks/usePlayer";
 import { useEffect, useState, useMemo } from "react";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { useLyrics } from "@/hooks/useLyrics";
+import { buildLrcTimeline, findActiveIndex, formatEllipsisDots } from "@/lib/lyrics/lrc";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -45,32 +46,6 @@ async function extractDominantColor(url?: string): Promise<string | null> {
   });
 }
 
-type ParsedLine = { t: number | null; text: string };
-
-function parseLRC(content: string): ParsedLine[] {
-  const lines = content.split(/\r?\n/);
-  const out: ParsedLine[] = [];
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (!line) continue;
-
-    const m = line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$/);
-    if (!m) {
-      out.push({ t: null, text: line });
-      continue;
-    }
-
-    const min = Number(m[1]);
-    const sec = Number(m[2]);
-    const frac = m[3] ? Number(m[3].padEnd(3, "0")) : 0;
-    const t = min * 60 + sec + frac / 1000;
-    const text = (m[4] || "").trim();
-    if (text) out.push({ t, text });
-  }
-
-  return out;
-}
 
 export function MiniPlayer() {
   const { state, player } = usePlayer();
@@ -118,44 +93,40 @@ export function MiniPlayer() {
     return () => clearInterval(interval);
   }, []);
 
-  const parsed = useMemo(() => parseLRC(lyricsContent), [lyricsContent]);
+  const timeline = useMemo(() => buildLrcTimeline(lyricsContent), [lyricsContent]);
 
   // Find current and next lyrics
   const { currentLine, nextLine, currentProgress, nextProgress } = useMemo(() => {
-    if (!parsed.length || state.position === 0) {
-      return { currentLine: null, nextLine: null, currentProgress: 0, nextProgress: 0 };
+    if (!timeline.length) {
+      return { currentLine: null as any, nextLine: null as any, currentProgress: 0, nextProgress: 0 };
     }
 
-    let currentIdx = -1;
-    for (let i = 0; i < parsed.length; i++) {
-      if (parsed[i].t !== null && parsed[i].t! <= state.position) {
-        currentIdx = i;
-      } else if (parsed[i].t !== null && parsed[i].t! > state.position) {
-        break;
-      }
+    const activeIndex = findActiveIndex(timeline, state.position);
+    const current = activeIndex >= 0 ? timeline[activeIndex] : null;
+    const next = activeIndex >= 0 && activeIndex + 1 < timeline.length ? timeline[activeIndex + 1] : null;
+
+    if (!current) {
+      return { currentLine: null, nextLine: next, currentProgress: 0, nextProgress: 0 };
     }
 
-    const current = currentIdx >= 0 ? parsed[currentIdx] : null;
-    const next = currentIdx >= 0 && currentIdx + 1 < parsed.length ? parsed[currentIdx + 1] : null;
+    if (current.kind === "ellipsis") {
+      return { currentLine: current, nextLine: next, currentProgress: 0, nextProgress: 0 };
+    }
 
-    let currProg = 0;
+    const startTime = current.t;
+    const endTime = next?.t ?? (startTime + 3);
+    const elapsed = state.position - startTime;
+    const duration = endTime - startTime;
+    const currProg = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
+
     let nextProg = 0;
-
-    if (current && current.t !== null) {
-      const startTime = current.t;
-      const endTime = next?.t ?? (startTime + 3);
-      const elapsed = state.position - startTime;
-      const duration = endTime - startTime;
-      currProg = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
-
-      if (next && next.t !== null) {
-        const nextDuration = next.t - startTime;
-        nextProg = nextDuration > 0 ? Math.min(1, Math.max(0, elapsed / nextDuration)) : 0;
-      }
+    if (next && next.kind === "lyric") {
+      const nextDuration = next.t - startTime;
+      nextProg = nextDuration > 0 ? Math.min(1, Math.max(0, elapsed / nextDuration)) : 0;
     }
 
     return { currentLine: current, nextLine: next, currentProgress: currProg, nextProgress: nextProg };
-  }, [parsed, state.position]);
+  }, [timeline, state.position]);
 
   if (!track || state.isFullscreen) return null;
 
@@ -171,7 +142,7 @@ export function MiniPlayer() {
         backgroundColor: "rgba(25, 25, 35, 0.95)",
       };
 
-  const dots = ".".repeat(dotCount);
+  const dots = formatEllipsisDots(dotCount);
 
   return (
     <div 
@@ -207,10 +178,10 @@ export function MiniPlayer() {
         </div>
 
         {/* Lyrics Display - Two Lines */}
-        {parsed.length > 0 && (
+        {timeline.length > 0 && (
           <div className="flex-1 min-w-0 max-w-2xl">
             {/* Current line */}
-            {currentLine ? (
+            {currentLine && currentLine.kind === "lyric" ? (
               <div className="relative mb-1">
                 {/* Background text */}
                 <div className="text-white/40 text-sm font-semibold truncate">
@@ -228,12 +199,12 @@ export function MiniPlayer() {
               </div>
             ) : (
               <div className="text-white/40 text-sm font-semibold mb-1">
-                {state.isPlaying ? dots : "···"}
+                {state.isPlaying ? dots : "..."}
               </div>
             )}
             
             {/* Next line with subtle fill */}
-            {nextLine ? (
+            {nextLine && nextLine.kind === "lyric" ? (
               <div className="relative">
                 {/* Background text */}
                 <div className="text-white/25 text-xs font-medium truncate">
@@ -263,6 +234,7 @@ export function MiniPlayer() {
             variant="ghost"
             size="icon"
             className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
+            onClick={() => player.previous()}
           >
             <SkipBack className="h-4 w-4 drop-shadow" />
           </Button>
@@ -283,6 +255,7 @@ export function MiniPlayer() {
             variant="ghost"
             size="icon"
             className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
+            onClick={() => player.next()}
           >
             <SkipForward className="h-4 w-4 drop-shadow" />
           </Button>

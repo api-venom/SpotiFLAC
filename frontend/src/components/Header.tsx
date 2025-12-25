@@ -20,7 +20,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
         <div className="flex items-center justify-center gap-3">
           <img
             src="/icon.svg"
-            alt="SpotiFLAC"
+            alt="Knight Music"
             className="w-12 h-12 cursor-pointer"
             onClick={() => window.location.reload()}
           />
@@ -28,7 +28,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
             className="text-4xl font-bold cursor-pointer"
             onClick={() => window.location.reload()}
           >
-            SpotiFLAC
+            Knight Music
           </h1>
           <div className="relative">
             <Tooltip>
@@ -36,7 +36,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
                 <Badge variant="default" asChild>
                   <button
                     type="button"
-                    onClick={() => openExternal("https://github.com/afkarxyz/SpotiFLAC/releases")}
+                    onClick={() => openExternal("https://github.com/afkarxyz/Knight-Music/releases")}
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                   >
                     v{version}

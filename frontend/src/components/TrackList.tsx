@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, CheckCircle, XCircle, FileCheck, FileText, Globe, ImageDown, Play } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { player } from "@/lib/player";
+import { player, type PlayerTrack } from "@/lib/player";
 import {
   Tooltip,
   TooltipContent,
@@ -148,6 +148,38 @@ export function TrackList({
     const minutes = Math.floor(ms / 60000);
     const seconds = Math.floor((ms % 60000) / 1000);
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  const toPlayerTrack = (t: TrackMetadata): PlayerTrack | null => {
+    if (!t.spotify_id) return null;
+    return {
+      spotifyId: t.spotify_id,
+      isrc: t.isrc,
+      title: t.name,
+      artist: t.artists,
+      album: t.album_name,
+      coverUrl: t.images,
+    };
+  };
+
+  const buildPlayableQueue = () => {
+    const playable: PlayerTrack[] = [];
+    const originalToPlayableIndex: number[] = [];
+    let pi = 0;
+    for (let i = 0; i < filteredTracks.length; i++) {
+      const pt = toPlayerTrack(filteredTracks[i]);
+      if (pt) {
+        playable.push(pt);
+        originalToPlayableIndex[i] = pi;
+        pi++;
+      } else {
+        originalToPlayableIndex[i] = -1;
+      }
+    }
+    return {
+      queue: playable,
+      mapIndex: (originalIndex: number) => originalToPlayableIndex[originalIndex] ?? -1,
+    };
   };
 
   return (
@@ -304,14 +336,21 @@ export function TrackList({
                               size="sm"
                               variant="secondary"
                               onClick={async () => {
-                                await player.playTrack({
-                                  spotifyId: track.spotify_id!,
-                                  isrc: track.isrc,
-                                  title: track.name,
-                                  artist: track.artists,
-                                  album: track.album_name,
-                                  coverUrl: track.images,
-                                });
+                                const originalIndex = startIndex + index;
+                                const { queue, mapIndex } = buildPlayableQueue();
+                                const playableIndex = mapIndex(originalIndex);
+                                if (queue.length > 0 && playableIndex >= 0) {
+                                  await player.setQueue(queue, playableIndex);
+                                } else {
+                                  await player.playTrack({
+                                    spotifyId: track.spotify_id!,
+                                    isrc: track.isrc,
+                                    title: track.name,
+                                    artist: track.artists,
+                                    album: track.album_name,
+                                    coverUrl: track.images,
+                                  });
+                                }
                                 player.setFullscreen(true);
                               }}
                             >

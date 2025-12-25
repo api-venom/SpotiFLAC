@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { setSpectrumCache, getSpectrumCache, clearSpectrumCache } from "@/lib/spectrum-cache";
 
-const STORAGE_KEY = "spotiflac_audio_analysis_state";
+const STORAGE_KEY = "knightmusic_audio_analysis_state";
 
 export function useAudioAnalysis() {
   const [analyzing, setAnalyzing] = useState(false);

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -121,9 +122,18 @@ func (s *StreamServer) GetStreamURL(spotifyID, isrc, trackName, artistName, albu
 		downloadDir = GetDefaultMusicPath()
 	}
 
+	wantsAAC := isAACFormat(audioFormat)
+
 	// 1) local first
 	if isrc != "" {
 		if local, ok := CheckISRCExists(downloadDir, isrc); ok {
+			// If the client asked for AAC (HTML5-friendly), transparently transcode
+			// local lossless formats to a cached .m4a for reliable playback.
+			if wantsAAC {
+				if cached, err := ensureAACCache(local, isrc, spotifyID); err == nil && cached != "" {
+					local = cached
+				}
+			}
 			tok, err := s.putLocal(local)
 			if err != nil {
 				return "", err
@@ -133,7 +143,7 @@ func (s *StreamServer) GetStreamURL(spotifyID, isrc, trackName, artistName, albu
 	}
 
 	// 2) remote resolve
-	remote, err := resolveRemoteStreamURL(spotifyID, isrc, audioFormat)
+	remote, err := resolveRemoteStreamURL(spotifyID, isrc, normalizeProviderQuality(audioFormat))
 	if err != nil {
 		return "", err
 	}
@@ -304,7 +314,7 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 
 	// Some CDNs require a fairly normal accept header.
 	ureq.Header.Set("Accept", "*/*")
-	ureq.Header.Set("User-Agent", "SpotiFLAC-StreamProxy/1.0")
+	ureq.Header.Set("User-Agent", "KnightMusic-StreamProxy/1.0")
 
 	client := &http.Client{Timeout: 0}
 	resp, err := client.Do(ureq)
@@ -345,6 +355,140 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func normalizeProviderQuality(audioFormat string) string {
+	q := strings.TrimSpace(strings.ToUpper(audioFormat))
+	if q == "" {
+		return "LOSSLESS"
+	}
+	// Tidal uses HIGH for AAC (320kbps) streams.
+	if isAACFormat(q) {
+		return "HIGH"
+	}
+	if q == "LOSSY" {
+		return "HIGH"
+	}
+	return q
+}
+
+func isAACFormat(audioFormat string) bool {
+	q := strings.TrimSpace(strings.ToUpper(audioFormat))
+	switch q {
+	case "AAC", "M4A", "M4A_AAC", "AACP", "HIGH":
+		return true
+	default:
+		return false
+	}
+}
+
+func ensureAACCache(inputPath, isrc, spotifyID string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	// Already AAC-friendly / HTML5-friendly.
+	if ext == ".m4a" || ext == ".mp3" {
+		return inputPath, nil
+	}
+
+	ffmpegOK, err := IsFFmpegInstalled()
+	if err != nil {
+		return "", err
+	}
+	if !ffmpegOK {
+		return "", fmt.Errorf("ffmpeg not installed")
+	}
+
+	cacheDir, err := getTranscodeCacheDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", err
+	}
+
+	key := strings.TrimSpace(isrc)
+	if key == "" {
+		key = strings.TrimSpace(spotifyID)
+	}
+	if key == "" {
+		key = filepath.Base(inputPath)
+	}
+	key = sanitizeFilename(key)
+	outputPath := filepath.Join(cacheDir, key+".m4a")
+
+	// Reuse cached transcode if it exists and is newer than input.
+	inSt, err := os.Stat(inputPath)
+	if err != nil {
+		return "", err
+	}
+	if outSt, err := os.Stat(outputPath); err == nil {
+		if outSt.ModTime().After(inSt.ModTime()) || outSt.ModTime().Equal(inSt.ModTime()) {
+			return outputPath, nil
+		}
+	}
+
+	ffmpegPath, err := GetFFmpegPath()
+	if err != nil {
+		return "", err
+	}
+
+	// Transcode to AAC in an MP4 container (m4a). We optimize for broad HTML5/WebView support.
+	// This is intentionally CPU-heavy but avoids decode issues with FLAC on some platforms.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	args := []string{
+		"-y",
+		"-i", inputPath,
+		"-vn",
+		"-c:a", "aac",
+		"-b:a", "320k",
+		"-movflags", "+faststart",
+		outputPath,
+	}
+
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	setHideWindow(cmd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		_ = os.Remove(outputPath)
+		return "", fmt.Errorf("ffmpeg transcode failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	return outputPath, nil
+}
+
+func getTranscodeCacheDir() (string, error) {
+	// Prefer OS cache dir so we don't clutter the user's music folder.
+	base, err := os.UserCacheDir()
+	if err != nil || strings.TrimSpace(base) == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "KnightMusic", "transcodes"), nil
+}
+
+func sanitizeFilename(s string) string {
+	// Keep it simple and cross-platform safe.
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "track"
+	}
+	repl := strings.NewReplacer(
+		"\\", "_",
+		"/", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	s = repl.Replace(s)
+	// Avoid super-long paths.
+	if len(s) > 120 {
+		s = s[:120]
+	}
+	return s
 }
 
 func contentTypeFromPath(p string) string {

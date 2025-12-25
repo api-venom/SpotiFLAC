@@ -24,7 +24,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "SpotiFLAC",
+		Title:     "Knight Music",
 		Width:     1024,
 		Height:    600,
 		MinWidth:  1024,

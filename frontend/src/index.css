@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@keyframes spotiflac-blob {
+@keyframes knightmusic-blob {
   0% {
     transform: translate3d(0, 0, 0) scale(1);
   }
@@ -29,21 +29,21 @@
   left: -18rem;
   top: -16rem;
   background: hsl(var(--primary) / 0.18);
-  animation: spotiflac-blob 18s ease-in-out infinite;
+  animation: knightmusic-blob 18s ease-in-out infinite;
 }
 
 .ambient-blob-2 {
   right: -16rem;
   top: 18vh;
   background: hsl(var(--accent) / 0.16);
-  animation: spotiflac-blob 22s ease-in-out infinite reverse;
+  animation: knightmusic-blob 22s ease-in-out infinite reverse;
 }
 
 .ambient-blob-3 {
   left: 18vw;
   bottom: -20rem;
   background: hsl(var(--muted) / 0.28);
-  animation: spotiflac-blob 26s ease-in-out infinite;
+  animation: knightmusic-blob 26s ease-in-out infinite;
 }
 @import "tw-animate-css";
 

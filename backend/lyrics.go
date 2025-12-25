@@ -281,17 +281,15 @@ func (c *LyricsClient) ConvertToLRC(lyrics *LyricsResponse, trackName, artistNam
 	// Add metadata
 	sb.WriteString(fmt.Sprintf("[ti:%s]\n", trackName))
 	sb.WriteString(fmt.Sprintf("[ar:%s]\n", artistName))
-	sb.WriteString("[by:SpotiFlac]\n")
+	sb.WriteString("[by:Knight Music]\n")
 	sb.WriteString("\n")
 
 	// Add lyrics lines
 	for _, line := range lyrics.Lines {
-		if line.Words == "" {
-			continue
-		}
-
 		// Convert milliseconds to LRC timestamp format [mm:ss.xx]
 		timestamp := msToLRCTimestamp(line.StartTimeMs)
+		// Preserve empty/beat-only lines as timestamp-only markers.
+		// The frontend renders these as "..." so we can represent instrumental breaks.
 		sb.WriteString(fmt.Sprintf("%s%s\n", timestamp, line.Words))
 	}
 

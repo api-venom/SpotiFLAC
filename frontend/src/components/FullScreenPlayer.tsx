@@ -1,89 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
 import { LyricsOverlay, type LyricsOverlayTrack } from "./LyricsOverlay";
 import { useLyrics } from "../hooks/useLyrics";
 import { cn } from "@/lib/utils";
+import { buildPaletteBackgroundStyle } from "@/lib/cover/palette";
+import { useCoverPalette } from "@/hooks/useCoverPalette";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
-}
-
-async function getPaletteFromImage(url?: string) {
-  if (!url) return null;
-  return new Promise<{ dominant: string; vibrant: string; dark: string; light: string } | null>((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const w = 64;
-        const h = 64;
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) return resolve(null);
-        ctx.drawImage(img, 0, 0, w, h);
-        const data = ctx.getImageData(0, 0, w, h).data;
-
-        // Calculate color statistics
-        let r = 0, g = 0, b = 0, n = 0;
-        let maxBrightness = 0, minBrightness = 255;
-        let vibrantR = 0, vibrantG = 0, vibrantB = 0, maxSaturation = 0;
-        let darkR = 0, darkG = 0, darkB = 0;
-        let lightR = 0, lightG = 0, lightB = 0;
-
-        for (let i = 0; i < data.length; i += 4) {
-          const rr = data[i] || 0;
-          const gg = data[i + 1] || 0;
-          const bb = data[i + 2] || 0;
-          const aa = data[i + 3] || 0;
-          if (aa < 16) continue;
-
-          r += rr;
-          g += gg;
-          b += bb;
-          n++;
-
-          const brightness = (rr + gg + bb) / 3;
-          const saturation = Math.max(rr, gg, bb) - Math.min(rr, gg, bb);
-
-          if (saturation > maxSaturation && brightness > 50 && brightness < 200) {
-            maxSaturation = saturation;
-            vibrantR = rr;
-            vibrantG = gg;
-            vibrantB = bb;
-          }
-
-          if (brightness > maxBrightness) {
-            maxBrightness = brightness;
-            lightR = rr;
-            lightG = gg;
-            lightB = bb;
-          }
-
-          if (brightness < minBrightness) {
-            minBrightness = brightness;
-            darkR = rr;
-            darkG = gg;
-            darkB = bb;
-          }
-        }
-
-        const dominant = n > 0 ? `rgb(${Math.round(r/n)}, ${Math.round(g/n)}, ${Math.round(b/n)})` : "rgb(40, 40, 40)";
-        const vibrant = maxSaturation > 0 ? `rgb(${vibrantR}, ${vibrantG}, ${vibrantB})` : dominant;
-        const dark = `rgb(${darkR}, ${darkG}, ${darkB})`;
-        const light = `rgb(${lightR}, ${lightG}, ${lightB})`;
-
-        resolve({ dominant, vibrant, dark, light });
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
 }
 
 export function FullScreenPlayer() {
@@ -94,55 +20,10 @@ export function FullScreenPlayer() {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [lyricsTrack, setLyricsTrack] = useState<LyricsOverlayTrack | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(false);
-  const [isShuffle, setIsShuffle] = useState(false);
 
-  const [palette, setPalette] = useState<{ dominant: string; vibrant: string; dark: string; light: string } | null>(null);
+  const palette = useCoverPalette(track?.coverUrl);
 
-  useEffect(() => {
-    let alive = true;
-    getPaletteFromImage(track?.coverUrl).then((p) => {
-      if (!alive) return;
-      setPalette(p);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [track?.coverUrl]);
-
-  const bgStyle = useMemo(() => {
-    if (!palette) {
-      return {
-        background: "linear-gradient(135deg, rgba(20, 20, 30, 1) 0%, rgba(10, 10, 15, 1) 100%)",
-      };
-    }
-
-    // Extract RGB values from the palette colors
-    const extractRGB = (color: string) => {
-      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-      if (match) {
-        return {
-          r: parseInt(match[1]),
-          g: parseInt(match[2]),
-          b: parseInt(match[3])
-        };
-      }
-      return { r: 20, g: 20, b: 30 };
-    };
-
-    const vibrantRGB = extractRGB(palette.vibrant);
-    const dominantRGB = extractRGB(palette.dominant);
-    const darkRGB = extractRGB(palette.dark);
-
-    return {
-      background: `
-        radial-gradient(circle at 20% 30%, rgba(${vibrantRGB.r}, ${vibrantRGB.g}, ${vibrantRGB.b}, 0.2) 0%, transparent 50%),
-        radial-gradient(circle at 80% 20%, rgba(${dominantRGB.r}, ${dominantRGB.g}, ${dominantRGB.b}, 0.25) 0%, transparent 60%),
-        radial-gradient(circle at 50% 80%, rgba(${darkRGB.r}, ${darkRGB.g}, ${darkRGB.b}, 0.3) 0%, transparent 70%),
-        linear-gradient(135deg, rgba(${darkRGB.r}, ${darkRGB.g}, ${darkRGB.b}, 0.95) 0%, rgba(5, 5, 10, 0.98) 100%)
-      `,
-    } as React.CSSProperties;
-  }, [palette]);
+  const bgStyle = useMemo(() => buildPaletteBackgroundStyle(palette), [palette]);
 
   // Fetch lyrics handler
   const handleFetchLyrics = async (spotifyId: string, trackName: string, artistName: string) => {
@@ -275,7 +156,7 @@ export function FullScreenPlayer() {
                     variant="ghost"
                     size="icon"
                     onClick={() => {
-                      setLyricsTrack({ spotify_id: track.spotifyId, name: track.title, artists: track.artist });
+                      setLyricsTrack({ spotify_id: track.spotifyId, name: track.title, artists: track.artist, coverUrl: track.coverUrl });
                       setLyricsOpen(true);
                     }}
                     className="hover:bg-white/10 text-white/70 hover:text-white"
@@ -315,10 +196,10 @@ export function FullScreenPlayer() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setIsShuffle(!isShuffle)}
+                    onClick={() => player.toggleShuffle()}
                     className={cn(
                       "hover:bg-white/10 transition-colors",
-                      isShuffle ? "text-green-400" : "text-white/60 hover:text-white"
+                      state.shuffle ? "text-green-400" : "text-white/60 hover:text-white"
                     )}
                   >
                     <Shuffle className="h-5 w-5" />
@@ -327,6 +208,7 @@ export function FullScreenPlayer() {
                     variant="ghost"
                     size="icon"
                     className="hover:bg-white/10 text-white/90 hover:text-white"
+                    onClick={() => player.previous()}
                   >
                     <SkipBack className="h-6 w-6" />
                   </Button>
@@ -349,16 +231,17 @@ export function FullScreenPlayer() {
                     variant="ghost"
                     size="icon"
                     className="hover:bg-white/10 text-white/90 hover:text-white"
+                    onClick={() => player.next()}
                   >
                     <SkipForward className="h-6 w-6" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setIsRepeat(!isRepeat)}
+                    onClick={() => player.cycleRepeat()}
                     className={cn(
                       "hover:bg-white/10 transition-colors",
-                      isRepeat ? "text-green-400" : "text-white/60 hover:text-white"
+                      state.repeat !== "off" ? "text-green-400" : "text-white/60 hover:text-white"
                     )}
                   >
                     <Repeat className="h-5 w-5" />

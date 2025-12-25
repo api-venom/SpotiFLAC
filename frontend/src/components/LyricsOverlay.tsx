@@ -8,39 +8,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
+import { buildLrcTimeline, findActiveIndex, getLineProgress, formatEllipsisDots } from "@/lib/lyrics/lrc";
+import { buildPaletteBackgroundStyle } from "@/lib/cover/palette";
+import { useCoverPalette } from "@/hooks/useCoverPalette";
 
 export interface LyricsOverlayTrack {
   spotify_id: string;
   name: string;
   artists: string;
+  coverUrl?: string;
 }
 
-type ParsedLine = { t: number | null; text: string };
-
-function parseLRC(content: string): ParsedLine[] {
-  const lines = content.split(/\r?\n/);
-  const out: ParsedLine[] = [];
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (!line) continue;
-
-    const m = line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$/);
-    if (!m) {
-      out.push({ t: null, text: line });
-      continue;
-    }
-
-    const min = Number(m[1]);
-    const sec = Number(m[2]);
-    const frac = m[3] ? Number(m[3].padEnd(3, "0")) : 0;
-    const t = min * 60 + sec + frac / 1000;
-    const text = (m[4] || "").trim();
-    if (text) out.push({ t, text });
-  }
-
-  return out.length ? out : [{ t: null, text: content.trim() }];
-}
 
 interface LyricsOverlayProps {
   open: boolean;
@@ -61,6 +39,8 @@ export function LyricsOverlay({
   fetchLyrics,
   isPlaying = true,
 }: LyricsOverlayProps) {
+  const palette = useCoverPalette(track?.coverUrl);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
@@ -69,7 +49,7 @@ export function LyricsOverlay({
   const containerRef = useRef<HTMLDivElement>(null);
   const activeLyricsRef = useRef<HTMLDivElement>(null);
 
-  const parsed = useMemo(() => parseLRC(content), [content]);
+  const timeline = useMemo(() => buildLrcTimeline(content), [content]);
 
   // Animated dots for instrumental breaks
   useEffect(() => {
@@ -81,18 +61,8 @@ export function LyricsOverlay({
 
   // Find the current active line
   const activeIndex = useMemo(() => {
-    if (!parsed.length) return -1;
-    
-    let idx = -1;
-    for (let i = 0; i < parsed.length; i++) {
-      if (parsed[i].t !== null && parsed[i].t! <= currentPosition + 0.1) {
-        idx = i;
-      } else if (parsed[i].t !== null && parsed[i].t! > currentPosition + 0.1) {
-        break;
-      }
-    }
-    return idx;
-  }, [parsed, currentPosition]);
+    return findActiveIndex(timeline, currentPosition, 0.1);
+  }, [timeline, currentPosition]);
 
   // Auto-scroll with smoother animation and better centering
   useEffect(() => {
@@ -116,30 +86,8 @@ export function LyricsOverlay({
 
   // Calculate progress for current and next line
   const lineProgress = useMemo(() => {
-    const result: Record<number, number> = {};
-    
-    if (activeIndex >= 0 && parsed[activeIndex]) {
-      const currentLine = parsed[activeIndex];
-      const nextLine = parsed[activeIndex + 1];
-      
-      if (currentLine.t !== null) {
-        const startTime = currentLine.t;
-        const endTime = nextLine?.t ?? (startTime + 3);
-        const elapsed = currentPosition - startTime;
-        const duration = endTime - startTime;
-        
-        result[activeIndex] = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
-        
-        // Pre-fill next line slightly
-        if (nextLine && nextLine.t !== null) {
-          const nextDuration = nextLine.t - startTime;
-          result[activeIndex + 1] = nextDuration > 0 ? Math.min(0.3, Math.max(0, elapsed / nextDuration)) : 0;
-        }
-      }
-    }
-    
-    return result;
-  }, [activeIndex, parsed, currentPosition]);
+    return getLineProgress(timeline, activeIndex, currentPosition);
+  }, [activeIndex, timeline, currentPosition]);
 
   useEffect(() => {
     if (!open || !track?.spotify_id) return;
@@ -182,11 +130,40 @@ export function LyricsOverlay({
     };
   }, [open, track?.spotify_id, ensureLyricsFile, fetchLyrics]);
 
-  const dots = ".".repeat(dotCount);
+  const dots = formatEllipsisDots(dotCount);
+  const bgStyle = useMemo(() => buildPaletteBackgroundStyle(palette), [palette]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 gap-0 max-w-none w-screen h-[100dvh] rounded-none border-0 bg-black/95 supports-[backdrop-filter]:bg-black/90 backdrop-blur-xl">
+      <DialogContent className="relative p-0 gap-0 max-w-none w-screen h-[100dvh] rounded-none border-0 text-white overflow-hidden" style={bgStyle}>
+        {/* Animated palette blobs */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div
+            className={cn(
+              "absolute -top-40 -left-40 w-96 h-96 rounded-full blur-3xl opacity-20",
+              "animate-[pulse_8s_ease-in-out_infinite]"
+            )}
+            style={{ backgroundColor: palette?.vibrant || "rgba(100, 100, 200, 0.3)" }}
+          />
+          <div
+            className={cn(
+              "absolute top-1/3 -right-40 w-80 h-80 rounded-full blur-3xl opacity-15",
+              "animate-[pulse_12s_ease-in-out_infinite]"
+            )}
+            style={{ backgroundColor: palette?.dominant || "rgba(150, 100, 150, 0.3)" }}
+          />
+          <div
+            className={cn(
+              "absolute -bottom-40 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10",
+              "animate-[pulse_10s_ease-in-out_infinite]"
+            )}
+            style={{ backgroundColor: palette?.light || "rgba(200, 150, 100, 0.3)" }}
+          />
+        </div>
+
+        {/* Backdrop blur overlay */}
+        <div className="absolute inset-0 backdrop-blur-3xl bg-black/30" />
+
         <DialogHeader className="px-6 pt-6 pb-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -203,7 +180,7 @@ export function LyricsOverlay({
 
         <div
           ref={containerRef}
-          className="px-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 scroll-smooth"
+          className="relative px-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 scroll-smooth"
           style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.3) transparent" }}
         >
           {loading || fetching ? (
@@ -214,19 +191,19 @@ export function LyricsOverlay({
             <div className="py-16 text-center text-white/60 text-xl">{error}</div>
           ) : (
             <div className="max-w-5xl mx-auto py-[50vh] px-4">
-              {parsed.map((l, idx) => {
+              {timeline.map((l, idx) => {
                 const isActive = idx === activeIndex;
                 const isNext = idx === activeIndex + 1;
                 const isPast = idx < activeIndex;
                 const isFuture = idx > activeIndex + 1;
                 const progress = lineProgress[idx] || 0;
                 
-                // Show empty line with dots for instrumental breaks
-                const displayText = l.text || (isActive && isPlaying ? dots : "···");
+                const isEllipsis = l.kind === "ellipsis";
+                const displayText = isEllipsis ? (isActive && isPlaying ? dots : "...") : l.text;
                 
                 return (
                   <div
-                    key={`${idx}-${l.t ?? "x"}`}
+                    key={`${idx}-${l.t}`}
                     ref={isActive ? activeLyricsRef : null}
                     className={cn(
                       "relative transition-all duration-700 ease-out text-center",

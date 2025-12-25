@@ -201,15 +201,19 @@ export function LyricsOverlay({
           </div>
         </DialogHeader>
 
-        <div ref={containerRef} className="px-6 pb-8 overflow-auto flex-1">
+        <div
+          ref={containerRef}
+          className="px-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 scroll-smooth"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.3) transparent" }}
+        >
           {loading || fetching ? (
-            <div className="py-16 text-center text-white/60">
+            <div className="py-16 text-center text-white/60 text-xl">
               {fetching ? "Fetching lyrics..." : "Loading lyrics…"}
             </div>
           ) : error ? (
-            <div className="py-16 text-center text-white/60">{error}</div>
+            <div className="py-16 text-center text-white/60 text-xl">{error}</div>
           ) : (
-            <div className="max-w-4xl mx-auto py-32">
+            <div className="max-w-5xl mx-auto py-[50vh] px-4">
               {parsed.map((l, idx) => {
                 const isActive = idx === activeIndex;
                 const isNext = idx === activeIndex + 1;
@@ -225,25 +229,28 @@ export function LyricsOverlay({
                     key={`${idx}-${l.t ?? "x"}`}
                     ref={isActive ? activeLyricsRef : null}
                     className={cn(
-                      "relative transition-all duration-500 ease-out",
-                      isActive && "py-6 text-5xl md:text-7xl scale-100",
-                      isNext && "py-4 text-4xl md:text-6xl scale-95 opacity-90",
-                      (isPast || isFuture) && "py-3 text-3xl md:text-5xl scale-90",
-                      "font-bold tracking-tight"
+                      "relative transition-all duration-700 ease-out text-center",
+                      isActive && "py-8 text-4xl md:text-6xl lg:text-7xl scale-100 my-4",
+                      isNext && "py-6 text-3xl md:text-5xl lg:text-6xl scale-95 opacity-80 my-3",
+                      (isPast || isFuture) && "py-4 text-2xl md:text-4xl lg:text-5xl scale-90 my-2",
+                      "font-bold tracking-tight leading-tight"
                     )}
                   >
                     {/* Background text (gray) */}
                     <div
                       className={cn(
-                        "transition-all duration-500",
-                        isPast && "opacity-30",
+                        "transition-all duration-700 break-words",
+                        isPast && "opacity-40",
                         isActive && "opacity-100",
-                        isNext && "opacity-70",
-                        isFuture && "opacity-20"
+                        isNext && "opacity-60",
+                        isFuture && "opacity-25"
                       )}
-                      style={{ 
-                        color: isPast ? "#666" : (isActive || isNext) ? "#888" : "#555",
-                        textShadow: isActive ? "0 0 20px rgba(0,0,0,0.5)" : "none"
+                      style={{
+                        color: isPast ? "#777" : (isActive || isNext) ? "#999" : "#666",
+                        textShadow: isActive ? "0 0 30px rgba(0,0,0,0.7), 0 4px 8px rgba(0,0,0,0.5)" : "none",
+                        wordBreak: "break-word",
+                        overflowWrap: "break-word",
+                        hyphens: "auto"
                       }}
                     >
                       {displayText}
@@ -252,20 +259,23 @@ export function LyricsOverlay({
                     {/* Foreground text (white) with smooth fill animation */}
                     {(isActive || isNext) && progress > 0 && (
                       <div
-                        className="absolute inset-0 overflow-hidden transition-all duration-100"
+                        className="absolute inset-0 overflow-hidden transition-all duration-150"
                         style={{
                           clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
                         }}
                       >
                         <div
                           className={cn(
-                            "font-bold tracking-tight transition-all duration-500",
-                            isActive && "py-6 text-5xl md:text-7xl",
-                            isNext && "py-4 text-4xl md:text-6xl opacity-60"
+                            "font-bold tracking-tight leading-tight transition-all duration-700 break-words text-center",
+                            isActive && "py-8 text-4xl md:text-6xl lg:text-7xl",
+                            isNext && "py-6 text-3xl md:text-5xl lg:text-6xl opacity-50"
                           )}
-                          style={{ 
+                          style={{
                             color: "#FFFFFF",
-                            textShadow: "0 0 30px rgba(255,255,255,0.5), 0 0 10px rgba(255,255,255,0.3)"
+                            textShadow: "0 0 40px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.4), 0 4px 12px rgba(255,255,255,0.3)",
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                            hyphens: "auto"
                           }}
                         >
                           {displayText}
@@ -278,12 +288,15 @@ export function LyricsOverlay({
                       <div className="absolute inset-0">
                         <div
                           className={cn(
-                            "py-3 text-3xl md:text-5xl font-bold tracking-tight transition-all duration-500"
+                            "py-4 text-2xl md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight transition-all duration-700 break-words text-center"
                           )}
-                          style={{ 
-                            color: "#FFFFFF", 
-                            opacity: 0.4,
-                            textShadow: "0 0 10px rgba(255,255,255,0.2)"
+                          style={{
+                            color: "#FFFFFF",
+                            opacity: 0.5,
+                            textShadow: "0 0 15px rgba(255,255,255,0.25)",
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                            hyphens: "auto"
                           }}
                         >
                           {displayText}

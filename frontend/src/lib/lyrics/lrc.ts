@@ -74,8 +74,11 @@ export type BuildTimelineOptions = {
 };
 
 export function buildLrcTimeline(content: string, opts?: BuildTimelineOptions): LrcTimelineLine[] {
-  const maxLyricHoldSec = opts?.maxLyricHoldSec ?? 3.0;
-  const gapMinSec = opts?.gapMinSec ?? 5.0;
+  // Defaults are tuned for the UX requirement:
+  // - Show ellipsis for beat-only/empty sections
+  // - Show ellipsis for noticeable gaps between timestamps
+  const maxLyricHoldSec = opts?.maxLyricHoldSec ?? 2.5;
+  const gapMinSec = opts?.gapMinSec ?? 1.5;
 
   const parsed = parseLRC(content);
   if (parsed.length === 0) return [];
@@ -154,7 +157,7 @@ export function getLineProgress(lines: LrcTimelineLine[], activeIndex: number, p
 }
 
 export function formatEllipsisDots(dotCount: number) {
-  // dotCount should be 0..3
-  const n = Math.max(0, Math.min(3, dotCount));
+  // Render 1..3 dots (never an empty string), so ellipsis lines are always visible.
+  const n = ((Math.max(0, dotCount) % 3) + 1);
   return ".".repeat(n);
 }

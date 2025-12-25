@@ -95,30 +95,6 @@ export function PlaylistInfo({
   downloadedLyrics,
   failedLyrics,
   skippedLyrics,
-  downloadingLyricsTrack,
-  checkingAvailabilityTrack,
-  availabilityMap,
-  downloadedCovers,
-  failedCovers,
-  skippedCovers,
-  downloadingCoverTrack,
-  isBulkDownloadingCovers,
-  isBulkDownloadingLyrics,
-  onSearchChange,
-  onSortChange,
-  onToggleTrack,
-  onToggleSelectAll,
-  onDownloadTrack,
-  onDownloadLyrics,
-  onDownloadCover,
-  onCheckAvailability,
-  onDownloadAllLyrics,
-  onDownloadAllCovers,
-  onDownloadAll,
-  onDownloadSelected,
-  onStopDownload,
-  onOpenFolder,
-  onPageChange,
   onAlbumClick,
   onArtistClick,
   onTrackClick,
@@ -320,6 +296,33 @@ export function PlaylistInfo({
           onArtistClick={onArtistClick}
           onTrackClick={onTrackClick}
         />
+
+        {playableQueue.length > 0 && (
+          <div className="sticky bottom-4 z-10">
+            <div className="bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border border-border/60 rounded-xl p-3 flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  await player.setQueue(playableQueue, 0);
+                  player.setFullscreen(true);
+                }}
+              >
+                <Play className="h-4 w-4" />
+                Play All
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  await player.setQueue(playableQueue, 0, { shuffle: true });
+                  player.setFullscreen(true);
+                }}
+              >
+                <Shuffle className="h-4 w-4" />
+                Shuffle
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

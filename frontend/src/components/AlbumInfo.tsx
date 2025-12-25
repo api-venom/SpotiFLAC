@@ -166,30 +166,6 @@ export function AlbumInfo({
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {playableQueue.length > 0 && (
-                  <>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        await player.setQueue(playableQueue, 0);
-                        player.setFullscreen(true);
-                      }}
-                    >
-                      <Play className="h-4 w-4" />
-                      Play
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        await player.setQueue(playableQueue, 0, { shuffle: true });
-                        player.setFullscreen(true);
-                      }}
-                    >
-                      <Shuffle className="h-4 w-4" />
-                      Shuffle
-                    </Button>
-                  </>
-                )}
                 <Button onClick={onDownloadAll} disabled={isDownloading}>
                   {isDownloading && bulkDownloadType === "all" ? (
                     <Spinner />
@@ -303,6 +279,33 @@ export function AlbumInfo({
           onPageChange={onPageChange}
           onTrackClick={onTrackClick}
         />
+
+        {playableQueue.length > 0 && (
+          <div className="sticky bottom-4 z-10">
+            <div className="bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border border-border/60 rounded-xl p-3 flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  await player.setQueue(playableQueue, 0);
+                  player.setFullscreen(true);
+                }}
+              >
+                <Play className="h-4 w-4" />
+                Play All
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  await player.setQueue(playableQueue, 0, { shuffle: true });
+                  player.setFullscreen(true);
+                }}
+              >
+                <Shuffle className="h-4 w-4" />
+                Shuffle
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

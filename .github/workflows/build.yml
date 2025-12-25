@@ -243,7 +243,7 @@ jobs:
             "build/bin/Knight Music.exe",
             "build/bin/SpotiFLAC.exe"
           )
-          $candidates = @($candidates | Where-Object { Test-Path $_ })
+          $candidates = @(@($candidates) | Where-Object { Test-Path $_ })
 
           if ($candidates.Count -eq 0) {
             $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1
@@ -252,7 +252,14 @@ jobs:
             }
             $exe = $fallback.FullName
           } else {
-            $exe = $candidates[0]
+            $exe = @($candidates)[0]
+          }
+
+          if (-not (Test-Path $exe)) {
+            Write-Host "Resolved exe path did not exist: '$exe'"
+            Write-Host "build/bin contents:"
+            Get-ChildItem -Path "build/bin" | Select-Object Name,Length | Format-Table -AutoSize
+            throw "Resolved exe path does not exist"
           }
 
           Write-Host "UPX compressing: $exe"
@@ -272,7 +279,7 @@ jobs:
             "build/bin/Knight Music.exe",
             "build/bin/SpotiFLAC.exe"
           )
-          $candidates = @($candidates | Where-Object { Test-Path $_ })
+          $candidates = @(@($candidates) | Where-Object { Test-Path $_ })
 
           if ($candidates.Count -eq 0) {
             $fallback = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File | Select-Object -First 1
@@ -281,7 +288,14 @@ jobs:
             }
             $exe = $fallback.FullName
           } else {
-            $exe = $candidates[0]
+            $exe = @($candidates)[0]
+          }
+
+          if (-not (Test-Path $exe)) {
+            Write-Host "Resolved exe path did not exist: '$exe'"
+            Write-Host "build/bin contents:"
+            Get-ChildItem -Path "build/bin" | Select-Object Name,Length | Format-Table -AutoSize
+            throw "Resolved exe path does not exist"
           }
 
           Copy-Item -Path $exe -Destination "dist/KnightMusic.exe" -Force

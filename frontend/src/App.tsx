@@ -721,6 +721,20 @@ function App() {
               </DialogContent>
             </Dialog>
 
+            {/* Metadata results render in main content area */}
+            {!isSearchMode && metadata.metadata && renderMetadata()}
+          </>
+        );
+    }
+  };
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen bg-background flex flex-col">
+        <AmbientBackground />
+        <TitleBar />
+        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage}>
+          {currentPage === "main" && (
             <SearchBar
               url={spotifyUrl}
               loading={metadata.loading}
@@ -740,22 +754,11 @@ function App() {
               searchMode={isSearchMode}
               onSearchModeChange={setIsSearchMode}
             />
-
-            {!isSearchMode && metadata.metadata && renderMetadata()}
-          </>
-        );
-    }
-  };
-
-  return (
-    <TooltipProvider>
-      <div className="min-h-screen bg-background flex flex-col">
-        <AmbientBackground />
-        <TitleBar />
-        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+          )}
+        </Sidebar>
         
         {/* Main content area with sidebar offset */}
-        <div className="flex-1 ml-14 mt-10 p-4 md:p-8">
+        <div className="flex-1 ml-80 mt-10 p-4 md:p-8">
           <div className="max-w-4xl mx-auto space-y-6">
             {renderPage()}
           </div>

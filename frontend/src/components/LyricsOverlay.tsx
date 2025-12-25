@@ -94,7 +94,7 @@ export function LyricsOverlay({
     return idx;
   }, [parsed, currentPosition]);
 
-  // Auto-scroll with smoother animation
+  // Auto-scroll with smoother animation and better centering
   useEffect(() => {
     if (activeIndex >= 0 && activeLyricsRef.current && containerRef.current) {
       const container = containerRef.current;
@@ -102,7 +102,10 @@ export function LyricsOverlay({
       
       const containerHeight = container.clientHeight;
       const elementTop = activeElement.offsetTop;
-      const scrollTop = elementTop - containerHeight / 3; // Position at upper third
+      const elementHeight = activeElement.clientHeight;
+      
+      // Center the active line vertically
+      const scrollTop = elementTop - (containerHeight / 2) + (elementHeight / 2);
       
       container.scrollTo({
         top: scrollTop,

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe, ImageDown, Play } from "lucide-react";
+import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe, ImageDown, Play, Eye } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { player } from "@/lib/player";
 import {
@@ -30,6 +30,7 @@ interface TrackInfoProps {
   skippedCover?: boolean;
   onDownload: (isrc: string, name: string, artists: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
   onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string) => void;
+  onViewLyrics?: (name: string, artists: string, spotifyId?: string) => void;
   onCheckAvailability?: (spotifyId: string, isrc?: string) => void;
   onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName?: string, playlistName?: string, position?: number, trackId?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
   onOpenFolder: () => void;
@@ -135,7 +136,7 @@ export function TrackInfo({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        onClick={() => onDownloadLyrics(track.spotify_id!, track.name, track.artists, track.album_name, track.album_artist, track.release_date, track.disc_number)}
+                        onClick={() => onDownloadLyrics(track.spotify_id!, track.name, track.artists, track.album_name)}
                         variant="outline"
                         disabled={downloadingLyricsTrack === track.spotify_id}
                       >
@@ -154,6 +155,21 @@ export function TrackInfo({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Download Lyric</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {track.spotify_id && onViewLyrics && downloadedLyrics && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => onViewLyrics(track.name, track.artists, track.spotify_id)}
+                        variant="outline"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>View Lyrics</p>
                     </TooltipContent>
                   </Tooltip>
                 )}

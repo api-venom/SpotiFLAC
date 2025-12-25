@@ -466,31 +466,6 @@ func getTranscodeCacheDir() (string, error) {
 	return filepath.Join(base, "KnightMusic", "transcodes"), nil
 }
 
-func sanitizeFilename(s string) string {
-	// Keep it simple and cross-platform safe.
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "track"
-	}
-	repl := strings.NewReplacer(
-		"\\", "_",
-		"/", "_",
-		":", "_",
-		"*", "_",
-		"?", "_",
-		"\"", "_",
-		"<", "_",
-		">", "_",
-		"|", "_",
-	)
-	s = repl.Replace(s)
-	// Avoid super-long paths.
-	if len(s) > 120 {
-		s = s[:120]
-	}
-	return s
-}
-
 func contentTypeFromPath(p string) string {
 	switch strings.ToLower(filepath.Ext(p)) {
 	case ".flac":

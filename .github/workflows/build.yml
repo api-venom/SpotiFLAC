@@ -257,57 +257,44 @@ jobs:
             $dllCount++
           }
           
-          Write-Host "`n✓ Total DLLs bundled: $dllCount"
+          Write-Host "`nTotal DLLs bundled: $dllCount"
           Write-Host "`nDistribution package contents:"
           Get-ChildItem -Path "dist" | Select-Object Name,@{Name="Size (MB)";Expression={[Math]::Round($_.Length / 1MB, 2)}} | Format-Table -AutoSize
           
           # Create README for users
-          @"
-# SpotiFLAC - Portable Windows Build
-
-## Quick Start
-
-1. Extract all files to a folder
-2. Run SpotiFLAC.exe
-3. Enjoy FLAC playback!
-
-## What's Included
-
-- SpotiFLAC.exe - Main application
-- libmpv-2.dll - MPV player for FLAC playback
-- [other DLLs] - Required dependencies
-
-## Features
-
-✅ FLAC playback with MPV backend
-✅ Automatic HTML5 → MPV fallback
-✅ Stream or download from Tidal
-✅ No additional setup required
-
-## Important
-
-⚠️ Keep all DLL files in the same folder as SpotiFLAC.exe
-⚠️ Do not delete any DLL files
-
-## Troubleshooting
-
-If MPV doesn't work:
-- Check that libmpv-2.dll exists in the same folder
-- Try running as administrator
-- Check Windows Defender hasn't blocked any files
-
-For more help: https://github.com/afkarxyz/SpotiFLAC/issues
-
-Built with MPV $(Get-Date -Format "yyyy-MM-dd")
-"@ | Out-File -FilePath "dist\README.txt" -Encoding utf8
+          $readmeContent = "SpotiFLAC - Portable Windows Build`n`n"
+          $readmeContent += "Quick Start:`n"
+          $readmeContent += "1. Extract all files to a folder`n"
+          $readmeContent += "2. Run SpotiFLAC.exe`n"
+          $readmeContent += "3. Enjoy FLAC playback!`n`n"
+          $readmeContent += "What's Included:`n"
+          $readmeContent += "- SpotiFLAC.exe (Main application)`n"
+          $readmeContent += "- libmpv-2.dll (MPV player for FLAC decoder)`n"
+          $readmeContent += "- Other DLLs (Required dependencies)`n`n"
+          $readmeContent += "Features:`n"
+          $readmeContent += "- FLAC playback with MPV backend`n"
+          $readmeContent += "- Automatic HTML5 to MPV fallback`n"
+          $readmeContent += "- Stream or download from Tidal`n"
+          $readmeContent += "- No additional setup required`n`n"
+          $readmeContent += "Important:`n"
+          $readmeContent += "- Keep all DLL files in the same folder as SpotiFLAC.exe`n"
+          $readmeContent += "- Do not delete any DLL files`n`n"
+          $readmeContent += "Troubleshooting:`n"
+          $readmeContent += "If MPV does not work:`n"
+          $readmeContent += "- Check that libmpv-2.dll exists in the same folder`n"
+          $readmeContent += "- Try running as administrator`n"
+          $readmeContent += "- Check Windows Defender has not blocked any files`n`n"
+          $readmeContent += "For more help: https://github.com/afkarxyz/SpotiFLAC/issues`n`n"
+          $readmeContent += "Built with MPV $(Get-Date -Format 'yyyy-MM-dd')"
+          $readmeContent | Out-File -FilePath "dist\README.txt" -Encoding utf8
 
           # Create portable ZIP package
           Write-Host "`nCreating ZIP archive..."
           Compress-Archive -Path "dist\*" -DestinationPath "SpotiFLAC-Windows-Portable.zip" -Force
           
           $zipSize = [Math]::Round((Get-Item "SpotiFLAC-Windows-Portable.zip").Length / 1MB, 2)
-          Write-Host "✓ Created SpotiFLAC-Windows-Portable.zip ($zipSize MB)"
-          Write-Host "`n✅ Distribution package ready!"
+          Write-Host "Created SpotiFLAC-Windows-Portable.zip ($zipSize MB)"
+          Write-Host "`nDistribution package ready!"
 
       - name: Upload folder artifacts
         uses: actions/upload-artifact@v4
@@ -589,27 +576,27 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
           prerelease: false
           generate_release_notes: false
           body: |
-            ## 🎵 SpotiFLAC with Full FLAC Playback Support
+            ## SpotiFLAC with Full FLAC Playback Support
 
-            ### ✨ What's New
+            ### What's New
 
             #### FLAC Streaming & Playback
-            - ✅ **Windows:** Full MPV integration - FLAC streams work natively (no more "source not supported" errors!)
-            - ✅ **Linux:** MPV-powered playback with native FLAC decoding
-            - ✅ **Automatic fallback:** Tries HTML5 audio first, switches to MPV if needed
-            - ✅ **Zero setup:** All MPV DLLs bundled - works out of the box on fresh Windows machines
+            - [x] **Windows:** Full MPV integration - FLAC streams work natively (no more "source not supported" errors!)
+            - [x] **Linux:** MPV-powered playback with native FLAC decoding
+            - [x] **Automatic fallback:** Tries HTML5 audio first, switches to MPV if needed
+            - [x] **Zero setup:** All MPV DLLs bundled - works out of the box on fresh Windows machines
 
             #### Streaming Improvements
-            - ✅ Fixed "upstream returned html" error - now gets authenticated audio URLs from Tidal API
-            - ✅ Supports both direct URLs and BTS manifest parsing
-            - ✅ Local file priority - downloaded tracks play instantly
+            - [x] Fixed "upstream returned html" error - now gets authenticated audio URLs from Tidal API
+            - [x] Supports both direct URLs and BTS manifest parsing
+            - [x] Local file priority - downloaded tracks play instantly
 
             ---
 
-            ## 📥 Downloads
+            ## Downloads
 
             ### Windows (Recommended)
-            **📦 `SpotiFLAC-Windows-Portable.zip`** ⬅️ **Download this!**
+            **`SpotiFLAC-Windows-Portable.zip`** <- **Download this!**
             - Complete portable package
             - Includes SpotiFLAC.exe + all MPV DLLs
             - Just extract and run - no installation needed
@@ -621,7 +608,7 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
 
             ---
 
-            ## 🚀 Quick Start (Windows)
+            ## Quick Start (Windows)
 
             1. **Download** `SpotiFLAC-Windows-Portable.zip`
             2. **Extract** to any folder (e.g., Desktop)
@@ -632,19 +619,19 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
 
             ---
 
-            ## 📦 What's Included (Windows ZIP)
+            ## What's Included (Windows ZIP)
 
             ```
             SpotiFLAC-Windows-Portable/
-            ├── SpotiFLAC.exe          ← Main application
-            ├── libmpv-2.dll           ← MPV player (FLAC decoder)
-            ├── [other DLLs]           ← Dependencies
-            └── README.txt             ← Setup instructions
+            ├── SpotiFLAC.exe          <- Main application
+            ├── libmpv-2.dll           <- MPV player (FLAC decoder)
+            ├── [other DLLs]           <- Dependencies
+            └── README.txt             <- Setup instructions
             ```
 
             ---
 
-            ## 🎼 How FLAC Playback Works
+            ## How FLAC Playback Works
 
             When you play a song:
 
@@ -656,17 +643,17 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
             ```
             [info] play: Song Name - Artist
             [success] stream url: http://127.0.0.1:xxxxx/stream/xxx
-            [success] MPV playback started  ← MPV is working!
+            [success] MPV playback started  <- MPV is working!
             ```
 
             ### No More Errors:
-            - ❌ ~~`MEDIA_ERR_SRC_NOT_SUPPORTED`~~
-            - ❌ ~~`upstream returned html`~~
-            - ❌ ~~`mpv player backend not implemented`~~
+            - [x] Fixed `MEDIA_ERR_SRC_NOT_SUPPORTED`
+            - [x] Fixed `upstream returned html`
+            - [x] Fixed `mpv player backend not implemented`
 
             ---
 
-            ## ⚠️ Important Notes
+            ## Important Notes
 
             ### Windows
             - **Keep all files together** - Don't separate .exe from DLLs
@@ -693,7 +680,7 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
 
             ---
 
-            ## 🐛 Troubleshooting
+            ## Troubleshooting
 
             ### MPV not working?
             1. Check `libmpv-2.dll` is in same folder as `.exe`
@@ -705,7 +692,7 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
 
             ---
 
-            ## 🏗️ Build Info
+            ## Build Info
 
             - **MPV Version:** Latest from shinchiro/mpv-winbuild-cmake
             - **Build Type:** CGO-enabled with libmpv

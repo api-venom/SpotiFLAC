@@ -1,15 +1,45 @@
-import { 
-  GetStreamURL, 
-  MPVLoadTrack, 
-  MPVPlay, 
-  MPVPause, 
-  MPVStop, 
-  MPVSeek, 
-  MPVSetVolume, 
-  MPVGetStatus 
-} from "../../wailsjs/go/main/App";
+import { GetStreamURL } from "../../wailsjs/go/main/App";
 import { logger } from "@/lib/logger";
-import { backend } from "../../wailsjs/go/models";
+
+// Type definitions for MPV methods (will be dynamically checked at runtime)
+type MPVMethods = {
+  MPVLoadTrack?: (url: string, headers: Record<string, string>) => Promise<void>;
+  MPVPlay?: () => Promise<void>;
+  MPVPause?: () => Promise<void>;
+  MPVStop?: () => Promise<void>;
+  MPVSeek?: (seconds: number) => Promise<void>;
+  MPVSetVolume?: (volume: number) => Promise<void>;
+  MPVGetStatus?: () => Promise<any>;
+};
+
+// Lazy-load MPV methods
+let mpvMethods: MPVMethods | null = null;
+let mpvMethodsChecked = false;
+
+async function getMPVMethods(): Promise<MPVMethods> {
+  if (mpvMethods) return mpvMethods;
+  if (mpvMethodsChecked) return {};
+  
+  mpvMethodsChecked = true;
+  try {
+    // @ts-ignore - Wails bindings are generated at build time
+    const appModule = await import("../../wailsjs/go/main/App");
+    mpvMethods = {
+      MPVLoadTrack: appModule.MPVLoadTrack,
+      MPVPlay: appModule.MPVPlay,
+      MPVPause: appModule.MPVPause,
+      MPVStop: appModule.MPVStop,
+      MPVSeek: appModule.MPVSeek,
+      MPVSetVolume: appModule.MPVSetVolume,
+      MPVGetStatus: appModule.MPVGetStatus,
+    };
+    logger.debug("MPV methods loaded successfully", "player");
+    return mpvMethods;
+  } catch (e) {
+    logger.debug("MPV methods not available, using HTML5 audio only", "player");
+    return {};
+  }
+}
 
 export type PlayerTrack = {
   spotifyId: string;
@@ -36,7 +66,7 @@ class PlayerService {
   private audio: HTMLAudioElement;
   private state: InternalState;
   private listeners = new Set<Listener>();
-  private mpvStatusInterval?: NodeJS.Timeout;
+  private mpvStatusInterval?: ReturnType<typeof setInterval>;
 
   constructor() {
     this.audio = new Audio();
@@ -135,7 +165,10 @@ class PlayerService {
         
         // Restore position if we had one
         if (currentPos > 0) {
-          await MPVSeek(currentPos);
+          const methods = await getMPVMethods();
+          if (methods.MPVSeek) {
+            await methods.MPVSeek(currentPos);
+          }
         }
       } catch (err) {
         logger.exception(err, "Failed to switch to MPV", "player");
@@ -156,7 +189,10 @@ class PlayerService {
       }
 
       try {
-        const status = await MPVGetStatus();
+        const methods = await getMPVMethods();
+        if (!methods.MPVGetStatus) return;
+        
+        const status = await methods.MPVGetStatus();
         
         // Update state from MPV status
         this.state.isPlaying = status.state === "playing";
@@ -180,6 +216,11 @@ class PlayerService {
 
   private async playTrackWithMPV(track: PlayerTrack, opts?: { audioFormat?: string; downloadDir?: string }) {
     try {
+      const methods = await getMPVMethods();
+      if (!methods.MPVLoadTrack || !methods.MPVPlay) {
+        throw new Error("MPV methods not available");
+      }
+
       const url = await GetStreamURL({
         spotify_id: track.spotifyId,
         isrc: track.isrc || "",
@@ -193,11 +234,11 @@ class PlayerService {
       logger.success(`stream url: ${url}`, "player");
 
       // Load track into MPV
-      await MPVLoadTrack(url, {});
+      await methods.MPVLoadTrack(url, {});
       logger.success("MPV track loaded", "player");
 
       // Start playback
-      await MPVPlay();
+      await methods.MPVPlay();
       logger.success("MPV playback started", "player");
 
       // Start polling for status updates
@@ -286,12 +327,17 @@ class PlayerService {
     try {
       if (this.state.useMPV) {
         // Use MPV backend
+        const methods = await getMPVMethods();
         if (this.state.isPlaying) {
-          await MPVPause();
-          logger.debug("togglePlay -> pause (MPV)", "player");
+          if (methods.MPVPause) {
+            await methods.MPVPause();
+            logger.debug("togglePlay -> pause (MPV)", "player");
+          }
         } else {
-          await MPVPlay();
-          logger.debug("togglePlay -> play (MPV)", "player");
+          if (methods.MPVPlay) {
+            await methods.MPVPlay();
+            logger.debug("togglePlay -> play (MPV)", "player");
+          }
         }
       } else {
         // Use HTML5 audio
@@ -311,8 +357,12 @@ class PlayerService {
   seek(seconds: number) {
     if (this.state.useMPV) {
       // Use MPV backend
-      MPVSeek(Math.max(0, seconds)).catch((err) => {
-        logger.exception(err, "MPV seek failed", "player");
+      getMPVMethods().then((methods) => {
+        if (methods.MPVSeek) {
+          methods.MPVSeek(Math.max(0, seconds)).catch((err: any) => {
+            logger.exception(err, "MPV seek failed", "player");
+          });
+        }
       });
       this.state.position = Math.max(0, seconds);
       this.emit();
@@ -330,8 +380,12 @@ class PlayerService {
     
     if (this.state.useMPV) {
       // Use MPV backend (volume is 0-100)
-      MPVSetVolume(nv * 100).catch((err) => {
-        logger.exception(err, "MPV setVolume failed", "player");
+      getMPVMethods().then((methods) => {
+        if (methods.MPVSetVolume) {
+          methods.MPVSetVolume(nv * 100).catch((err: any) => {
+            logger.exception(err, "MPV setVolume failed", "player");
+          });
+        }
       });
     } else {
       // Use HTML5 audio
@@ -358,11 +412,12 @@ class PlayerService {
       if (currentTrack) {
         try {
           await this.playTrackWithMPV(currentTrack, {});
-          if (currentPos > 0) {
-            await MPVSeek(currentPos);
+          const methods = await getMPVMethods();
+          if (currentPos > 0 && methods.MPVSeek) {
+            await methods.MPVSeek(currentPos);
           }
-          if (!wasPlaying) {
-            await MPVPause();
+          if (!wasPlaying && methods.MPVPause) {
+            await methods.MPVPause();
           }
         } catch (err) {
           logger.exception(err, "Failed to switch to MPV", "player");
@@ -373,7 +428,10 @@ class PlayerService {
       }
     } else {
       // Switch to HTML5
-      await MPVStop().catch(() => {});
+      const methods = await getMPVMethods();
+      if (methods.MPVStop) {
+        await methods.MPVStop().catch(() => {});
+      }
       this.stopMPVStatusPolling();
       this.state.useMPV = false;
       this.emit();

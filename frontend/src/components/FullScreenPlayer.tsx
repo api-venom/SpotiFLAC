@@ -117,12 +117,29 @@ export function FullScreenPlayer() {
       };
     }
 
+    // Extract RGB values from the palette colors
+    const extractRGB = (color: string) => {
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (match) {
+        return {
+          r: parseInt(match[1]),
+          g: parseInt(match[2]),
+          b: parseInt(match[3])
+        };
+      }
+      return { r: 20, g: 20, b: 30 };
+    };
+
+    const vibrantRGB = extractRGB(palette.vibrant);
+    const dominantRGB = extractRGB(palette.dominant);
+    const darkRGB = extractRGB(palette.dark);
+
     return {
       background: `
-        radial-gradient(circle at 20% 30%, ${palette.vibrant}33 0%, transparent 50%),
-        radial-gradient(circle at 80% 20%, ${palette.dominant}44 0%, transparent 60%),
-        radial-gradient(circle at 50% 80%, ${palette.dark}55 0%, transparent 70%),
-        linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(5, 5, 10, 0.98) 100%)
+        radial-gradient(circle at 20% 30%, rgba(${vibrantRGB.r}, ${vibrantRGB.g}, ${vibrantRGB.b}, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(${dominantRGB.r}, ${dominantRGB.g}, ${dominantRGB.b}, 0.25) 0%, transparent 60%),
+        radial-gradient(circle at 50% 80%, rgba(${darkRGB.r}, ${darkRGB.g}, ${darkRGB.b}, 0.3) 0%, transparent 70%),
+        linear-gradient(135deg, rgba(${darkRGB.r}, ${darkRGB.g}, ${darkRGB.b}, 0.95) 0%, rgba(5, 5, 10, 0.98) 100%)
       `,
     } as React.CSSProperties;
   }, [palette]);

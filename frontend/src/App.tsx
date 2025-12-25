@@ -35,6 +35,7 @@ import { DebugLoggerPage } from "@/components/DebugLoggerPage";
 import { AmbientBackground } from "@/components/AmbientBackground";
 import { LyricsOverlay, type LyricsOverlayTrack } from "@/components/LyricsOverlay";
 import { FullScreenPlayer } from "@/components/FullScreenPlayer";
+import { MiniPlayer } from "@/components/MiniPlayer";
 import type { HistoryItem } from "@/components/FetchHistory";
 
 // Hooks
@@ -44,6 +45,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import { useCover } from "@/hooks/useCover";
 import { useAvailability } from "@/hooks/useAvailability";
 import { useDownloadQueueDialog } from "@/hooks/useDownloadQueueDialog";
+import { usePlayer } from "@/hooks/usePlayer";
 
 const HISTORY_KEY = "spotiflac_fetch_history";
 const MAX_HISTORY = 5;
@@ -72,6 +74,7 @@ function App() {
   const cover = useCover();
   const availability = useAvailability();
   const downloadQueue = useDownloadQueueDialog();
+  const { state: playerState } = usePlayer();
 
   const openLyricsOverlay = (name: string, artists: string, spotifyId?: string) => {
     if (!spotifyId) return;
@@ -745,12 +748,13 @@ function App() {
           onOpenChange={setLyricsOverlayOpen}
           track={lyricsOverlayTrack}
           ensureLyricsFile={ensureLyricsFile}
-          currentPosition={0}
+          currentPosition={playerState.position}
           fetchLyrics={async (spotifyId, trackName, artistName) => {
             await lyrics.handleDownloadLyrics(spotifyId, trackName, artistName);
           }}
         />
 
+        <MiniPlayer />
         <FullScreenPlayer />
 
         {/* Jump to Top Button - Bottom Right */}

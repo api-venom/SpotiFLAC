@@ -213,8 +213,8 @@ jobs:
           Write-Host "CGO_LDFLAGS: $env:CGO_LDFLAGS"
           Write-Host "MPV DLL Path: $env:MPV_DLL_DIR"
           
-          # Build with -tags cgo to enable MPV player implementation
-          wails build -platform windows/amd64 -tags cgo
+          # Build with -tags=cgo to enable MPV player implementation
+          wails build -platform windows/amd64 -tags=cgo
           
           Write-Host "Build completed successfully!"
 
@@ -382,7 +382,7 @@ Built with MPV $(Get-Date -Format "yyyy-MM-dd")
       - name: Build application
         env:
           CGO_ENABLED: "0"
-        run: wails build -platform darwin/universal -tags stub
+        run: wails build -platform darwin/universal -tags=stub
 
       - name: Create DMG
         run: |

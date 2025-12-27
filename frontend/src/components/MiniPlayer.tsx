@@ -4,7 +4,7 @@ import { usePlayer } from "@/hooks/usePlayer";
 import { useEffect, useState, useMemo } from "react";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { useLyrics } from "@/hooks/useLyrics";
-import { buildLrcTimeline, findActiveIndex, formatEllipsisDots } from "@/lib/lyrics/lrc";
+import { buildLrcTimeline, findActiveIndex } from "@/lib/lyrics/lrc";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -145,8 +145,8 @@ export function MiniPlayer() {
   const dots = formatEllipsisDots(dotCount);
 
   return (
-    <div 
-      className="fixed top-10 left-14 right-0 z-40 border-b border-white/20 shadow-2xl"
+    <div
+      className="fixed bottom-0 left-14 right-0 z-20 border-t border-white/20 shadow-2xl"
       style={bgStyle}
     >
       {/* Progress bar */}

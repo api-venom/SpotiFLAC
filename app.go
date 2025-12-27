@@ -768,16 +768,17 @@ type StreamRequest struct {
 	AlbumName   string `json:"album_name"`
 	AudioFormat string `json:"audio_format"`
 	DownloadDir string `json:"download_dir"`
+	Provider    string `json:"provider"` // Provider preference: "auto", "tidal", "qobuz", "amazon"
 }
 
 // GetStreamURL returns a local stream URL for playback.
 // It prefers an already-downloaded local file (by ISRC in the download folder)
-// and otherwise proxies the best remote provider URL.
+// and otherwise proxies the best remote provider URL using provider preference.
 func (a *App) GetStreamURL(req StreamRequest) (string, error) {
 	if a.stream == nil {
 		return "", fmt.Errorf("stream server not started")
 	}
-	return a.stream.GetStreamURL(req.SpotifyID, req.ISRC, req.TrackName, req.ArtistName, req.AlbumName, req.AudioFormat, req.DownloadDir)
+	return a.stream.GetStreamURL(req.SpotifyID, req.ISRC, req.TrackName, req.ArtistName, req.AlbumName, req.AudioFormat, req.DownloadDir, req.Provider)
 }
 
 // IsFFmpegInstalled checks if ffmpeg is installed

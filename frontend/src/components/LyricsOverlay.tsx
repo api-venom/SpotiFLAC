@@ -236,9 +236,6 @@ export function LyricsOverlay({
             ) : (
               <div className="w-full max-w-7xl space-y-4">
                 {visibleLines.map((line) => {
-                  // For ellipsis, show as fully white immediately
-                  const showFullWhite = line.isEllipsis || (line.isActive && line.progress > 0);
-                  
                   return (
                     <div
                       key={line.index}
@@ -247,8 +244,9 @@ export function LyricsOverlay({
                         line.isActive ? "scale-110" : "scale-100"
                       )}
                     >
+                      {/* Base text layer */}
                       <div
-                        className="inline-block max-w-full px-6"
+                        className="relative inline-block max-w-full px-6"
                         style={{
                           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
                           fontWeight: 700,
@@ -258,13 +256,39 @@ export function LyricsOverlay({
                           WebkitFontSmoothing: "antialiased",
                           MozOsxFontSmoothing: "grayscale",
                           textRendering: "optimizeLegibility",
-                          color: line.isPast ? "#FFFFFF" : showFullWhite ? "#FFFFFF" : line.isActive ? "#999999" : "#666666",
-                          opacity: line.isPast ? 0.35 : line.isActive ? 1 : 0.45,
-                          textShadow: showFullWhite && !line.isPast ? "0 0 40px rgba(255,255,255,0.5)" : "none",
-                          transition: "all 500ms cubic-bezier(0.4, 0, 0.2, 1)",
                         }}
                       >
-                        {line.text}
+                        {/* Background text */}
+                        <span
+                          style={{
+                            color: line.isPast ? "#FFFFFF" : line.isActive ? "#999999" : "#666666",
+                            opacity: line.isPast ? 0.35 : line.isActive ? 1 : 0.45,
+                            transition: "all 500ms cubic-bezier(0.4, 0, 0.2, 1)",
+                          }}
+                        >
+                          {line.text}
+                        </span>
+                        
+                        {/* White fill animation overlay for active line */}
+                        {line.isActive && line.progress > 0 && (
+                          <span
+                            className="absolute inset-0 overflow-hidden"
+                            style={{
+                              clipPath: `inset(0 ${(1 - line.progress) * 100}% 0 0)`,
+                              transition: "clip-path 100ms linear",
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: "#FFFFFF",
+                                textShadow: "0 0 40px rgba(255,255,255,0.5)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {line.text}
+                            </span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

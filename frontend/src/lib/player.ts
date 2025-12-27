@@ -1,5 +1,6 @@
 import { GetStreamURL } from "../../wailsjs/go/main/App";
 import { logger } from "@/lib/logger";
+import { getSettings } from "@/lib/settings";
 
 // Type definitions for MPV methods (will be dynamically checked at runtime)
 type MPVMethods = {
@@ -381,6 +382,7 @@ class PlayerService {
         throw new Error("MPV methods not available");
       }
 
+      const settings = getSettings();
       const url = await GetStreamURL({
         spotify_id: track.spotifyId,
         isrc: track.isrc || "",
@@ -389,6 +391,7 @@ class PlayerService {
         album_name: track.album || "",
         audio_format: opts?.audioFormat || "LOSSLESS",
         download_dir: opts?.downloadDir || "",
+        provider: settings.downloader || "auto",
       } as any);
 
       logger.success(`stream url: ${url}`, "player");
@@ -436,6 +439,7 @@ class PlayerService {
       const canFlac = this.audio.canPlayType("audio/flac");
       const defaultHtml5Format = canFlac ? "LOSSLESS" : "HIGH"; // HIGH maps to AAC for Tidal
 
+      const settings = getSettings();
       const url = await GetStreamURL({
         spotify_id: track.spotifyId,
         isrc: track.isrc || "",
@@ -444,6 +448,7 @@ class PlayerService {
         album_name: track.album || "",
         audio_format: opts?.audioFormat || defaultHtml5Format,
         download_dir: opts?.downloadDir || "",
+        provider: settings.downloader || "auto",
       } as any);
 
       logger.success(`stream url: ${url}`, "player");

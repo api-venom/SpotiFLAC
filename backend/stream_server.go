@@ -113,8 +113,8 @@ func (s *StreamServer) BaseURL() string {
 //
 // Preference:
 //  1) If ISRC is provided and a local file exists in downloadDir, serve that.
-//  2) Otherwise, resolve the best remote provider URL and proxy it.
-func (s *StreamServer) GetStreamURL(spotifyID, isrc, trackName, artistName, albumName, audioFormat, downloadDir string) (string, error) {
+//  2) Otherwise, resolve the best remote provider URL and proxy it using provider preference.
+func (s *StreamServer) GetStreamURL(spotifyID, isrc, trackName, artistName, albumName, audioFormat, downloadDir, provider string) (string, error) {
 	if spotifyID == "" && isrc == "" {
 		return "", fmt.Errorf("spotifyID or isrc is required")
 	}
@@ -142,8 +142,8 @@ func (s *StreamServer) GetStreamURL(spotifyID, isrc, trackName, artistName, albu
 		}
 	}
 
-	// 2) remote resolve
-	remote, err := resolveRemoteStreamURL(spotifyID, isrc, normalizeProviderQuality(audioFormat))
+	// 2) remote resolve with provider preference
+	remote, err := resolveRemoteStreamURL(spotifyID, isrc, normalizeProviderQuality(audioFormat), provider)
 	if err != nil {
 		return "", err
 	}
@@ -485,57 +485,106 @@ func contentTypeFromPath(p string) string {
 	}
 }
 
-func resolveRemoteStreamURL(spotifyID, isrc, audioFormat string) (string, error) {
-	// Get Tidal URL from SongLink, then use Tidal API to get actual stream URL
+func resolveRemoteStreamURL(spotifyID, isrc, audioFormat, provider string) (string, error) {
+	// Get provider URLs from SongLink API
 	client := NewSongLinkClient()
 	urls, err := client.GetAllURLsFromSpotify(spotifyID)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve provider URLs: %w", err)
 	}
 
-	// Try Tidal first - use the downloader's GetTidalFileURL method to get stream URL
-	if urls.TidalURL != "" {
-		// Extract Tidal track ID from URL
-		trackID, err := extractTidalTrackID(urls.TidalURL)
-		if err != nil {
-			return "", fmt.Errorf("invalid Tidal URL format: %w", err)
-		}
-		
-		// Use Tidal downloader to get authenticated stream URL
-		downloader := NewTidalDownloader("")
-		quality := audioFormat
-		if quality == "" {
-			quality = "LOSSLESS"
-		}
-		
-		// Get stream URL using the new method
-		streamURL, err := downloader.GetTidalFileURL(trackID, quality)
-		if err != nil {
-			return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
-		}
-		
-		// If the stream URL is a manifest (DASH/BTS format), parse it to get the direct URL
-		if strings.HasPrefix(streamURL, "MANIFEST:") {
-			manifestB64 := strings.TrimPrefix(streamURL, "MANIFEST:")
-			directURL, _, _, err := parseManifest(manifestB64)
-			if err != nil {
-				return "", fmt.Errorf("failed to parse Tidal manifest: %w", err)
-			}
-			if directURL == "" {
-				return "", fmt.Errorf("manifest contains DASH segments (not supported for streaming, download recommended)")
-			}
-			return directURL, nil
-		}
-		
-		return streamURL, nil
+	// Normalize provider preference
+	preferredProvider := strings.ToLower(strings.TrimSpace(provider))
+	
+	// Build provider priority list based on user preference
+	var providerOrder []string
+	switch preferredProvider {
+	case "amazon":
+		providerOrder = []string{"amazon", "tidal", "qobuz"}
+	case "qobuz":
+		providerOrder = []string{"qobuz", "tidal", "amazon"}
+	case "tidal":
+		providerOrder = []string{"tidal", "qobuz", "amazon"}
+	case "auto", "":
+		// Auto mode: try all providers in default order
+		providerOrder = []string{"tidal", "amazon", "qobuz"}
+	default:
+		// Unknown provider, use auto
+		providerOrder = []string{"tidal", "amazon", "qobuz"}
 	}
 
-	// Amazon not yet supported
-	if urls.AmazonURL != "" {
-		return "", fmt.Errorf("amazon streaming not yet implemented")
+	// Try each provider in priority order
+	var lastErr error
+	for _, prov := range providerOrder {
+		switch prov {
+		case "tidal":
+			if urls.TidalURL == "" {
+				continue
+			}
+			streamURL, err := tryTidalStream(urls.TidalURL, audioFormat)
+			if err == nil {
+				return streamURL, nil
+			}
+			lastErr = fmt.Errorf("tidal: %w", err)
+
+		case "amazon":
+			if urls.AmazonURL == "" {
+				continue
+			}
+			// Amazon streaming not yet implemented
+			lastErr = fmt.Errorf("amazon: streaming not yet implemented")
+
+		case "qobuz":
+			if urls.QobuzURL == "" {
+				continue
+			}
+			// Qobuz streaming not yet implemented
+			lastErr = fmt.Errorf("qobuz: streaming not yet implemented")
+		}
 	}
 
+	// All providers failed
+	if lastErr != nil {
+		return "", fmt.Errorf("all providers failed, last error: %w", lastErr)
+	}
 	return "", fmt.Errorf("no provider URL available")
+}
+
+// tryTidalStream attempts to get a stream URL from Tidal
+func tryTidalStream(tidalURL, audioFormat string) (string, error) {
+	// Extract Tidal track ID from URL
+	trackID, err := extractTidalTrackID(tidalURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid Tidal URL format: %w", err)
+	}
+	
+	// Use Tidal downloader to get authenticated stream URL
+	downloader := NewTidalDownloader("")
+	quality := audioFormat
+	if quality == "" {
+		quality = "LOSSLESS"
+	}
+	
+	// Get stream URL using the new method
+	streamURL, err := downloader.GetTidalFileURL(trackID, quality)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
+	}
+	
+	// If the stream URL is a manifest (DASH/BTS format), parse it to get the direct URL
+	if strings.HasPrefix(streamURL, "MANIFEST:") {
+		manifestB64 := strings.TrimPrefix(streamURL, "MANIFEST:")
+		directURL, _, _, err := parseManifest(manifestB64)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse Tidal manifest: %w", err)
+		}
+		if directURL == "" {
+			return "", fmt.Errorf("manifest contains DASH segments (not supported for streaming, download recommended)")
+		}
+		return directURL, nil
+	}
+	
+	return streamURL, nil
 }
 
 func extractTidalTrackID(tidalURL string) (int64, error) {

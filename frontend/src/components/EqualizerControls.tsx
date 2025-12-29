@@ -320,7 +320,6 @@ export function EqualizerControls({ className, useMPV }: EqualizerControlsProps)
                     step="0.5"
                     value={gain}
                     onChange={(e) => handleCustomChange(band.freq, parseFloat(e.target.value))}
-                    orient="vertical"
                     className="sr-only"
                   />
                   

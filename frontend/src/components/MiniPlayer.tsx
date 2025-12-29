@@ -10,6 +10,10 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
+function formatEllipsisDots(count: number): string {
+  return ".".repeat(count);
+}
+
 async function extractDominantColor(url?: string): Promise<string | null> {
   if (!url) return null;
   return new Promise((resolve) => {

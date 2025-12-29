@@ -534,12 +534,6 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat, provider string) (stri
 			// Amazon streaming not yet implemented
 			lastErr = fmt.Errorf("amazon: streaming not yet implemented")
 
-		case "qobuz":
-			if urls.QobuzURL == "" {
-				continue
-			}
-			// Qobuz streaming not yet implemented
-			lastErr = fmt.Errorf("qobuz: streaming not yet implemented")
 		}
 	}
 

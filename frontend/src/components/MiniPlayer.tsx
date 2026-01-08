@@ -1,4 +1,4 @@
-import { Play, Pause, SkipBack, SkipForward, Maximize2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Maximize2, Music, Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useEffect, useState, useMemo } from "react";
@@ -50,6 +50,7 @@ async function extractDominantColor(url?: string): Promise<string | null> {
   });
 }
 
+type LyricsState = "idle" | "loading" | "loaded" | "error" | "no-lyrics";
 
 export function MiniPlayer() {
   const { state, player } = usePlayer();
@@ -57,6 +58,7 @@ export function MiniPlayer() {
   const [bgColor, setBgColor] = useState<string | null>(null);
   const lyrics = useLyrics();
   const [lyricsContent, setLyricsContent] = useState<string>("");
+  const [lyricsState, setLyricsState] = useState<LyricsState>("idle");
   const [dotCount, setDotCount] = useState(0);
 
   useEffect(() => {
@@ -67,24 +69,36 @@ export function MiniPlayer() {
     }
   }, [track?.coverUrl]);
 
-  // Load lyrics
+  // Load lyrics with better state management
   useEffect(() => {
     if (!track?.spotifyId) {
       setLyricsContent("");
+      setLyricsState("idle");
       return;
     }
+
+    setLyricsState("loading");
 
     (async () => {
       try {
         const filePath = await lyrics.ensureLyricsFile(track.spotifyId);
         if (filePath) {
           const text = await ReadTextFile(filePath);
-          setLyricsContent(text || "");
+          if (text && text.trim()) {
+            setLyricsContent(text);
+            setLyricsState("loaded");
+          } else {
+            setLyricsContent("");
+            setLyricsState("no-lyrics");
+          }
         } else {
           setLyricsContent("");
+          setLyricsState("no-lyrics");
         }
-      } catch {
+      } catch (error) {
+        console.error("Failed to load lyrics:", error);
         setLyricsContent("");
+        setLyricsState("error");
       }
     })();
   }, [track?.spotifyId, lyrics]);
@@ -137,7 +151,7 @@ export function MiniPlayer() {
   const progress = state.duration > 0 ? clamp01(state.position / state.duration) : 0;
 
   // Solid background with extracted color
-  const bgStyle = bgColor 
+  const bgStyle = bgColor
     ? {
         backgroundColor: bgColor,
         opacity: 0.95,
@@ -150,13 +164,13 @@ export function MiniPlayer() {
 
   return (
     <div
-      className="fixed bottom-0 left-14 right-0 z-20 border-t border-white/20 shadow-2xl"
+      className="fixed bottom-0 left-14 right-0 z-20 border-t border-white/20 shadow-2xl backdrop-blur-sm"
       style={bgStyle}
     >
       {/* Progress bar */}
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
-        <div 
-          className="h-full bg-white/95 transition-all duration-100 ease-linear"
+        <div
+          className="h-full bg-gradient-to-r from-white/80 to-white transition-all duration-100 ease-linear"
           style={{ width: `${progress * 100}%` }}
         />
       </div>
@@ -165,10 +179,10 @@ export function MiniPlayer() {
         {/* Album Art & Info */}
         <div className="flex items-center gap-4 flex-1 min-w-0 max-w-md">
           {track.coverUrl && (
-            <img 
-              src={track.coverUrl} 
+            <img
+              src={track.coverUrl}
               alt={track.title}
-              className="w-14 h-14 rounded-xl shadow-2xl object-cover flex-shrink-0 ring-2 ring-white/20"
+              className="w-14 h-14 rounded-xl shadow-2xl object-cover flex-shrink-0 ring-2 ring-white/20 transition-transform hover:scale-105"
             />
           )}
           <div className="flex-1 min-w-0">
@@ -181,63 +195,94 @@ export function MiniPlayer() {
           </div>
         </div>
 
-        {/* Lyrics Display - Two Lines */}
-        {timeline.length > 0 && (
-          <div className="flex-1 min-w-0 max-w-2xl">
-            {/* Current line */}
-            {currentLine && currentLine.kind === "lyric" ? (
-              <div className="relative mb-1">
-                {/* Background text */}
-                <div className="text-white/40 text-sm font-semibold truncate">
-                  {currentLine.text}
-                </div>
-                {/* Filled text */}
-                <div 
-                  className="absolute inset-0 overflow-hidden"
-                  style={{ clipPath: `inset(0 ${(1 - currentProgress) * 100}% 0 0)` }}
-                >
-                  <div className="text-white text-sm font-semibold truncate drop-shadow-lg">
+        {/* Lyrics Display - Enhanced with loading states */}
+        <div className="flex-1 min-w-0 max-w-2xl">
+          {lyricsState === "loading" && (
+            <div className="flex items-center gap-2 text-white/60 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="animate-pulse">Loading lyrics...</span>
+            </div>
+          )}
+
+          {lyricsState === "error" && (
+            <div className="flex items-center gap-2 text-white/50 text-sm">
+              <Music className="h-4 w-4" />
+              <span>Lyrics unavailable</span>
+            </div>
+          )}
+
+          {lyricsState === "no-lyrics" && (
+            <div className="flex items-center gap-2 text-white/40 text-sm">
+              <Music className="h-4 w-4" />
+              <span>No lyrics available</span>
+            </div>
+          )}
+
+          {lyricsState === "loaded" && timeline.length > 0 && (
+            <>
+              {/* Current line */}
+              {currentLine && currentLine.kind === "lyric" ? (
+                <div className="relative mb-1 group">
+                  {/* Background text */}
+                  <div className="text-white/30 text-sm font-semibold truncate transition-all duration-300">
                     {currentLine.text}
                   </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-white/40 text-sm font-semibold mb-1">
-                {state.isPlaying ? dots : ""}
-              </div>
-            )}
-            
-            {/* Next line with subtle fill */}
-            {nextLine && nextLine.kind === "lyric" ? (
-              <div className="relative">
-                {/* Background text */}
-                <div className="text-white/25 text-xs font-medium truncate">
-                  {nextLine.text}
-                </div>
-                {/* Subtle pre-fill animation */}
-                <div 
-                  className="absolute inset-0 overflow-hidden opacity-60"
-                  style={{ clipPath: `inset(0 ${(1 - nextProgress * 0.3) * 100}% 0 0)` }}
-                >
-                  <div className="text-white/50 text-xs font-medium truncate">
-                    {nextLine.text}
+                  {/* Filled text with gradient */}
+                  <div
+                    className="absolute inset-0 overflow-hidden transition-all duration-100 ease-linear"
+                    style={{ clipPath: `inset(0 ${(1 - currentProgress) * 100}% 0 0)` }}
+                  >
+                    <div className="text-white text-sm font-semibold truncate drop-shadow-lg bg-gradient-to-r from-white via-white to-white/90">
+                      {currentLine.text}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="text-white/20 text-xs font-medium">
-                {state.isPlaying ? "♪" : ""}
-              </div>
-            )}
-          </div>
-        )}
+              ) : (
+                <div className="text-white/40 text-sm font-semibold mb-1 h-5 flex items-center">
+                  {state.isPlaying ? (
+                    <span className="animate-pulse">{dots}</span>
+                  ) : (
+                    <span className="text-white/30">♪</span>
+                  )}
+                </div>
+              )}
+
+              {/* Next line with subtle fill */}
+              {nextLine && nextLine.kind === "lyric" ? (
+                <div className="relative">
+                  {/* Background text */}
+                  <div className="text-white/20 text-xs font-medium truncate transition-all duration-300">
+                    {nextLine.text}
+                  </div>
+                  {/* Subtle pre-fill animation */}
+                  <div
+                    className="absolute inset-0 overflow-hidden opacity-50 transition-all duration-100 ease-linear"
+                    style={{ clipPath: `inset(0 ${(1 - nextProgress * 0.4) * 100}% 0 0)` }}
+                  >
+                    <div className="text-white/60 text-xs font-medium truncate">
+                      {nextLine.text}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-white/15 text-xs font-medium h-4 flex items-center">
+                  {state.isPlaying ? (
+                    <span className="animate-pulse">♪</span>
+                  ) : (
+                    <span className="text-white/10">♪</span>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Playback Controls */}
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg transition-all hover:scale-105"
             onClick={() => player.previous()}
           >
             <SkipBack className="h-4 w-4 drop-shadow" />
@@ -246,7 +291,7 @@ export function MiniPlayer() {
           <Button
             onClick={() => player.togglePlay()}
             size="icon"
-            className="h-11 w-11 rounded-full bg-white hover:bg-white/90 text-black hover:scale-110 transition-all shadow-2xl"
+            className="h-11 w-11 rounded-full bg-white hover:bg-white/90 text-black hover:scale-110 transition-all shadow-2xl active:scale-95"
           >
             {state.isPlaying ? (
               <Pause className="h-5 w-5 fill-current" />
@@ -258,7 +303,7 @@ export function MiniPlayer() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg transition-all hover:scale-105"
             onClick={() => player.next()}
           >
             <SkipForward className="h-4 w-4 drop-shadow" />
@@ -267,14 +312,14 @@ export function MiniPlayer() {
 
         {/* Time & Fullscreen */}
         <div className="flex items-center gap-4">
-          <div className="text-sm text-white font-mono min-w-[5rem] text-right drop-shadow-lg">
+          <div className="text-sm text-white font-mono min-w-[5rem] text-right drop-shadow-lg tabular-nums">
             {formatTime(state.position)} / {formatTime(state.duration)}
           </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => player.setFullscreen(true)}
-            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg"
+            className="h-9 w-9 hover:bg-white/20 text-white hover:text-white shadow-lg transition-all hover:scale-105"
           >
             <Maximize2 className="h-5 w-5 drop-shadow" />
           </Button>

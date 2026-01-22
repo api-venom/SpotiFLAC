@@ -314,7 +314,7 @@ func proxyRemote(w http.ResponseWriter, r *http.Request, rawurl string) {
 
 	// Some CDNs require a fairly normal accept header.
 	ureq.Header.Set("Accept", "*/*")
-	ureq.Header.Set("User-Agent", "KnightMusic-StreamProxy/1.0")
+	ureq.Header.Set("User-Agent", "SpotiFLAC-StreamProxy/1.0")
 
 	client := &http.Client{Timeout: 0}
 	resp, err := client.Do(ureq)

@@ -1,172 +1,90 @@
-import { useState, useCallback, useEffect } from "react";
-import { AnalyzeTrack } from "../../wailsjs/go/main/App";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { analyzeTrack } from "@/lib/api";
 import type { AnalysisResult } from "@/types/api";
-import { logger } from "@/lib/logger";
-import { toastWithSound as toast } from "@/lib/toast-with-sound";
+import type { SpectrumPoint } from "@/types/api";
 import { setSpectrumCache, getSpectrumCache, clearSpectrumCache } from "@/lib/spectrum-cache";
 
-const STORAGE_KEY = "knightmusic_audio_analysis_state";
+const STORAGE_KEY = "spotiflac_audio_analysis_state";
+
+type AnalysisState = {
+  filePath: string;
+  result: AnalysisResult | null;
+};
 
 export function useAudioAnalysis() {
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(() => {
-    // Load from sessionStorage on mount - only detail, no spectrum
-    try {
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.filePath && parsed.result) {
-          // Return result WITHOUT spectrum - spectrum will be loaded async
-          return {
-            ...parsed.result,
-            spectrum: undefined,
-          };
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load saved analysis state:", err);
-    }
-    return null;
-  });
-  const [selectedFilePath, setSelectedFilePath] = useState<string>(() => {
-    // Load file path from sessionStorage
-    try {
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.filePath || "";
-      }
-    } catch (err) {
-      // Ignore
-    }
-    return "";
-  });
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [spectrumLoading, setSpectrumLoading] = useState(() => {
-    // If result exists from sessionStorage, show loading for spectrum
-    try {
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.filePath && parsed.result) {
-          // Always show loading initially, will be resolved async
-          return true;
-        }
-      }
-    } catch (err) {
-      // Ignore
-    }
-    return false;
-  });
+  const [filePath, setFilePath] = useState<string>("");
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
-  const analyzeFile = useCallback(async (filePath: string) => {
-    if (!filePath) {
-      setError("No file path provided");
-      return null;
-    }
-
-    setAnalyzing(true);
-    setError(null);
-    setResult(null);
-    setSelectedFilePath(filePath);
-
-    try {
-      logger.info(`Analyzing audio file: ${filePath}`);
-      const startTime = Date.now();
-
-      const response = await AnalyzeTrack(filePath);
-      const analysisResult: AnalysisResult = JSON.parse(response);
-
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      logger.success(`Audio analysis completed in ${elapsed}s`);
-
-      // Save spectrum to memory cache
-      if (analysisResult.spectrum) {
-        setSpectrumCache(filePath, analysisResult.spectrum);
-      }
-
-      // Save detail (without spectrum) to sessionStorage
-      const { spectrum, ...detailResult } = analysisResult;
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-          filePath,
-          result: detailResult,
-        }));
-      } catch (err) {
-        console.error("Failed to save analysis state:", err);
-      }
-
-      setResult(analysisResult);
-      setSpectrumLoading(false); // Spectrum is now available
-
-      return analysisResult;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to analyze audio file";
-      logger.error(`Analysis error: ${errorMessage}`);
-      setError(errorMessage);
-      toast.error("Audio Analysis Failed", {
-        description: errorMessage,
-      });
-      return null;
-    } finally {
-      setAnalyzing(false);
-    }
-  }, []);
-
-  const clearResult = useCallback(() => {
-    setResult(null);
-    setError(null);
-    setSelectedFilePath("");
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch (err) {
-      // Ignore
-    }
-    clearSpectrumCache();
-  }, []);
-
-  // Load spectrum from cache asynchronously after detail is displayed
+  // Load persisted state
   useEffect(() => {
-    // Only load spectrum if we have result without spectrum and are in loading state
-    if (!result || !selectedFilePath || result.spectrum || !spectrumLoading) {
-      return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<AnalysisState>;
+      if (parsed.filePath) setFilePath(parsed.filePath);
+      if (parsed.result) setAnalysis(parsed.result as AnalysisResult);
+    } catch {
+      // ignore storage failures
     }
+  }, []);
 
-    // Load spectrum asynchronously to avoid blocking UI
-    // Use requestAnimationFrame to ensure detail renders first
-    let rafId: number;
-    const loadSpectrum = () => {
-      rafId = requestAnimationFrame(() => {
-        const cachedSpectrum = getSpectrumCache(selectedFilePath);
-        if (cachedSpectrum) {
-          setResult(prev => prev ? { ...prev, spectrum: cachedSpectrum } : null);
-          setSpectrumLoading(false);
-        } else {
-          // Spectrum not in cache - user needs to re-analyze
-          setSpectrumLoading(false);
-        }
-      });
-    };
-    
-    // Double RAF to ensure detail is fully rendered
-    requestAnimationFrame(() => {
-      requestAnimationFrame(loadSpectrum);
-    });
-    
-    return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-  }, [result, selectedFilePath, spectrumLoading]);
+  // Persist state
+  useEffect(() => {
+    try {
+      const toSave: AnalysisState = { filePath, result: analysis };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    } catch {
+      // ignore
+    }
+  }, [filePath, analysis]);
+
+  const spectrum: SpectrumPoint[] = useMemo(() => {
+    if (!analysis) return [];
+    const cached = getSpectrumCache(filePath);
+    if (cached) return cached;
+    const data = analysis.spectrum || [];
+    setSpectrumCache(filePath, data);
+    return data;
+  }, [analysis, filePath]);
+
+  const runAnalysis = useCallback(async (path: string) => {
+    setLoading(true);
+    setError(null);
+    setFilePath(path);
+
+    try {
+      clearSpectrumCache(path);
+      const result = await analyzeTrack(path);
+      setAnalysis(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setAnalysis(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const clear = useCallback(() => {
+    if (filePath) clearSpectrumCache(filePath);
+    setFilePath("");
+    setAnalysis(null);
+    setError(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }, [filePath]);
 
   return {
-    analyzing,
-    result,
+    loading,
     error,
-    selectedFilePath,
-    spectrumLoading,
-    analyzeFile,
-    clearResult,
+    filePath,
+    analysis,
+    spectrum,
+    runAnalysis,
+    clear,
   };
 }

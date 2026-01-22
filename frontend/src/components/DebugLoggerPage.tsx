@@ -1,5 +1,6 @@
-import { useMemo, useState, useEffect, useRef } from "react";
-import { Trash2, Copy, Check, Download } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Copy, Download, Trash2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { logger, type LogEntry, type LogLevel } from "@/lib/logger";
@@ -36,13 +37,16 @@ export function DebugLoggerPage() {
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [minLevel, setMinLevel] = useState<LogLevel | "all">("all");
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsubscribe = logger.subscribe(() => {
       setLogs(logger.getLogs());
     });
+
     setLogs(logger.getLogs());
+
     return () => {
       unsubscribe();
     };
@@ -95,12 +99,14 @@ export function DebugLoggerPage() {
   const handleDownload = () => {
     const blob = new Blob([serializeLogs(filtered)], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
+
     const a = document.createElement("a");
     a.href = url;
-    a.download = `knightmusic-debug-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+    a.download = `spotiflac-debug-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
     document.body.appendChild(a);
     a.click();
     a.remove();
+
     URL.revokeObjectURL(url);
   };
 
@@ -109,7 +115,9 @@ export function DebugLoggerPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Debug Logs</h1>
-          <p className="text-sm text-muted-foreground">Search, filter, copy, download. Keeps up to 3000 entries.</p>
+          <p className="text-sm text-muted-foreground">
+            Search, filter, copy, download. Keeps up to 3000 entries.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -193,7 +201,9 @@ export function DebugLoggerPage() {
             <div key={i} className="flex gap-2 py-0.5">
               <span className="text-muted-foreground shrink-0">[{formatTime(log.timestamp)}]</span>
               <span className={`shrink-0 w-16 ${levelColors[log.level]}`}>[{log.level}]</span>
-              <span className="text-muted-foreground shrink-0 w-20">{log.source ? `[${log.source}]` : ""}</span>
+              <span className="text-muted-foreground shrink-0 w-20">
+                {log.source ? `[${log.source}]` : ""}
+              </span>
               <span className="break-all whitespace-pre-wrap">{log.message}</span>
             </div>
           ))

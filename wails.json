@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "Knight Music",
-  "outputfilename": "KnightMusic",
+  "name": "SpotiFLAC",
+  "outputfilename": "SpotiFLAC",
   "frontend:install": "pnpm install",
   "frontend:dev:install": "pnpm install",
   "frontend:build": "pnpm run build",
@@ -11,8 +11,9 @@
     "name": "afkarxyz"
   },
   "info": {
-    "productName": "Knight Music",
-    "productVersion": "7.0"
+    "productName": "SpotiFLAC",
+    "productVersion": "7.0.6",
+    "copyright": "© 2026 afkarxyz"
   },
   "wailsjsdir": "./frontend",
   "assetdir": "./frontend/dist",

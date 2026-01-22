@@ -30,18 +30,18 @@ interface AlbumInfoProps {
   isDownloading: boolean;
   bulkDownloadType: "all" | "selected" | null;
   downloadProgress: number;
-  currentDownloadInfo: { name: string; artists: string } | null;
+  currentDownloadInfo: {
+    name: string;
+    artists: string;
+  } | null;
   currentPage: number;
   itemsPerPage: number;
-  // Lyrics props
   downloadedLyrics?: Set<string>;
   failedLyrics?: Set<string>;
   skippedLyrics?: Set<string>;
   downloadingLyricsTrack?: string | null;
-  // Availability props
   checkingAvailabilityTrack?: string | null;
   availabilityMap?: Map<string, TrackAvailability>;
-  // Cover props
   downloadedCovers?: Set<string>;
   failedCovers?: Set<string>;
   skippedCovers?: Set<string>;
@@ -52,9 +52,50 @@ interface AlbumInfoProps {
   onSortChange: (value: string) => void;
   onToggleTrack: (isrc: string) => void;
   onToggleSelectAll: (tracks: TrackMetadata[]) => void;
-  onDownloadTrack: (isrc: string, name: string, artists: string, albumName: string, spotifyId?: string, folderName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
-  onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName: string, folderName?: string, isArtistDiscography?: boolean, position?: number, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
-  onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName: string, folderName?: string, isArtistDiscography?: boolean, position?: number, trackId?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
+  onDownloadTrack: (
+    isrc: string,
+    name: string,
+    artists: string,
+    albumName: string,
+    spotifyId?: string,
+    folderName?: string,
+    durationMs?: number,
+    position?: number,
+    albumArtist?: string,
+    releaseDate?: string,
+    coverUrl?: string,
+    spotifyTrackNumber?: number,
+    spotifyDiscNumber?: number,
+    spotifyTotalTracks?: number,
+    spotifyTotalDiscs?: number,
+    copyright?: string,
+    publisher?: string,
+  ) => void;
+  onDownloadLyrics?: (
+    spotifyId: string,
+    name: string,
+    artists: string,
+    albumName: string,
+    folderName?: string,
+    isArtistDiscography?: boolean,
+    position?: number,
+    albumArtist?: string,
+    releaseDate?: string,
+    discNumber?: number,
+  ) => void;
+  onDownloadCover?: (
+    coverUrl: string,
+    trackName: string,
+    artistName: string,
+    albumName: string,
+    folderName?: string,
+    isArtistDiscography?: boolean,
+    position?: number,
+    trackId?: string,
+    albumArtist?: string,
+    releaseDate?: string,
+    discNumber?: number,
+  ) => void;
   onCheckAvailability?: (spotifyId: string) => void;
   onDownloadAllLyrics?: () => void;
   onDownloadAllCovers?: () => void;
@@ -161,41 +202,29 @@ export function AlbumInfo({
                   <span>{albumInfo.release_date}</span>
                   <span>•</span>
                   <span>
-                    {albumInfo.total_tracks} {albumInfo.total_tracks === 1 ? "song" : "songs"}
+                    {albumInfo.total_tracks.toLocaleString()} {albumInfo.total_tracks === 1 ? "track" : "tracks"}
                   </span>
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={onDownloadAll} disabled={isDownloading}>
-                  {isDownloading && bulkDownloadType === "all" ? (
-                    <Spinner />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
+                  {isDownloading && bulkDownloadType === "all" ? <Spinner /> : <Download className="h-4 w-4" />}
                   Download All
                 </Button>
                 {selectedTracks.length > 0 && (
-                  <Button
-                    onClick={onDownloadSelected}
-                    variant="secondary"
-                    disabled={isDownloading}
-                  >
+                  <Button onClick={onDownloadSelected} variant="secondary" disabled={isDownloading}>
                     {isDownloading && bulkDownloadType === "selected" ? (
                       <Spinner />
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
-                    Download Selected ({selectedTracks.length})
+                    Download Selected ({selectedTracks.length.toLocaleString()})
                   </Button>
                 )}
                 {onDownloadAllLyrics && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        onClick={onDownloadAllLyrics}
-                        variant="outline"
-                        disabled={isBulkDownloadingLyrics}
-                      >
+                      <Button onClick={onDownloadAllLyrics} variant="outline" disabled={isBulkDownloadingLyrics}>
                         {isBulkDownloadingLyrics ? <Spinner /> : <FileText className="h-4 w-4" />}
                       </Button>
                     </TooltipTrigger>
@@ -207,11 +236,7 @@ export function AlbumInfo({
                 {onDownloadAllCovers && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        onClick={onDownloadAllCovers}
-                        variant="outline"
-                        disabled={isBulkDownloadingCovers}
-                      >
+                      <Button onClick={onDownloadAllCovers} variant="outline" disabled={isBulkDownloadingCovers}>
                         {isBulkDownloadingCovers ? <Spinner /> : <ImageDown className="h-4 w-4" />}
                       </Button>
                     </TooltipTrigger>
@@ -228,11 +253,7 @@ export function AlbumInfo({
                 )}
               </div>
               {isDownloading && (
-                <DownloadProgress
-                  progress={downloadProgress}
-                  currentTrack={currentDownloadInfo}
-                  onStop={onStopDownload}
-                />
+                <DownloadProgress progress={downloadProgress} currentTrack={currentDownloadInfo} onStop={onStopDownload} />
               )}
             </div>
           </div>
@@ -277,6 +298,7 @@ export function AlbumInfo({
           downloadingCoverTrack={downloadingCoverTrack}
           onCheckAvailability={onCheckAvailability}
           onPageChange={onPageChange}
+          onArtistClick={onArtistClick}
           onTrackClick={onTrackClick}
         />
 

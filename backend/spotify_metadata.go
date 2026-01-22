@@ -2,72 +2,32 @@ package backend
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-)
-
-const (
-	spotifyTokenURL     = "https://accounts.spotify.com/api/token"
-	playlistBaseURL     = "https://api.spotify.com/v1/playlists/%s"
-	albumBaseURL        = "https://api.spotify.com/v1/albums/%s"
-	trackBaseURL        = "https://api.spotify.com/v1/tracks/%s"
-	artistBaseURL       = "https://api.spotify.com/v1/artists/%s"
-	artistAlbumsBaseURL = "https://api.spotify.com/v1/artists/%s/albums"
 )
 
 var (
 	errInvalidSpotifyURL = errors.New("invalid or unsupported Spotify URL")
 )
 
-// SpotifyMetadataClient mirrors the behaviour of Doc/getMetadata.py and interacts with Spotify's web API.
 type SpotifyMetadataClient struct {
-	httpClient     *http.Client
-	clientID       string
-	clientSecret   string
-	cachedToken    string
-	tokenExpiresAt time.Time
-	rng            *rand.Rand
-	rngMu          sync.Mutex
-	userAgent      string
+	httpClient *http.Client
 }
 
-// NewSpotifyMetadataClient creates a ready-to-use client with Official Spotify API credentials.
 func NewSpotifyMetadataClient() *SpotifyMetadataClient {
-	src := rand.NewSource(time.Now().UnixNano())
-
-	// Decode client ID from base64
-	clientID := ""
-	if decoded, err := base64.StdEncoding.DecodeString("NWY1NzNjOTYyMDQ5NGJhZTg3ODkwYzBmMDhhNjAyOTM="); err == nil {
-		clientID = string(decoded)
+	return &SpotifyMetadataClient{
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
-
-	// Decode client secret from base64
-	clientSecret := ""
-	if decoded, err := base64.StdEncoding.DecodeString("MjEyNDc2ZDliMGYzNDcyZWFhNzYyZDkwYjE5YjBiYTg="); err == nil {
-		clientSecret = string(decoded)
-	}
-
-	c := &SpotifyMetadataClient{
-		httpClient:   &http.Client{Timeout: 15 * time.Second},
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		rng:          rand.New(src),
-	}
-	c.userAgent = c.randomUserAgent()
-	return c
 }
 
-// TrackMetadata mirrors the filtered track payload returned by the Python script.
 type TrackMetadata struct {
 	SpotifyID   string `json:"spotify_id,omitempty"`
 	Artists     string `json:"artists"`
@@ -80,18 +40,21 @@ type TrackMetadata struct {
 	TrackNumber int    `json:"track_number"`
 	TotalTracks int    `json:"total_tracks,omitempty"`
 	DiscNumber  int    `json:"disc_number,omitempty"`
+	TotalDiscs  int    `json:"total_discs,omitempty"`
 	ExternalURL string `json:"external_urls"`
 	ISRC        string `json:"isrc"`
+	Copyright   string `json:"copyright,omitempty"`
+	Publisher   string `json:"publisher,omitempty"`
+	Plays       string `json:"plays,omitempty"`
+	PreviewURL  string `json:"preview_url,omitempty"`
 }
 
-// ArtistSimple holds basic artist info for clickable artists
 type ArtistSimple struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	ExternalURL string `json:"external_urls"`
 }
 
-// AlbumTrackMetadata holds per-track info for album / playlist formatting.
 type AlbumTrackMetadata struct {
 	SpotifyID   string         `json:"spotify_id,omitempty"`
 	Artists     string         `json:"artists"`
@@ -104,6 +67,7 @@ type AlbumTrackMetadata struct {
 	TrackNumber int            `json:"track_number"`
 	TotalTracks int            `json:"total_tracks,omitempty"`
 	DiscNumber  int            `json:"disc_number,omitempty"`
+	TotalDiscs  int            `json:"total_discs,omitempty"`
 	ExternalURL string         `json:"external_urls"`
 	ISRC        string         `json:"isrc"`
 	AlbumType   string         `json:"album_type,omitempty"`
@@ -112,6 +76,9 @@ type AlbumTrackMetadata struct {
 	ArtistID    string         `json:"artist_id,omitempty"`
 	ArtistURL   string         `json:"artist_url,omitempty"`
 	ArtistsData []ArtistSimple `json:"artists_data,omitempty"`
+	Plays       string         `json:"plays,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	PreviewURL  string         `json:"preview_url,omitempty"`
 }
 
 type TrackResponse struct {
@@ -146,7 +113,9 @@ type PlaylistInfoMetadata struct {
 		Name        string `json:"name"`
 		Images      string `json:"images"`
 	} `json:"owner"`
-	Batch string `json:"batch,omitempty"`
+	Cover       string `json:"cover,omitempty"`
+	Description string `json:"description,omitempty"`
+	Batch       string `json:"batch,omitempty"`
 }
 
 type PlaylistResponsePayload struct {
@@ -159,9 +128,15 @@ type ArtistInfoMetadata struct {
 	Followers       int      `json:"followers"`
 	Genres          []string `json:"genres"`
 	Images          string   `json:"images"`
+	Header          string   `json:"header,omitempty"`
+	Gallery         []string `json:"gallery,omitempty"`
 	ExternalURL     string   `json:"external_urls"`
 	DiscographyType string   `json:"discography_type"`
 	TotalAlbums     int      `json:"total_albums"`
+	Biography       string   `json:"biography,omitempty"`
+	Verified        bool     `json:"verified,omitempty"`
+	Listeners       int      `json:"listeners,omitempty"`
+	Rank            int      `json:"rank,omitempty"`
 	Batch           string   `json:"batch,omitempty"`
 }
 
@@ -199,146 +174,173 @@ type spotifyURI struct {
 	DiscographyGroup string
 }
 
-type accessTokenResponse struct {
-	AccessToken string      `json:"access_token"`
-	ExpiresIn   interface{} `json:"expires_in"` // Can be number or string
-	TokenType   string      `json:"token_type"`
-}
-
-type image struct {
-	URL string `json:"url"`
-}
-
-type externalURL struct {
-	Spotify string `json:"spotify"`
-}
-
-type externalID struct {
-	ISRC string `json:"isrc"`
-}
-
-type artist struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type albumSimplified struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	AlbumType   string      `json:"album_type"`
-	ReleaseDate string      `json:"release_date"`
-	TotalTracks int         `json:"total_tracks"`
-	Images      []image     `json:"images"`
-	ExternalURL externalURL `json:"external_urls"`
-	Artists     []artist    `json:"artists"`
-}
-
-type trackSimplified struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	DurationMS  int         `json:"duration_ms"`
-	TrackNumber int         `json:"track_number"`
-	DiscNumber  int         `json:"disc_number"`
-	ExternalURL externalURL `json:"external_urls"`
-	Artists     []artist    `json:"artists"`
-}
-
-type trackFull struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	DurationMS  int             `json:"duration_ms"`
-	TrackNumber int             `json:"track_number"`
-	DiscNumber  int             `json:"disc_number"`
-	ExternalURL externalURL     `json:"external_urls"`
-	ExternalID  externalID      `json:"external_ids"`
-	Album       albumSimplified `json:"album"`
-	Artists     []artist        `json:"artists"`
-}
-
-type playlistTrackItem struct {
-	Track *trackFull `json:"track"`
-}
-
-type playlistResponse struct {
-	Name   string  `json:"name"`
-	Images []image `json:"images"`
-	Owner  struct {
-		DisplayName string `json:"display_name"`
-	} `json:"owner"`
-	Followers struct {
-		Total int `json:"total"`
-	} `json:"followers"`
-	Tracks struct {
-		Items []playlistTrackItem `json:"items"`
-		Next  string              `json:"next"`
-		Total int                 `json:"total"`
-	} `json:"tracks"`
-}
-
-type albumResponse struct {
-	Name        string   `json:"name"`
-	ReleaseDate string   `json:"release_date"`
-	TotalTracks int      `json:"total_tracks"`
-	Images      []image  `json:"images"`
-	Artists     []artist `json:"artists"`
-	Tracks      struct {
-		Items []trackSimplified `json:"items"`
-		Next  string            `json:"next"`
-	} `json:"tracks"`
-}
-
-type artistResponse struct {
+type apiTrackResponse struct {
+	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Followers struct {
+	Artists   string `json:"artists"`
+	Duration  string `json:"duration"`
+	Track     int    `json:"track"`
+	Disc      int    `json:"disc"`
+	Discs     int    `json:"discs"`
+	Copyright string `json:"copyright"`
+	Plays     string `json:"plays"`
+	Album     struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Released string `json:"released"`
+		Year     int    `json:"year"`
+		Tracks   int    `json:"tracks"`
+		Artists  string `json:"artists"`
+		Label    string `json:"label"`
+	} `json:"album"`
+	Cover struct {
+		Small  string `json:"small"`
+		Medium string `json:"medium"`
+		Large  string `json:"large"`
+	} `json:"cover"`
+}
+
+type apiAlbumResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Artists     string `json:"artists"`
+	Cover       string `json:"cover"`
+	ReleaseDate string `json:"releaseDate"`
+	Count       int    `json:"count"`
+	Tracks      []struct {
+		ID        string   `json:"id"`
+		Name      string   `json:"name"`
+		Artists   string   `json:"artists"`
+		ArtistIds []string `json:"artistIds"`
+		Duration  string   `json:"duration"`
+		Plays     string   `json:"plays"`
+	} `json:"tracks"`
+}
+
+type apiPlaylistResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Owner       struct {
+		Name   string `json:"name"`
+		Avatar string `json:"avatar"`
+	} `json:"owner"`
+	Cover     string `json:"cover"`
+	Count     int    `json:"count"`
+	Followers int    `json:"followers"`
+	Tracks    []struct {
+		ID          string   `json:"id"`
+		Cover       string   `json:"cover"`
+		Title       string   `json:"title"`
+		Artist      string   `json:"artist"`
+		ArtistIds   []string `json:"artistIds"`
+		Plays       string   `json:"plays"`
+		Status      string   `json:"status"`
+		Album       string   `json:"album"`
+		AlbumArtist string   `json:"albumArtist"`
+		AlbumID     string   `json:"albumId"`
+		Duration    string   `json:"duration"`
+	} `json:"tracks"`
+}
+
+type apiArtistResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Profile struct {
+		Biography string `json:"biography"`
+		Name      string `json:"name"`
+		Verified  bool   `json:"verified"`
+	} `json:"profile"`
+	Avatar string `json:"avatar"`
+	Header string `json:"header"`
+	Stats  struct {
+		Followers int `json:"followers"`
+		Listeners int `json:"listeners"`
+		Rank      int `json:"rank"`
+	} `json:"stats"`
+	Gallery     []string `json:"gallery"`
+	Discography struct {
+		All []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Cover string `json:"cover"`
+			Date  string `json:"date"`
+			Year  int    `json:"year"`
+		} `json:"all"`
 		Total int `json:"total"`
-	} `json:"followers"`
-	Genres      []string    `json:"genres"`
-	Images      []image     `json:"images"`
-	ExternalURL externalURL `json:"external_urls"`
-	Popularity  int         `json:"popularity"`
+	} `json:"discography"`
 }
 
-type playlistRaw struct {
-	Data         playlistResponse
-	BatchEnabled bool
-	BatchCount   int
+type apiSearchResponse struct {
+	Results struct {
+		Tracks []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Artists  string `json:"artists"`
+			Album    string `json:"album"`
+			Duration string `json:"duration"`
+			Cover    string `json:"cover"`
+		} `json:"tracks"`
+		Albums []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Artists string `json:"artists"`
+			Cover   string `json:"cover"`
+			Year    int    `json:"year"`
+		} `json:"albums"`
+		Artists []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Cover string `json:"cover"`
+		} `json:"artists"`
+		Playlists []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Cover string `json:"cover"`
+			Owner string `json:"owner"`
+		} `json:"playlists"`
+	} `json:"results"`
+	TotalResults struct {
+		Tracks    int `json:"tracks"`
+		Albums    int `json:"albums"`
+		Artists   int `json:"artists"`
+		Playlists int `json:"playlists"`
+	} `json:"totalResults"`
 }
 
-type albumRaw struct {
-	Data         albumResponse
-	Token        string
-	BatchEnabled bool
-	BatchCount   int
+type SearchResult struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Artists     string `json:"artists,omitempty"`
+	AlbumName   string `json:"album_name,omitempty"`
+	Images      string `json:"images"`
+	ReleaseDate string `json:"release_date,omitempty"`
+	ExternalURL string `json:"external_urls"`
+	Duration    int    `json:"duration_ms,omitempty"`
+	TotalTracks int    `json:"total_tracks,omitempty"`
+	Owner       string `json:"owner,omitempty"`
 }
 
-type discographyRaw struct {
-	Artist       artistResponse
-	Albums       []albumSimplified
-	Token        string
-	Discography  string
-	BatchEnabled bool
-	BatchCount   int
+type SearchResponse struct {
+	Tracks    []SearchResult `json:"tracks"`
+	Albums    []SearchResult `json:"albums"`
+	Artists   []SearchResult `json:"artists"`
+	Playlists []SearchResult `json:"playlists"`
 }
 
-// GetFilteredSpotifyData is a convenience wrapper that mirrors the Python module's entry point.
 func GetFilteredSpotifyData(ctx context.Context, spotifyURL string, batch bool, delay time.Duration) (interface{}, error) {
 	client := NewSpotifyMetadataClient()
 	return client.GetFilteredData(ctx, spotifyURL, batch, delay)
 }
 
-// GetFilteredData fetches, normalises, and formats Spotify payloads for the given URL.
 func (c *SpotifyMetadataClient) GetFilteredData(ctx context.Context, spotifyURL string, batch bool, delay time.Duration) (interface{}, error) {
 	parsed, err := parseSpotifyURI(spotifyURL)
 	if err != nil {
 		return nil, err
 	}
 
-	token, err := c.getAccessToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	raw, err := c.getRawSpotifyData(ctx, parsed, token, batch, delay)
+	raw, err := c.getRawSpotifyData(ctx, parsed, batch, delay)
 	if err != nil {
 		return nil, err
 	}
@@ -346,20 +348,20 @@ func (c *SpotifyMetadataClient) GetFilteredData(ctx context.Context, spotifyURL 
 	return c.processSpotifyData(ctx, raw)
 }
 
-func (c *SpotifyMetadataClient) getRawSpotifyData(ctx context.Context, parsed spotifyURI, token string, batch bool, delay time.Duration) (interface{}, error) {
+func (c *SpotifyMetadataClient) getRawSpotifyData(ctx context.Context, parsed spotifyURI, batch bool, delay time.Duration) (interface{}, error) {
 	switch parsed.Type {
 	case "playlist":
-		return c.fetchPlaylist(ctx, parsed.ID, token, batch, delay)
+		return c.fetchPlaylist(ctx, parsed.ID)
 	case "album":
-		return c.fetchAlbum(ctx, parsed.ID, token, batch, delay)
+		return c.fetchAlbum(ctx, parsed.ID)
 	case "track":
-		return c.fetchTrack(ctx, parsed.ID, token)
+		return c.fetchTrack(ctx, parsed.ID)
 	case "artist_discography":
-		return c.fetchArtistDiscography(ctx, parsed, token, batch, delay)
+		return c.fetchArtistDiscography(ctx, parsed)
 	case "artist":
-		// Automatically fetch discography for artist URLs to get full data (albums + tracks)
+
 		discographyParsed := spotifyURI{Type: "artist_discography", ID: parsed.ID, DiscographyGroup: "all"}
-		return c.fetchArtistDiscography(ctx, discographyParsed, token, batch, delay)
+		return c.fetchArtistDiscography(ctx, discographyParsed)
 	default:
 		return nil, fmt.Errorf("unsupported Spotify type: %s", parsed.Type)
 	}
@@ -367,221 +369,541 @@ func (c *SpotifyMetadataClient) getRawSpotifyData(ctx context.Context, parsed sp
 
 func (c *SpotifyMetadataClient) processSpotifyData(ctx context.Context, raw interface{}) (interface{}, error) {
 	switch payload := raw.(type) {
-	case *playlistRaw:
+	case *apiPlaylistResponse:
 		return c.formatPlaylistData(payload), nil
-	case *albumRaw:
-		return c.formatAlbumData(ctx, payload)
-	case *trackFull:
-		trackPayload := formatTrackData(payload)
-		return trackPayload, nil
-	case *discographyRaw:
+	case *apiAlbumResponse:
+		return c.formatAlbumData(payload)
+	case *apiTrackResponse:
+		return c.formatTrackData(payload), nil
+	case *apiArtistResponse:
 		return c.formatArtistDiscographyData(ctx, payload)
-	case *artistResponse:
-		formatted := formatArtistData(payload)
-		return formatted, nil
 	default:
 		return nil, errors.New("unknown raw payload type")
 	}
 }
 
-func (c *SpotifyMetadataClient) fetchPlaylist(ctx context.Context, playlistID, token string, batch bool, delay time.Duration) (*playlistRaw, error) {
-	var data playlistResponse
-	if err := c.getJSON(ctx, fmt.Sprintf(playlistBaseURL, playlistID), token, &data); err != nil {
-		return nil, err
+func (c *SpotifyMetadataClient) fetchTrack(ctx context.Context, trackID string) (*apiTrackResponse, error) {
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
 
-	tracksURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks?limit=100", playlistID)
-	var items []playlistTrackItem
-	batchDelay := time.Duration(0)
-	if batch {
-		batchDelay = delay
+	payload := map[string]interface{}{
+		"variables": map[string]interface{}{
+			"uri": fmt.Sprintf("spotify:track:%s", trackID),
+		},
+		"operationName": "getTrack",
+		"extensions": map[string]interface{}{
+			"persistedQuery": map[string]interface{}{
+				"version":    1,
+				"sha256Hash": "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294",
+			},
+		},
 	}
-	batches, err := fetchPaging(ctx, c, tracksURL, token, batchDelay, &items)
+
+	data, err := client.Query(payload)
 	if err != nil {
-		return nil, err
-	}
-	if len(items) > 0 {
-		data.Tracks.Items = items
+		return nil, fmt.Errorf("failed to query track: %w", err)
 	}
 
-	return &playlistRaw{
-		Data:         data,
-		BatchEnabled: batch,
-		BatchCount:   batches,
-	}, nil
-}
+	var albumFetchData map[string]interface{}
+	if trackData, ok := data["data"].(map[string]interface{}); ok {
+		if trackUnion, ok := trackData["trackUnion"].(map[string]interface{}); ok {
+			if albumOfTrack, ok := trackUnion["albumOfTrack"].(map[string]interface{}); ok {
+				albumID := ""
+				if id, ok := albumOfTrack["id"].(string); ok && id != "" {
+					albumID = id
+				} else if uri, ok := albumOfTrack["uri"].(string); ok && uri != "" {
+					if strings.Contains(uri, ":") {
+						parts := strings.Split(uri, ":")
+						if len(parts) > 0 {
+							albumID = parts[len(parts)-1]
+						}
+					}
+				}
 
-func (c *SpotifyMetadataClient) fetchAlbum(ctx context.Context, albumID, token string, batch bool, delay time.Duration) (*albumRaw, error) {
-	var data albumResponse
-	if err := c.getJSON(ctx, fmt.Sprintf(albumBaseURL, albumID), token, &data); err != nil {
-		return nil, err
+				if albumID != "" {
+					albumPayload := map[string]interface{}{
+						"variables": map[string]interface{}{
+							"uri":    fmt.Sprintf("spotify:album:%s", albumID),
+							"locale": "",
+							"offset": 0,
+							"limit":  1,
+						},
+						"operationName": "getAlbum",
+						"extensions": map[string]interface{}{
+							"persistedQuery": map[string]interface{}{
+								"version":    1,
+								"sha256Hash": "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10",
+							},
+						},
+					}
+					albumFetchData, _ = client.Query(albumPayload)
+				}
+			}
+		}
 	}
 
-	tracksURL := fmt.Sprintf("%s/tracks?limit=50", fmt.Sprintf(albumBaseURL, albumID))
-	var items []trackSimplified
-	batchDelay := time.Duration(0)
-	if batch {
-		batchDelay = delay
-	}
-	batches, err := fetchPaging(ctx, c, tracksURL, token, batchDelay, &items)
+	filteredData := FilterTrack(data, albumFetchData)
+
+	jsonData, err := json.Marshal(filteredData)
 	if err != nil {
-		return nil, err
-	}
-	if len(items) > 0 {
-		data.Tracks.Items = items
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
 	}
 
-	return &albumRaw{
-		Data:         data,
-		Token:        token,
-		BatchEnabled: batch,
-		BatchCount:   batches,
-	}, nil
+	var result apiTrackResponse
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiTrackResponse: %w", err)
+	}
+
+	return &result, nil
 }
 
-func (c *SpotifyMetadataClient) fetchTrack(ctx context.Context, trackID, token string) (*trackFull, error) {
-	var data trackFull
-	if err := c.getJSON(ctx, fmt.Sprintf(trackBaseURL, trackID), token, &data); err != nil {
-		return nil, err
-	}
-	return &data, nil
-}
-
-func (c *SpotifyMetadataClient) fetchArtistDiscography(ctx context.Context, parsed spotifyURI, token string, batch bool, delay time.Duration) (*discographyRaw, error) {
-	var artistData artistResponse
-	if err := c.getJSON(ctx, fmt.Sprintf(artistBaseURL, parsed.ID), token, &artistData); err != nil {
-		return nil, err
+func (c *SpotifyMetadataClient) fetchAlbum(ctx context.Context, albumID string) (*apiAlbumResponse, error) {
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
 
-	includeGroups := parsed.DiscographyGroup
-	if includeGroups == "" || includeGroups == "all" {
-		includeGroups = "album,single,compilation"
+	allItems := []interface{}{}
+	offset := 0
+	limit := 1000
+	var totalCount interface{}
+	var data map[string]interface{}
+
+	for {
+		payload := map[string]interface{}{
+			"variables": map[string]interface{}{
+				"uri":    fmt.Sprintf("spotify:album:%s", albumID),
+				"locale": "",
+				"offset": offset,
+				"limit":  limit,
+			},
+			"operationName": "getAlbum",
+			"extensions": map[string]interface{}{
+				"persistedQuery": map[string]interface{}{
+					"version":    1,
+					"sha256Hash": "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10",
+				},
+			},
+		}
+
+		response, err := client.Query(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query album: %w", err)
+		}
+
+		if data == nil {
+			data = response
+		}
+
+		albumData := getMap(getMap(response, "data"), "albumUnion")
+		tracksData := getMap(albumData, "tracksV2")
+		items := getSlice(tracksData, "items")
+
+		if items == nil || len(items) == 0 {
+			break
+		}
+
+		allItems = append(allItems, items...)
+
+		if totalCount == nil {
+			if tc, ok := tracksData["totalCount"].(float64); ok {
+				totalCount = int(tc)
+			} else {
+				totalCount = len(items)
+			}
+		}
+
+		tcInt := 0
+		if tc, ok := totalCount.(int); ok {
+			tcInt = tc
+		} else if tc, ok := totalCount.(float64); ok {
+			tcInt = int(tc)
+		}
+
+		if len(allItems) >= tcInt || len(items) < limit {
+			break
+		}
+
+		offset += limit
 	}
 
-	albumsURL := fmt.Sprintf("%s?include_groups=%s&limit=50", fmt.Sprintf(artistAlbumsBaseURL, parsed.ID), includeGroups)
-	var albums []albumSimplified
-	batchDelay := time.Duration(0)
-	if batch {
-		batchDelay = delay
+	if data != nil && len(allItems) > 0 {
+		dataMap := getMap(data, "data")
+		albumUnion := getMap(dataMap, "albumUnion")
+		tracksV2 := getMap(albumUnion, "tracksV2")
+		tracksV2["items"] = allItems
+		tracksV2["totalCount"] = len(allItems)
 	}
-	batches, err := fetchPaging(ctx, c, albumsURL, token, batchDelay, &albums)
+
+	filteredData := FilterAlbum(data)
+
+	jsonData, err := json.Marshal(filteredData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
 	}
 
-	return &discographyRaw{
-		Artist:       artistData,
-		Albums:       albums,
-		Token:        token,
-		Discography:  parsed.DiscographyGroup,
-		BatchEnabled: batch,
-		BatchCount:   batches,
-	}, nil
+	var result apiAlbumResponse
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiAlbumResponse: %w", err)
+	}
+
+	return &result, nil
 }
 
-func (c *SpotifyMetadataClient) fetchArtist(ctx context.Context, artistID, token string) (*artistResponse, error) {
-	var artistData artistResponse
-	if err := c.getJSON(ctx, fmt.Sprintf(artistBaseURL, artistID), token, &artistData); err != nil {
-		return nil, err
+func (c *SpotifyMetadataClient) fetchPlaylist(ctx context.Context, playlistID string) (*apiPlaylistResponse, error) {
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
-	return &artistData, nil
+
+	allItems := []interface{}{}
+	offset := 0
+	limit := 1000
+	var totalCount interface{}
+	var data map[string]interface{}
+
+	for {
+		payload := map[string]interface{}{
+			"variables": map[string]interface{}{
+				"uri":                       fmt.Sprintf("spotify:playlist:%s", playlistID),
+				"offset":                    offset,
+				"limit":                     limit,
+				"enableWatchFeedEntrypoint": false,
+			},
+			"operationName": "fetchPlaylist",
+			"extensions": map[string]interface{}{
+				"persistedQuery": map[string]interface{}{
+					"version":    1,
+					"sha256Hash": "bb67e0af06e8d6f52b531f97468ee4acd44cd0f82b988e15c2ea47b1148efc77",
+				},
+			},
+		}
+
+		response, err := client.Query(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query playlist: %w", err)
+		}
+
+		if data == nil {
+			data = response
+		}
+
+		playlistData := getMap(getMap(response, "data"), "playlistV2")
+		content := getMap(playlistData, "content")
+		items := getSlice(content, "items")
+
+		if items == nil || len(items) == 0 {
+			break
+		}
+
+		allItems = append(allItems, items...)
+
+		if totalCount == nil {
+			if tc, ok := content["totalCount"].(float64); ok {
+				totalCount = int(tc)
+			} else {
+				totalCount = len(items)
+			}
+		}
+
+		tcInt := 0
+		if tc, ok := totalCount.(int); ok {
+			tcInt = tc
+		} else if tc, ok := totalCount.(float64); ok {
+			tcInt = int(tc)
+		}
+
+		if len(allItems) >= tcInt || len(items) < limit {
+			break
+		}
+
+		offset += limit
+	}
+
+	if data != nil && len(allItems) > 0 {
+		dataMap := getMap(data, "data")
+		playlistV2 := getMap(dataMap, "playlistV2")
+		content := getMap(playlistV2, "content")
+		content["items"] = allItems
+		content["totalCount"] = len(allItems)
+	}
+
+	filteredData := FilterPlaylist(data)
+
+	jsonData, err := json.Marshal(filteredData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
+	}
+
+	var result apiPlaylistResponse
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiPlaylistResponse: %w", err)
+	}
+
+	return &result, nil
 }
 
-func (c *SpotifyMetadataClient) formatPlaylistData(raw *playlistRaw) PlaylistResponsePayload {
-	var info PlaylistInfoMetadata
-	info.Tracks.Total = raw.Data.Tracks.Total
-	info.Followers.Total = raw.Data.Followers.Total
-	info.Owner.DisplayName = raw.Data.Owner.DisplayName
-	info.Owner.Name = raw.Data.Name
-	info.Owner.Images = firstImageURL(raw.Data.Images)
-	if raw.BatchEnabled {
-		info.Batch = strconv.Itoa(maxInt(1, raw.BatchCount))
+func (c *SpotifyMetadataClient) fetchArtistDiscography(ctx context.Context, parsed spotifyURI) (*apiArtistResponse, error) {
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
 
-	tracks := make([]AlbumTrackMetadata, 0, len(raw.Data.Tracks.Items))
-	for _, item := range raw.Data.Tracks.Items {
-		if item.Track == nil {
+	overviewPayload := map[string]interface{}{
+		"variables": map[string]interface{}{
+			"uri":    fmt.Sprintf("spotify:artist:%s", parsed.ID),
+			"locale": "",
+		},
+		"operationName": "queryArtistOverview",
+		"extensions": map[string]interface{}{
+			"persistedQuery": map[string]interface{}{
+				"version":    1,
+				"sha256Hash": "446130b4a0aa6522a686aafccddb0ae849165b5e0436fd802f96e0243617b5d8",
+			},
+		},
+	}
+
+	data, err := client.Query(overviewPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query artist overview: %w", err)
+	}
+
+	allDiscographyItems := []interface{}{}
+	offset := 0
+	limit := 50
+	var totalCount interface{}
+
+	for {
+		discographyPayload := map[string]interface{}{
+			"variables": map[string]interface{}{
+				"uri":    fmt.Sprintf("spotify:artist:%s", parsed.ID),
+				"offset": offset,
+				"limit":  limit,
+				"order":  "DATE_DESC",
+			},
+			"operationName": "queryArtistDiscographyAll",
+			"extensions": map[string]interface{}{
+				"persistedQuery": map[string]interface{}{
+					"version":    1,
+					"sha256Hash": "5e07d323febb57b4a56a42abbf781490e58764aa45feb6e3dc0591564fc56599",
+				},
+			},
+		}
+
+		response, err := client.Query(discographyPayload)
+		if err != nil {
+			break
+		}
+
+		discographyData := getMap(getMap(getMap(response, "data"), "artistUnion"), "discography")
+		allData := getMap(discographyData, "all")
+		items := getSlice(allData, "items")
+
+		if items == nil || len(items) == 0 {
+			break
+		}
+
+		allDiscographyItems = append(allDiscographyItems, items...)
+
+		if totalCount == nil {
+			if tc, ok := allData["totalCount"].(float64); ok {
+				totalCount = int(tc)
+			} else {
+				totalCount = len(items)
+			}
+		}
+
+		tcInt := 0
+		if tc, ok := totalCount.(int); ok {
+			tcInt = tc
+		} else if tc, ok := totalCount.(float64); ok {
+			tcInt = int(tc)
+		}
+
+		if len(allDiscographyItems) >= tcInt || len(items) < limit {
+			break
+		}
+
+		offset += limit
+	}
+
+	albumsItems := []interface{}{}
+	compilationsItems := []interface{}{}
+	singlesItems := []interface{}{}
+
+	for _, item := range allDiscographyItems {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
 			continue
 		}
-		var artistID, artistURL string
-		if len(item.Track.Artists) > 0 {
-			artistID = item.Track.Artists[0].ID
-			artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", item.Track.Artists[0].ID)
+
+		releases := getMap(itemMap, "releases")
+		releaseItems := getSlice(releases, "items")
+		var release map[string]interface{}
+		if len(releaseItems) > 0 {
+			if r, ok := releaseItems[0].(map[string]interface{}); ok {
+				release = r
+			}
 		}
-		artistsData := make([]ArtistSimple, 0, len(item.Track.Artists))
-		for _, a := range item.Track.Artists {
-			artistsData = append(artistsData, ArtistSimple{
-				ID:          a.ID,
-				Name:        a.Name,
-				ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", a.ID),
-			})
+
+		if release != nil {
+			releaseType := getString(release, "type")
+			switch releaseType {
+			case "ALBUM":
+				albumsItems = append(albumsItems, item)
+			case "COMPILATION":
+				compilationsItems = append(compilationsItems, item)
+			case "SINGLE":
+				singlesItems = append(singlesItems, item)
+			default:
+				singlesItems = append(singlesItems, item)
+			}
 		}
-		tracks = append(tracks, AlbumTrackMetadata{
-			SpotifyID:   item.Track.ID,
-			Artists:     joinArtists(item.Track.Artists),
-			Name:        item.Track.Name,
-			AlbumName:   item.Track.Album.Name,
-			AlbumArtist: joinArtists(item.Track.Album.Artists),
-			DurationMS:  item.Track.DurationMS,
-			Images:      firstNonEmpty(firstImageURL(item.Track.Album.Images), info.Owner.Images),
-			ReleaseDate: item.Track.Album.ReleaseDate,
-			TrackNumber: item.Track.TrackNumber,
-			TotalTracks: item.Track.Album.TotalTracks,
-			DiscNumber:  item.Track.DiscNumber,
-			ExternalURL: item.Track.ExternalURL.Spotify,
-			ISRC:        item.Track.ExternalID.ISRC,
-			AlbumID:     item.Track.Album.ID,
-			AlbumURL:    item.Track.Album.ExternalURL.Spotify,
-			ArtistID:    artistID,
-			ArtistURL:   artistURL,
-			ArtistsData: artistsData,
-		})
 	}
 
-	return PlaylistResponsePayload{
-		PlaylistInfo: info,
-		TrackList:    tracks,
+	if len(allDiscographyItems) > 0 {
+		dataMap := getMap(data, "data")
+		artistUnion := getMap(dataMap, "artistUnion")
+		discographyMap := getMap(artistUnion, "discography")
+
+		if len(albumsItems) > 0 {
+			discographyMap["albums"] = map[string]interface{}{
+				"items":      albumsItems,
+				"totalCount": len(albumsItems),
+			}
+		}
+		if len(compilationsItems) > 0 {
+			discographyMap["compilations"] = map[string]interface{}{
+				"items":      compilationsItems,
+				"totalCount": len(compilationsItems),
+			}
+		}
+		if len(singlesItems) > 0 {
+			discographyMap["singles"] = map[string]interface{}{
+				"items":      singlesItems,
+				"totalCount": len(singlesItems),
+			}
+		}
+
+		discographyMap["all"] = map[string]interface{}{
+			"items":      allDiscographyItems,
+			"totalCount": len(allDiscographyItems),
+		}
+	}
+
+	filteredData := FilterArtist(data)
+
+	jsonData, err := json.Marshal(filteredData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
+	}
+
+	var result apiArtistResponse
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiArtistResponse: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *SpotifyMetadataClient) formatTrackData(raw *apiTrackResponse) TrackResponse {
+	durationMS := parseDuration(raw.Duration)
+
+	externalURL := fmt.Sprintf("https://open.spotify.com/track/%s", raw.ID)
+
+	coverURL := raw.Cover.Small
+	if coverURL == "" {
+		coverURL = raw.Cover.Medium
+	}
+	if coverURL == "" {
+		coverURL = raw.Cover.Large
+	}
+
+	releaseDate := raw.Album.Released
+	if releaseDate == "" && raw.Album.Year > 0 {
+		releaseDate = fmt.Sprintf("%d", raw.Album.Year)
+	}
+	trackMetadata := TrackMetadata{
+		SpotifyID:   raw.ID,
+		Artists:     raw.Artists,
+		Name:        raw.Name,
+		AlbumName:   raw.Album.Name,
+		AlbumArtist: raw.Album.Artists,
+		DurationMS:  durationMS,
+		Images:      coverURL,
+		ReleaseDate: releaseDate,
+		TrackNumber: raw.Track,
+		TotalTracks: raw.Album.Tracks,
+		DiscNumber:  raw.Disc,
+		TotalDiscs:  raw.Discs,
+		ExternalURL: externalURL,
+		ISRC:        raw.ID,
+		Copyright:   raw.Copyright,
+		Publisher:   raw.Album.Label,
+		Plays:       raw.Plays,
+	}
+
+	return TrackResponse{
+		Track: trackMetadata,
 	}
 }
 
-func (c *SpotifyMetadataClient) formatAlbumData(ctx context.Context, raw *albumRaw) (*AlbumResponsePayload, error) {
-	albumImage := firstImageURL(raw.Data.Images)
+func (c *SpotifyMetadataClient) formatAlbumData(raw *apiAlbumResponse) (*AlbumResponsePayload, error) {
 	var artistID, artistURL string
-	if len(raw.Data.Artists) > 0 {
-		artistID = raw.Data.Artists[0].ID
-		artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", raw.Data.Artists[0].ID)
-	}
+
 	info := AlbumInfoMetadata{
-		TotalTracks: raw.Data.TotalTracks,
-		Name:        raw.Data.Name,
-		ReleaseDate: raw.Data.ReleaseDate,
-		Artists:     joinArtists(raw.Data.Artists),
-		Images:      albumImage,
+		TotalTracks: raw.Count,
+		Name:        raw.Name,
+		ReleaseDate: raw.ReleaseDate,
+		Artists:     raw.Artists,
+		Images:      raw.Cover,
 		ArtistID:    artistID,
 		ArtistURL:   artistURL,
 	}
-	if raw.BatchEnabled {
-		info.Batch = strconv.Itoa(maxInt(1, raw.BatchCount))
-	}
 
-	tracks := make([]AlbumTrackMetadata, 0, len(raw.Data.Tracks.Items))
-	cache := make(map[string]string)
-	for _, item := range raw.Data.Tracks.Items {
-		isrc := c.fetchTrackISRC(ctx, item.ID, raw.Token, cache)
+	tracks := make([]AlbumTrackMetadata, 0, len(raw.Tracks))
+	for idx, item := range raw.Tracks {
+		durationMS := parseDuration(item.Duration)
+		trackNumber := idx + 1
+
+		var artistID, artistURL string
+		if len(item.ArtistIds) > 0 {
+			artistID = item.ArtistIds[0]
+			artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", artistID)
+		}
+
+		artistsData := make([]ArtistSimple, 0, len(item.ArtistIds))
+		for _, id := range item.ArtistIds {
+			artistsData = append(artistsData, ArtistSimple{
+				ID:          id,
+				Name:        "",
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", id),
+			})
+		}
+
 		tracks = append(tracks, AlbumTrackMetadata{
 			SpotifyID:   item.ID,
-			Artists:     joinArtists(item.Artists),
+			Artists:     item.Artists,
 			Name:        item.Name,
-			AlbumName:   raw.Data.Name,
-			AlbumArtist: joinArtists(raw.Data.Artists),
-			DurationMS:  item.DurationMS,
-			Images:      albumImage,
-			ReleaseDate: raw.Data.ReleaseDate,
-			TrackNumber: item.TrackNumber,
-			TotalTracks: raw.Data.TotalTracks,
-			DiscNumber:  item.DiscNumber,
-			ExternalURL: item.ExternalURL.Spotify,
-			ISRC:        isrc,
+			AlbumName:   raw.Name,
+			AlbumArtist: raw.Artists,
+			DurationMS:  durationMS,
+			Images:      raw.Cover,
+			ReleaseDate: raw.ReleaseDate,
+			TrackNumber: trackNumber,
+			TotalTracks: raw.Count,
+			DiscNumber:  1,
+			TotalDiscs:  0,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/track/%s", item.ID),
+			ISRC:        item.ID,
+			AlbumID:     raw.ID,
+			AlbumURL:    fmt.Sprintf("https://open.spotify.com/album/%s", raw.ID),
+			ArtistID:    artistID,
+			ArtistURL:   artistURL,
+			ArtistsData: artistsData,
+			Plays:       item.Plays,
 		})
 	}
 
@@ -591,84 +913,159 @@ func (c *SpotifyMetadataClient) formatAlbumData(ctx context.Context, raw *albumR
 	}, nil
 }
 
-func (c *SpotifyMetadataClient) formatArtistDiscographyData(ctx context.Context, raw *discographyRaw) (*ArtistDiscographyPayload, error) {
-	artistImage := firstImageURL(raw.Artist.Images)
-	discType := raw.Discography
-	if discType == "" {
-		discType = "all"
+func (c *SpotifyMetadataClient) formatPlaylistData(raw *apiPlaylistResponse) PlaylistResponsePayload {
+	var info PlaylistInfoMetadata
+	info.Tracks.Total = raw.Count
+	info.Followers.Total = raw.Followers
+	info.Owner.DisplayName = raw.Owner.Name
+	info.Owner.Name = raw.Name
+	info.Owner.Images = raw.Owner.Avatar
+	info.Cover = raw.Cover
+	info.Description = raw.Description
+
+	tracks := make([]AlbumTrackMetadata, 0, len(raw.Tracks))
+	for _, item := range raw.Tracks {
+		durationMS := parseDuration(item.Duration)
+
+		var artistID, artistURL string
+		if len(item.ArtistIds) > 0 {
+			artistID = item.ArtistIds[0]
+			artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", artistID)
+		}
+
+		artistsData := make([]ArtistSimple, 0, len(item.ArtistIds))
+		for _, id := range item.ArtistIds {
+			artistsData = append(artistsData, ArtistSimple{
+				ID:          id,
+				Name:        "",
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", id),
+			})
+		}
+
+		tracks = append(tracks, AlbumTrackMetadata{
+			SpotifyID:   item.ID,
+			Artists:     item.Artist,
+			Name:        item.Title,
+			AlbumName:   item.Album,
+			AlbumArtist: item.AlbumArtist,
+			DurationMS:  durationMS,
+			Images:      item.Cover,
+			ReleaseDate: "",
+			TrackNumber: 0,
+			TotalTracks: 0,
+			DiscNumber:  1,
+			TotalDiscs:  0,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/track/%s", item.ID),
+			ISRC:        item.ID,
+			AlbumID:     item.AlbumID,
+			AlbumURL:    fmt.Sprintf("https://open.spotify.com/album/%s", item.AlbumID),
+			ArtistID:    artistID,
+			ArtistURL:   artistURL,
+			ArtistsData: artistsData,
+			Plays:       item.Plays,
+			Status:      item.Status,
+		})
 	}
+
+	return PlaylistResponsePayload{
+		PlaylistInfo: info,
+		TrackList:    tracks,
+	}
+}
+
+func (c *SpotifyMetadataClient) formatArtistDiscographyData(ctx context.Context, raw *apiArtistResponse) (*ArtistDiscographyPayload, error) {
+	discType := "all"
 
 	info := ArtistInfoMetadata{
-		Name:            raw.Artist.Name,
-		Followers:       raw.Artist.Followers.Total,
-		Genres:          raw.Artist.Genres,
-		Images:          artistImage,
-		ExternalURL:     raw.Artist.ExternalURL.Spotify,
+		Name:            raw.Name,
+		Followers:       raw.Stats.Followers,
+		Genres:          []string{},
+		Images:          raw.Avatar,
+		Header:          raw.Header,
+		Gallery:         raw.Gallery,
+		ExternalURL:     fmt.Sprintf("https://open.spotify.com/artist/%s", raw.ID),
 		DiscographyType: discType,
-		TotalAlbums:     len(raw.Albums),
-	}
-	if raw.BatchEnabled {
-		info.Batch = strconv.Itoa(maxInt(1, raw.BatchCount))
+		TotalAlbums:     raw.Discography.Total,
+		Biography:       raw.Profile.Biography,
+		Verified:        raw.Profile.Verified,
+		Listeners:       raw.Stats.Listeners,
+		Rank:            raw.Stats.Rank,
 	}
 
-	albumList := make([]DiscographyAlbumMetadata, 0, len(raw.Albums))
+	albumList := make([]DiscographyAlbumMetadata, 0, len(raw.Discography.All))
 	allTracks := make([]AlbumTrackMetadata, 0)
-	isrcCache := make(map[string]string)
 
-	for _, alb := range raw.Albums {
-		albumImage := firstImageURL(alb.Images)
+	for _, alb := range raw.Discography.All {
+
+		select {
+		case <-ctx.Done():
+
+			return &ArtistDiscographyPayload{
+				ArtistInfo: info,
+				AlbumList:  albumList,
+				TrackList:  allTracks,
+			}, ctx.Err()
+		default:
+
+		}
+
 		albumList = append(albumList, DiscographyAlbumMetadata{
 			ID:          alb.ID,
 			Name:        alb.Name,
-			AlbumType:   alb.AlbumType,
-			ReleaseDate: alb.ReleaseDate,
-			TotalTracks: alb.TotalTracks,
-			Artists:     joinArtists(alb.Artists),
-			Images:      albumImage,
-			ExternalURL: alb.ExternalURL.Spotify,
+			AlbumType:   "album",
+			ReleaseDate: alb.Date,
+			TotalTracks: 0,
+			Artists:     raw.Name,
+			Images:      alb.Cover,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/album/%s", alb.ID),
 		})
 
-		tracks, err := c.collectAlbumTracks(ctx, alb.ID, raw.Token)
+		albumData, err := c.fetchAlbum(ctx, alb.ID)
 		if err != nil {
 			fmt.Printf("Error getting tracks for album %s: %v\n", alb.Name, err)
 			continue
 		}
 
-		for _, tr := range tracks {
-			isrc := c.fetchTrackISRC(ctx, tr.ID, raw.Token, isrcCache)
+		for idx, tr := range albumData.Tracks {
+			durationMS := parseDuration(tr.Duration)
+			trackNumber := idx + 1
+
 			var artistID, artistURL string
-			if len(tr.Artists) > 0 {
-				artistID = tr.Artists[0].ID
-				artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", tr.Artists[0].ID)
+			if len(tr.ArtistIds) > 0 {
+				artistID = tr.ArtistIds[0]
+				artistURL = fmt.Sprintf("https://open.spotify.com/artist/%s", artistID)
 			}
-			artistsData := make([]ArtistSimple, 0, len(tr.Artists))
-			for _, a := range tr.Artists {
+
+			artistsData := make([]ArtistSimple, 0, len(tr.ArtistIds))
+			for _, id := range tr.ArtistIds {
 				artistsData = append(artistsData, ArtistSimple{
-					ID:          a.ID,
-					Name:        a.Name,
-					ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", a.ID),
+					ID:          id,
+					Name:        "",
+					ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", id),
 				})
 			}
+
 			allTracks = append(allTracks, AlbumTrackMetadata{
 				SpotifyID:   tr.ID,
-				Artists:     joinArtists(tr.Artists),
+				Artists:     tr.Artists,
 				Name:        tr.Name,
-				AlbumName:   alb.Name,
-				AlbumArtist: joinArtists(alb.Artists),
-				AlbumType:   alb.AlbumType,
-				DurationMS:  tr.DurationMS,
-				Images:      albumImage,
-				ReleaseDate: alb.ReleaseDate,
-				TrackNumber: tr.TrackNumber,
-				TotalTracks: alb.TotalTracks,
-				DiscNumber:  tr.DiscNumber,
-				ExternalURL: tr.ExternalURL.Spotify,
-				ISRC:        isrc,
+				AlbumName:   albumData.Name,
+				AlbumArtist: albumData.Artists,
+				AlbumType:   "album",
+				DurationMS:  durationMS,
+				Images:      albumData.Cover,
+				ReleaseDate: albumData.ReleaseDate,
+				TrackNumber: trackNumber,
+				TotalTracks: albumData.Count,
+				DiscNumber:  1,
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/track/%s", tr.ID),
+				ISRC:        tr.ID,
 				AlbumID:     alb.ID,
-				AlbumURL:    alb.ExternalURL.Spotify,
+				AlbumURL:    fmt.Sprintf("https://open.spotify.com/album/%s", alb.ID),
 				ArtistID:    artistID,
 				ArtistURL:   artistURL,
 				ArtistsData: artistsData,
+				Plays:       tr.Plays,
 			})
 		}
 	}
@@ -680,242 +1077,23 @@ func (c *SpotifyMetadataClient) formatArtistDiscographyData(ctx context.Context,
 	}, nil
 }
 
-func formatArtistData(raw *artistResponse) ArtistResponsePayload {
-	if raw == nil {
-		return ArtistResponsePayload{}
-	}
-	payload := ArtistResponsePayload{}
-	payload.Artist.Name = raw.Name
-	payload.Artist.Followers = raw.Followers.Total
-	payload.Artist.Genres = raw.Genres
-	payload.Artist.Images = firstImageURL(raw.Images)
-	payload.Artist.ExternalURL = raw.ExternalURL.Spotify
-	payload.Artist.Popularity = raw.Popularity
-	return payload
-}
-
-func formatTrackData(raw *trackFull) TrackResponse {
-	if raw == nil {
-		return TrackResponse{}
-	}
-	return TrackResponse{
-		Track: TrackMetadata{
-			SpotifyID:   raw.ID,
-			Artists:     joinArtists(raw.Artists),
-			Name:        raw.Name,
-			AlbumName:   raw.Album.Name,
-			AlbumArtist: joinArtists(raw.Album.Artists),
-			DurationMS:  raw.DurationMS,
-			Images:      firstImageURL(raw.Album.Images),
-			ReleaseDate: raw.Album.ReleaseDate,
-			TrackNumber: raw.TrackNumber,
-			TotalTracks: raw.Album.TotalTracks,
-			DiscNumber:  raw.DiscNumber,
-			ExternalURL: raw.ExternalURL.Spotify,
-			ISRC:        raw.ExternalID.ISRC,
-		},
-	}
-}
-
-func (c *SpotifyMetadataClient) collectAlbumTracks(ctx context.Context, albumID, token string) ([]trackSimplified, error) {
-	url := fmt.Sprintf("%s/tracks?limit=50", fmt.Sprintf(albumBaseURL, albumID))
-	var tracks []trackSimplified
-	_, err := fetchPaging(ctx, c, url, token, 0, &tracks)
-	if err != nil {
-		return nil, err
-	}
-	return tracks, nil
-}
-
-func (c *SpotifyMetadataClient) fetchTrackISRC(ctx context.Context, trackID, token string, cache map[string]string) string {
-	if trackID == "" || token == "" {
-		return ""
-	}
-	if isrc, ok := cache[trackID]; ok {
-		return isrc
+func parseDuration(durationStr string) int {
+	if durationStr == "" {
+		return 0
 	}
 
-	var data struct {
-		ExternalID externalID `json:"external_ids"`
-	}
-	if err := c.getJSON(ctx, fmt.Sprintf(trackBaseURL, trackID), token, &data); err != nil {
-		return ""
-	}
-	cache[trackID] = data.ExternalID.ISRC
-	return cache[trackID]
-}
-
-func fetchPaging[T any](ctx context.Context, client *SpotifyMetadataClient, nextURL, token string, delay time.Duration, dest *[]T) (int, error) {
-	batches := 0
-	for nextURL != "" {
-		select {
-		case <-ctx.Done():
-			return batches, ctx.Err()
-		default:
-		}
-
-		var page struct {
-			Items []T    `json:"items"`
-			Next  string `json:"next"`
-		}
-		if err := client.getJSON(ctx, nextURL, token, &page); err != nil {
-			return batches, err
-		}
-
-		*dest = append(*dest, page.Items...)
-		nextURL = stripLocaleParam(page.Next)
-		batches++
-
-		if nextURL != "" && delay > 0 {
-			if err := sleepWithContext(ctx, delay); err != nil {
-				return batches, err
-			}
-		}
-	}
-	return batches, nil
-}
-
-func (c *SpotifyMetadataClient) getJSON(ctx context.Context, endpoint, token string, dst interface{}) error {
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return err
-		}
-		headers := c.baseHeaders()
-		for key, values := range headers {
-			for _, v := range values {
-				req.Header.Add(key, v)
-			}
-		}
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			if err := sleepWithContext(ctx, parseRetryAfter(resp.Header.Get("Retry-After"))); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("spotify API returned status %d for %s", resp.StatusCode, endpoint)
-		}
-
-		return json.Unmarshal(body, dst)
-	}
-}
-
-func (c *SpotifyMetadataClient) baseHeaders() http.Header {
-	h := http.Header{}
-	h.Set("User-Agent", c.userAgent)
-	h.Set("Accept", "application/json")
-	h.Set("Accept-Language", "en-US,en;q=0.9")
-	h.Set("sec-ch-ua-platform", "\"Windows\"")
-	h.Set("sec-fetch-dest", "empty")
-	h.Set("sec-fetch-mode", "cors")
-	h.Set("sec-fetch-site", "same-origin")
-	h.Set("Referer", "https://open.spotify.com/")
-	h.Set("Origin", "https://open.spotify.com")
-	return h
-}
-
-func (c *SpotifyMetadataClient) randomUserAgent() string {
-	c.rngMu.Lock()
-	defer c.rngMu.Unlock()
-
-	macMajor := c.randRange(11, 15)
-	macMinor := c.randRange(4, 9)
-	webkitMajor := c.randRange(530, 537)
-	webkitMinor := c.randRange(30, 37)
-	chromeMajor := c.randRange(80, 105)
-	chromeBuild := c.randRange(3000, 4500)
-	chromePatch := c.randRange(60, 125)
-	safariMajor := c.randRange(530, 537)
-	safariMinor := c.randRange(30, 36)
-
-	return fmt.Sprintf(
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_%d_%d) AppleWebKit/%d.%d (KHTML, like Gecko) Chrome/%d.0.%d.%d Safari/%d.%d",
-		macMajor,
-		macMinor,
-		webkitMajor,
-		webkitMinor,
-		chromeMajor,
-		chromeBuild,
-		chromePatch,
-		safariMajor,
-		safariMinor,
-	)
-}
-
-func (c *SpotifyMetadataClient) randRange(min, max int) int {
-	if max <= min {
-		return min
-	}
-	return c.rng.Intn(max-min) + min
-}
-
-func (c *SpotifyMetadataClient) getAccessToken(ctx context.Context) (string, error) {
-	// Return cached token if still valid
-	if c.cachedToken != "" && time.Now().Before(c.tokenExpiresAt) {
-		return c.cachedToken, nil
+	parts := strings.Split(durationStr, ":")
+	if len(parts) != 2 {
+		return 0
 	}
 
-	// Prepare request body for Client Credentials Flow
-	data := url.Values{}
-	data.Set("grant_type", "client_credentials")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, spotifyTokenURL, strings.NewReader(data.Encode()))
-	if err != nil {
-		return "", err
+	minutes, err1 := strconv.Atoi(parts[0])
+	seconds, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0
 	}
 
-	// Set Basic Auth header
-	req.SetBasicAuth(c.clientID, c.clientSecret)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get access token. Status code: %d, Response: %s", resp.StatusCode, string(body))
-	}
-
-	var token accessTokenResponse
-	if err := json.Unmarshal(body, &token); err != nil {
-		return "", err
-	}
-
-	if token.AccessToken == "" {
-		return "", errors.New("failed to get access token: empty token received")
-	}
-
-	// Cache the token
-	c.cachedToken = token.AccessToken
-	// Official API returns expires_in in seconds
-	if expiresIn, ok := token.ExpiresIn.(float64); ok {
-		c.tokenExpiresAt = time.Now().Add(time.Duration(expiresIn-60) * time.Second) // Refresh 60 seconds before expiry
-	}
-
-	return token.AccessToken, nil
+	return (minutes*60 + seconds) * 1000
 }
 
 func parseSpotifyURI(input string) (spotifyURI, error) {
@@ -937,26 +1115,6 @@ func parseSpotifyURI(input string) (spotifyURI, error) {
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
 		return spotifyURI{}, err
-	}
-
-	if parsed.Host == "embed.spotify.com" {
-		if parsed.RawQuery == "" {
-			return spotifyURI{}, errInvalidSpotifyURL
-		}
-		qs, _ := url.ParseQuery(parsed.RawQuery)
-		embedded := qs.Get("uri")
-		if embedded == "" {
-			return spotifyURI{}, errInvalidSpotifyURL
-		}
-		return parseSpotifyURI(embedded)
-	}
-
-	if parsed.Scheme == "" && parsed.Host == "" {
-		id := strings.Trim(strings.TrimSpace(parsed.Path), "/")
-		if id == "" {
-			return spotifyURI{}, errInvalidSpotifyURL
-		}
-		return spotifyURI{Type: "playlist", ID: id}, nil
 	}
 
 	if parsed.Host != "open.spotify.com" && parsed.Host != "play.spotify.com" {
@@ -988,10 +1146,6 @@ func parseSpotifyURI(input string) (spotifyURI, error) {
 		}
 	}
 
-	if len(parts) == 4 && parts[2] == "playlist" {
-		return spotifyURI{Type: "playlist", ID: parts[3]}, nil
-	}
-
 	if len(parts) >= 3 && parts[0] == "artist" {
 		if len(parts) >= 3 && parts[2] == "discography" {
 			discType := "all"
@@ -1020,171 +1174,10 @@ func cleanPathParts(path string) []string {
 	return parts
 }
 
-func stripLocaleParam(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if idx := strings.Index(raw, "&locale="); idx != -1 {
-		return raw[:idx]
-	}
-	if idx := strings.Index(raw, "?locale="); idx != -1 {
-		return raw[:idx]
-	}
-	return raw
+func parseArtistIDsFromString(artists string) []string {
+	return []string{}
 }
 
-func firstImageURL(images []image) string {
-	if len(images) == 0 {
-		return ""
-	}
-	return images[0].URL
-}
-
-func joinArtists(artists []artist) string {
-	if len(artists) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(artists))
-	for _, a := range artists {
-		if a.Name != "" {
-			names = append(names, a.Name)
-		}
-	}
-	return strings.Join(names, ", ")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-func parseRetryAfter(value string) time.Duration {
-	if value == "" {
-		return 5 * time.Second
-	}
-	secs, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil {
-		return 5 * time.Second
-	}
-	return time.Duration(secs+1) * time.Second
-}
-
-func sleepWithContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-
-// SearchResult represents a single search result item
-type SearchResult struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Type        string `json:"type"` // track, album, artist, playlist
-	Artists     string `json:"artists,omitempty"`
-	AlbumName   string `json:"album_name,omitempty"`
-	Images      string `json:"images"`
-	ReleaseDate string `json:"release_date,omitempty"`
-	ExternalURL string `json:"external_urls"`
-	Duration    int    `json:"duration_ms,omitempty"`
-	TotalTracks int    `json:"total_tracks,omitempty"`
-	Owner       string `json:"owner,omitempty"` // for playlists
-}
-
-// SearchResponse contains search results grouped by type
-type SearchResponse struct {
-	Tracks    []SearchResult `json:"tracks"`
-	Albums    []SearchResult `json:"albums"`
-	Artists   []SearchResult `json:"artists"`
-	Playlists []SearchResult `json:"playlists"`
-}
-
-// Spotify API search response structures
-type searchTracksResponse struct {
-	Tracks struct {
-		Items []struct {
-			ID          string      `json:"id"`
-			Name        string      `json:"name"`
-			DurationMS  int         `json:"duration_ms"`
-			ExternalURL externalURL `json:"external_urls"`
-			Artists     []artist    `json:"artists"`
-			Album       struct {
-				ID          string      `json:"id"`
-				Name        string      `json:"name"`
-				Images      []image     `json:"images"`
-				ReleaseDate string      `json:"release_date"`
-				ExternalURL externalURL `json:"external_urls"`
-			} `json:"album"`
-		} `json:"items"`
-	} `json:"tracks"`
-}
-
-type searchAlbumsResponse struct {
-	Albums struct {
-		Items []struct {
-			ID          string      `json:"id"`
-			Name        string      `json:"name"`
-			AlbumType   string      `json:"album_type"`
-			TotalTracks int         `json:"total_tracks"`
-			ReleaseDate string      `json:"release_date"`
-			Images      []image     `json:"images"`
-			ExternalURL externalURL `json:"external_urls"`
-			Artists     []artist    `json:"artists"`
-		} `json:"items"`
-	} `json:"albums"`
-}
-
-type searchArtistsResponse struct {
-	Artists struct {
-		Items []struct {
-			ID          string      `json:"id"`
-			Name        string      `json:"name"`
-			Images      []image     `json:"images"`
-			ExternalURL externalURL `json:"external_urls"`
-			Followers   struct {
-				Total int `json:"total"`
-			} `json:"followers"`
-		} `json:"items"`
-	} `json:"artists"`
-}
-
-type searchPlaylistsResponse struct {
-	Playlists struct {
-		Items []struct {
-			ID          string      `json:"id"`
-			Name        string      `json:"name"`
-			Images      []image     `json:"images"`
-			ExternalURL externalURL `json:"external_urls"`
-			Owner       struct {
-				DisplayName string `json:"display_name"`
-			} `json:"owner"`
-			Tracks struct {
-				Total int `json:"total"`
-			} `json:"tracks"`
-		} `json:"items"`
-	} `json:"playlists"`
-}
-
-// Search performs a search on Spotify and returns results for tracks, albums, artists, and playlists
 func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit int) (*SearchResponse, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
@@ -1194,14 +1187,47 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		limit = 50
 	}
 
-	token, err := c.getAccessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get access token: %w", err)
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
 
-	// URL encode the query
-	encodedQuery := url.QueryEscape(query)
-	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist,playlist&limit=%d", encodedQuery, limit)
+	payload := map[string]interface{}{
+		"variables": map[string]interface{}{
+			"searchTerm":                    query,
+			"offset":                        0,
+			"limit":                         limit,
+			"numberOfTopResults":            5,
+			"includeAudiobooks":             true,
+			"includeArtistHasConcertsField": false,
+			"includePreReleases":            true,
+			"includeAuthors":                false,
+		},
+		"operationName": "searchDesktop",
+		"extensions": map[string]interface{}{
+			"persistedQuery": map[string]interface{}{
+				"version":    1,
+				"sha256Hash": "fcad5a3e0d5af727fb76966f06971c19cfa2275e6ff7671196753e008611873c",
+			},
+		},
+	}
+
+	data, err := client.Query(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query search: %w", err)
+	}
+
+	filteredData := FilterSearch(data)
+
+	jsonData, err := json.Marshal(filteredData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
+	}
+
+	var apiResp apiSearchResponse
+	if err := json.Unmarshal(jsonData, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiSearchResponse: %w", err)
+	}
 
 	response := &SearchResponse{
 		Tracks:    make([]SearchResult, 0),
@@ -1210,83 +1236,60 @@ func (c *SpotifyMetadataClient) Search(ctx context.Context, query string, limit 
 		Playlists: make([]SearchResult, 0),
 	}
 
-	// Fetch tracks
-	var tracksResp searchTracksResponse
-	if err := c.getJSON(ctx, searchURL, token, &tracksResp); err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	for _, item := range tracksResp.Tracks.Items {
+	for _, item := range apiResp.Results.Tracks {
 		response.Tracks = append(response.Tracks, SearchResult{
 			ID:          item.ID,
 			Name:        item.Name,
 			Type:        "track",
-			Artists:     joinArtists(item.Artists),
-			AlbumName:   item.Album.Name,
-			Images:      firstImageURL(item.Album.Images),
-			ReleaseDate: item.Album.ReleaseDate,
-			ExternalURL: item.ExternalURL.Spotify,
-			Duration:    item.DurationMS,
+			Artists:     item.Artists,
+			AlbumName:   item.Album,
+			Images:      item.Cover,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/track/%s", item.ID),
+			Duration:    parseDuration(item.Duration),
 		})
 	}
 
-	// Fetch albums
-	var albumsResp searchAlbumsResponse
-	if err := c.getJSON(ctx, searchURL, token, &albumsResp); err == nil {
-		for _, item := range albumsResp.Albums.Items {
-			response.Albums = append(response.Albums, SearchResult{
-				ID:          item.ID,
-				Name:        item.Name,
-				Type:        "album",
-				Artists:     joinArtists(item.Artists),
-				Images:      firstImageURL(item.Images),
-				ReleaseDate: item.ReleaseDate,
-				ExternalURL: item.ExternalURL.Spotify,
-				TotalTracks: item.TotalTracks,
-			})
-		}
+	for _, item := range apiResp.Results.Albums {
+		response.Albums = append(response.Albums, SearchResult{
+			ID:          item.ID,
+			Name:        item.Name,
+			Type:        "album",
+			Artists:     item.Artists,
+			Images:      item.Cover,
+			ReleaseDate: fmt.Sprintf("%d", item.Year),
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/album/%s", item.ID),
+		})
 	}
 
-	// Fetch artists
-	var artistsResp searchArtistsResponse
-	if err := c.getJSON(ctx, searchURL, token, &artistsResp); err == nil {
-		for _, item := range artistsResp.Artists.Items {
-			response.Artists = append(response.Artists, SearchResult{
-				ID:          item.ID,
-				Name:        item.Name,
-				Type:        "artist",
-				Images:      firstImageURL(item.Images),
-				ExternalURL: item.ExternalURL.Spotify,
-			})
-		}
+	for _, item := range apiResp.Results.Artists {
+		response.Artists = append(response.Artists, SearchResult{
+			ID:          item.ID,
+			Name:        item.Name,
+			Type:        "artist",
+			Images:      item.Cover,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", item.ID),
+		})
 	}
 
-	// Fetch playlists
-	var playlistsResp searchPlaylistsResponse
-	if err := c.getJSON(ctx, searchURL, token, &playlistsResp); err == nil {
-		for _, item := range playlistsResp.Playlists.Items {
-			response.Playlists = append(response.Playlists, SearchResult{
-				ID:          item.ID,
-				Name:        item.Name,
-				Type:        "playlist",
-				Images:      firstImageURL(item.Images),
-				ExternalURL: item.ExternalURL.Spotify,
-				Owner:       item.Owner.DisplayName,
-				TotalTracks: item.Tracks.Total,
-			})
-		}
+	for _, item := range apiResp.Results.Playlists {
+		response.Playlists = append(response.Playlists, SearchResult{
+			ID:          item.ID,
+			Name:        item.Name,
+			Type:        "playlist",
+			Images:      item.Cover,
+			Owner:       item.Owner,
+			ExternalURL: fmt.Sprintf("https://open.spotify.com/playlist/%s", item.ID),
+		})
 	}
 
 	return response, nil
 }
 
-// SearchSpotify is a convenience wrapper for the Search method
 func SearchSpotify(ctx context.Context, query string, limit int) (*SearchResponse, error) {
 	client := NewSpotifyMetadataClient()
 	return client.Search(ctx, query, limit)
 }
 
-// SearchByType searches for a specific type (track, album, artist, playlist) with offset support
 func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
 	if query == "" {
 		return nil, errors.New("search query cannot be empty")
@@ -1296,84 +1299,99 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 		limit = 50
 	}
 
-	if offset < 0 || offset > 1000 {
+	if offset < 0 {
 		offset = 0
 	}
 
-	token, err := c.getAccessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get access token: %w", err)
+	client := NewSpotifyClient()
+	if err := client.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize spotify client: %w", err)
 	}
 
-	encodedQuery := url.QueryEscape(query)
-	searchURL := fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=%s&limit=%d&offset=%d", encodedQuery, searchType, limit, offset)
+	payload := map[string]interface{}{
+		"variables": map[string]interface{}{
+			"searchTerm":                    query,
+			"offset":                        offset,
+			"limit":                         limit,
+			"numberOfTopResults":            5,
+			"includeAudiobooks":             true,
+			"includeArtistHasConcertsField": false,
+			"includePreReleases":            true,
+			"includeAuthors":                false,
+		},
+		"operationName": "searchDesktop",
+		"extensions": map[string]interface{}{
+			"persistedQuery": map[string]interface{}{
+				"version":    1,
+				"sha256Hash": "fcad5a3e0d5af727fb76966f06971c19cfa2275e6ff7671196753e008611873c",
+			},
+		},
+	}
+
+	data, err := client.Query(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query search: %w", err)
+	}
+
+	filteredData := FilterSearch(data)
+
+	jsonData, err := json.Marshal(filteredData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal filtered data: %w", err)
+	}
+
+	var apiResp apiSearchResponse
+	if err := json.Unmarshal(jsonData, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to apiSearchResponse: %w", err)
+	}
 
 	results := make([]SearchResult, 0)
 
 	switch searchType {
 	case "track":
-		var resp searchTracksResponse
-		if err := c.getJSON(ctx, searchURL, token, &resp); err != nil {
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		for _, item := range resp.Tracks.Items {
+		for _, item := range apiResp.Results.Tracks {
 			results = append(results, SearchResult{
 				ID:          item.ID,
 				Name:        item.Name,
 				Type:        "track",
-				Artists:     joinArtists(item.Artists),
-				AlbumName:   item.Album.Name,
-				Images:      firstImageURL(item.Album.Images),
-				ReleaseDate: item.Album.ReleaseDate,
-				ExternalURL: item.ExternalURL.Spotify,
-				Duration:    item.DurationMS,
+				Artists:     item.Artists,
+				AlbumName:   item.Album,
+				Images:      item.Cover,
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/track/%s", item.ID),
+				Duration:    parseDuration(item.Duration),
 			})
 		}
 	case "album":
-		var resp searchAlbumsResponse
-		if err := c.getJSON(ctx, searchURL, token, &resp); err != nil {
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		for _, item := range resp.Albums.Items {
+		for _, item := range apiResp.Results.Albums {
 			results = append(results, SearchResult{
 				ID:          item.ID,
 				Name:        item.Name,
 				Type:        "album",
-				Artists:     joinArtists(item.Artists),
-				Images:      firstImageURL(item.Images),
-				ReleaseDate: item.ReleaseDate,
-				ExternalURL: item.ExternalURL.Spotify,
-				TotalTracks: item.TotalTracks,
+				Artists:     item.Artists,
+				Images:      item.Cover,
+				ReleaseDate: fmt.Sprintf("%d", item.Year),
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/album/%s", item.ID),
 			})
 		}
 	case "artist":
-		var resp searchArtistsResponse
-		if err := c.getJSON(ctx, searchURL, token, &resp); err != nil {
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		for _, item := range resp.Artists.Items {
+		for _, item := range apiResp.Results.Artists {
 			results = append(results, SearchResult{
 				ID:          item.ID,
 				Name:        item.Name,
 				Type:        "artist",
-				Images:      firstImageURL(item.Images),
-				ExternalURL: item.ExternalURL.Spotify,
+				Images:      item.Cover,
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/artist/%s", item.ID),
 			})
 		}
 	case "playlist":
-		var resp searchPlaylistsResponse
-		if err := c.getJSON(ctx, searchURL, token, &resp); err != nil {
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		for _, item := range resp.Playlists.Items {
+		for _, item := range apiResp.Results.Playlists {
 			results = append(results, SearchResult{
 				ID:          item.ID,
 				Name:        item.Name,
 				Type:        "playlist",
-				Images:      firstImageURL(item.Images),
-				ExternalURL: item.ExternalURL.Spotify,
-				Owner:       item.Owner.DisplayName,
-				TotalTracks: item.Tracks.Total,
+				Images:      item.Cover,
+				Owner:       item.Owner,
+				ExternalURL: fmt.Sprintf("https://open.spotify.com/playlist/%s", item.ID),
 			})
 		}
 	default:
@@ -1383,8 +1401,41 @@ func (c *SpotifyMetadataClient) SearchByType(ctx context.Context, query string, 
 	return results, nil
 }
 
-// SearchSpotifyByType is a convenience wrapper for SearchByType
 func SearchSpotifyByType(ctx context.Context, query string, searchType string, limit int, offset int) ([]SearchResult, error) {
 	client := NewSpotifyMetadataClient()
 	return client.SearchByType(ctx, query, searchType, limit, offset)
+}
+
+func GetPreviewURL(trackID string) (string, error) {
+	if trackID == "" {
+		return "", errors.New("track ID cannot be empty")
+	}
+
+	embedURL := fmt.Sprintf("https://open.spotify.com/embed/track/%s", trackID)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(embedURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch embed page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("embed page returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	html := string(body)
+	re := regexp.MustCompile(`https://p\.scdn\.co/mp3-preview/[a-zA-Z0-9]+`)
+	match := re.FindString(html)
+
+	if match == "" {
+		return "", errors.New("preview URL not found")
+	}
+
+	return match, nil
 }

@@ -30,6 +30,7 @@ class Logger {
       message,
       source,
     };
+
     this.logs.push(entry);
     if (this.logs.length > this.maxLogs) {
       this.logs.splice(0, this.logs.length - this.maxLogs);

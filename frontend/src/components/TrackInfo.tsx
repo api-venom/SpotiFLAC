@@ -1,38 +1,96 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe, Play, Eye } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
-import { player } from "@/lib/player";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import type { TrackMetadata, TrackAvailability } from "@/types/api";
+  CheckCircle,
+  Download,
+  FileCheck,
+  FileText,
+  FolderOpen,
+  Globe,
+  ImageDown,
+  Pause,
+  Play,
+  XCircle,
+} from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
 import { TidalIcon, QobuzIcon, AmazonIcon } from "./PlatformIcons";
+import { usePreview } from "@/hooks/usePreview";
+import type { TrackAvailability, TrackMetadata } from "@/types/api";
+import { player } from "@/lib/player";
 
 interface TrackInfoProps {
-  track: TrackMetadata & { album_name: string; release_date: string };
+  track: TrackMetadata & {
+    album_name: string;
+    release_date: string;
+  };
   isDownloading: boolean;
   downloadingTrack: string | null;
   isDownloaded: boolean;
   isFailed: boolean;
   isSkipped: boolean;
+
   downloadingLyricsTrack?: string | null;
   downloadedLyrics?: boolean;
   failedLyrics?: boolean;
   skippedLyrics?: boolean;
+
   checkingAvailability?: boolean;
   availability?: TrackAvailability;
+
   downloadingCover?: boolean;
   downloadedCover?: boolean;
   failedCover?: boolean;
   skippedCover?: boolean;
-  onDownload: (isrc: string, name: string, artists: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number) => void;
-  onDownloadLyrics?: (spotifyId: string, name: string, artists: string, albumName?: string) => void;
+
+  onDownload: (
+    isrc: string,
+    name: string,
+    artists: string,
+    albumName?: string,
+    spotifyId?: string,
+    playlistName?: string,
+    durationMs?: number,
+    position?: number,
+    albumArtist?: string,
+    releaseDate?: string,
+    coverUrl?: string,
+    spotifyTrackNumber?: number,
+    spotifyDiscNumber?: number,
+    spotifyTotalTracks?: number,
+    spotifyTotalDiscs?: number,
+    copyright?: string,
+    publisher?: string,
+  ) => void;
+
+  onDownloadLyrics?: (
+    spotifyId: string,
+    name: string,
+    artists: string,
+    albumName?: string,
+    albumArtist?: string,
+    releaseDate?: string,
+    discNumber?: number,
+  ) => void;
+
   onViewLyrics?: (name: string, artists: string, spotifyId?: string, coverUrl?: string) => void;
+
   onCheckAvailability?: (spotifyId: string, isrc?: string) => void;
-  onDownloadCover?: (coverUrl: string, trackName: string, artistName: string, albumName?: string, playlistName?: string, position?: number, trackId?: string, albumArtist?: string, releaseDate?: string, discNumber?: number) => void;
+
+  onDownloadCover?: (
+    coverUrl: string,
+    trackName: string,
+    artistName: string,
+    albumName?: string,
+    playlistName?: string,
+    position?: number,
+    trackId?: string,
+    albumArtist?: string,
+    releaseDate?: string,
+    discNumber?: number,
+  ) => void;
+
   onOpenFolder: () => void;
 }
 
@@ -49,25 +107,48 @@ export function TrackInfo({
   skippedLyrics,
   checkingAvailability,
   availability,
+  downloadingCover,
+  downloadedCover,
+  failedCover,
+  skippedCover,
   onDownload,
   onDownloadLyrics,
   onViewLyrics,
   onCheckAvailability,
+  onDownloadCover,
   onOpenFolder,
 }: TrackInfoProps) {
+  const { playPreview, loadingPreview, playingTrack } = usePreview();
+
+  const formatDuration = (ms: number) => {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  const formatPlays = (plays: string) => {
+    const num = parseInt(plays, 10);
+    if (isNaN(num)) return plays;
+    return num.toLocaleString();
+  };
+
+  const canPlay = Boolean(track.spotify_id && track.isrc);
+
   return (
     <Card>
       <CardContent className="px-6">
         <div className="flex gap-6 items-start">
           <div className="shrink-0">
             {track.images && (
-              <img
-                src={track.images}
-                alt={track.name}
-                className="w-48 h-48 rounded-md shadow-lg object-cover"
-              />
+              <div className="relative w-48 h-48 rounded-md shadow-lg overflow-hidden">
+                <img src={track.images} alt={track.name} className="w-full h-full object-cover" />
+                <div className="absolute bottom-1 right-1 bg-black/80 text-white px-1.5 py-0.5 text-xs font-medium rounded">
+                  {formatDuration(track.duration_ms)}
+                </div>
+              </div>
             )}
           </div>
+
           <div className="flex-1 space-y-4 min-w-0">
             <div className="space-y-1">
               <div className="flex items-center gap-3">
@@ -82,40 +163,112 @@ export function TrackInfo({
               </div>
               <p className="text-lg text-muted-foreground">{track.artists}</p>
             </div>
+
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Album</p>
-                <p className="font-medium truncate">{track.album_name}</p>
+              <div className="space-y-1">
+                <div>
+                  <p className="text-xs text-muted-foreground">Album</p>
+                  <p className="font-medium truncate">{track.album_name}</p>
+                </div>
+                {track.plays && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Plays</p>
+                    <p className="font-medium">{formatPlays(track.plays)}</p>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Release Date</p>
-                <p className="font-medium">{track.release_date}</p>
+
+              <div className="space-y-1">
+                <div>
+                  <p className="text-xs text-muted-foreground">Release Date</p>
+                  <p className="font-medium">{track.release_date}</p>
+                </div>
+                {track.copyright && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Copyright</p>
+                    <p className="font-medium truncate" title={track.copyright}>
+                      {track.copyright}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
+
             {track.isrc && (
               <div className="flex gap-2 flex-wrap">
+                {canPlay && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        onClick={async () => {
+                          await player.playTrack({
+                            spotifyId: track.spotify_id!,
+                            isrc: track.isrc,
+                            title: track.name,
+                            artist: track.artists,
+                            album: track.album_name,
+                            coverUrl: track.images,
+                          });
+                          player.setFullscreen(true);
+                        }}
+                      >
+                        <Play className="h-4 w-4" />
+                        Play
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Play in Player</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
                 {track.spotify_id && (
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      await player.playTrack({
-                        spotifyId: track.spotify_id!,
-                        isrc: track.isrc,
-                        title: track.name,
-                        artist: track.artists,
-                        album: track.album_name,
-                        coverUrl: track.images,
-                      });
-                      player.setFullscreen(true);
-                    }}
-                  >
-                    <Play className="h-4 w-4" />
-                    Play
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => playPreview(track.spotify_id!, track.name)}
+                        variant="outline"
+                        size="icon"
+                        disabled={loadingPreview === track.spotify_id}
+                      >
+                        {loadingPreview === track.spotify_id ? (
+                          <Spinner />
+                        ) : playingTrack === track.spotify_id ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{playingTrack === track.spotify_id ? "Stop Preview" : "Play Preview"}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
 
                 <Button
-                  onClick={() => onDownload(track.isrc, track.name, track.artists, track.album_name, track.spotify_id, undefined, track.duration_ms, track.track_number, track.album_artist, track.release_date, track.images, track.track_number, track.disc_number, track.total_tracks)}
+                  onClick={() =>
+                    onDownload(
+                      track.isrc,
+                      track.name,
+                      track.artists,
+                      track.album_name,
+                      track.spotify_id,
+                      undefined,
+                      track.duration_ms,
+                      track.track_number,
+                      track.album_artist,
+                      track.release_date,
+                      track.images,
+                      track.track_number,
+                      track.disc_number,
+                      track.total_tracks,
+                      track.total_discs,
+                      track.copyright,
+                      track.publisher,
+                    )
+                  }
                   disabled={isDownloading || downloadingTrack === track.isrc}
                 >
                   {downloadingTrack === track.isrc ? (
@@ -127,12 +280,24 @@ export function TrackInfo({
                     </>
                   )}
                 </Button>
+
                 {track.spotify_id && onDownloadLyrics && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        onClick={() => onDownloadLyrics(track.spotify_id!, track.name, track.artists, track.album_name)}
+                        onClick={() =>
+                          onDownloadLyrics(
+                            track.spotify_id!,
+                            track.name,
+                            track.artists,
+                            track.album_name,
+                            track.album_artist,
+                            track.release_date,
+                            track.disc_number,
+                          )
+                        }
                         variant="outline"
+                        size="icon"
                         disabled={downloadingLyricsTrack === track.spotify_id}
                       >
                         {downloadingLyricsTrack === track.spotify_id ? (
@@ -149,18 +314,20 @@ export function TrackInfo({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Download Lyric</p>
+                      <p>Download Lyrics</p>
                     </TooltipContent>
                   </Tooltip>
                 )}
+
                 {track.spotify_id && onViewLyrics && downloadedLyrics && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         onClick={() => onViewLyrics(track.name, track.artists, track.spotify_id, track.images)}
                         variant="outline"
+                        size="icon"
                       >
-                        <Eye className="h-4 w-4" />
+                        <FileText className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -168,12 +335,55 @@ export function TrackInfo({
                     </TooltipContent>
                   </Tooltip>
                 )}
+
+                {track.images && onDownloadCover && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() =>
+                          onDownloadCover(
+                            track.images!,
+                            track.name,
+                            track.artists,
+                            track.album_name,
+                            undefined,
+                            undefined,
+                            track.spotify_id,
+                            track.album_artist,
+                            track.release_date,
+                            track.disc_number,
+                          )
+                        }
+                        variant="outline"
+                        size="icon"
+                        disabled={downloadingCover}
+                      >
+                        {downloadingCover ? (
+                          <Spinner />
+                        ) : skippedCover ? (
+                          <FileCheck className="h-4 w-4 text-yellow-500" />
+                        ) : downloadedCover ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : failedCover ? (
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        ) : (
+                          <ImageDown className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Download Cover</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
                 {track.spotify_id && onCheckAvailability && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         onClick={() => onCheckAvailability(track.spotify_id!, track.isrc)}
                         variant="outline"
+                        size="icon"
                         disabled={checkingAvailability}
                       >
                         {checkingAvailability ? (
@@ -198,6 +408,7 @@ export function TrackInfo({
                     </TooltipContent>
                   </Tooltip>
                 )}
+
                 {isDownloaded && (
                   <Button onClick={onOpenFolder} variant="outline">
                     <FolderOpen className="h-4 w-4" />

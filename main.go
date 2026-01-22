@@ -19,10 +19,9 @@ var mpvRuntime embed.FS
 var assets embed.FS
 
 func main() {
-	// Create an instance of the app structure
+
 	app := NewApp()
 
-	// Create application with options
 	err := wails.Run(&options.App{
 		Title:     "Knight Music",
 		Width:     1024,
@@ -35,6 +34,7 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 255},
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,
 			DisableWebViewDrop: false,

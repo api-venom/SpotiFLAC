@@ -1,13 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InputWithContext } from "@/components/ui/input-with-context";
-import { CloudDownload, Info, XCircle, Link, Search, X, ChevronDown } from "lucide-react";
+import { ChevronDown, CloudDownload, Info, Link, Search, X, XCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FetchHistory } from "@/components/FetchHistory";
 import type { HistoryItem } from "@/components/FetchHistory";
 import { PinnedPlaylists } from "@/components/PinnedPlaylists";
@@ -19,7 +15,7 @@ import { logger } from "@/lib/logger";
 
 type ResultTab = "tracks" | "albums" | "artists" | "playlists";
 
-const RECENT_SEARCHES_KEY = "knightmusic_recent_searches";
+const RECENT_SEARCHES_KEY = "spotiflac_recent_searches";
 const MAX_RECENT_SEARCHES = 8;
 const SEARCH_LIMIT = 50;
 
@@ -64,6 +60,7 @@ export function SearchBar({
     playlists: false,
   });
   const [market, setMarket] = useState<string>("US");
+
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Determine country for Spotify market (locale first, IP fallback)
@@ -77,6 +74,7 @@ export function SearchBar({
       cancelled = true;
     };
   }, []);
+
   // Load recent searches from localStorage
   useEffect(() => {
     try {
@@ -92,7 +90,7 @@ export function SearchBar({
   const saveRecentSearch = (query: string) => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    
+
     setRecentSearches((prev) => {
       const filtered = prev.filter((s) => s.toLowerCase() !== trimmed.toLowerCase());
       const updated = [trimmed, ...filtered].slice(0, MAX_RECENT_SEARCHES);
@@ -115,6 +113,20 @@ export function SearchBar({
       }
       return updated;
     });
+  };
+
+  const getTabCount = (tab: ResultTab): number => {
+    if (!searchResults) return 0;
+    switch (tab) {
+      case "tracks":
+        return searchResults.tracks.length;
+      case "albums":
+        return searchResults.albums.length;
+      case "artists":
+        return searchResults.artists.length;
+      case "playlists":
+        return searchResults.playlists.length;
+    }
   };
 
   // Debounced search - only search if query changed
@@ -149,12 +161,13 @@ export function SearchBar({
 
         logger.success(
           `search ok (${elapsed}s): tracks=${results.tracks.length} albums=${results.albums.length} artists=${results.artists.length} playlists=${results.playlists.length}`,
-          "api"
+          "api",
         );
 
         setSearchResults(results);
         setLastSearchedQuery(q);
         saveRecentSearch(q);
+
         // Check if there might be more results
         setHasMore({
           tracks: results.tracks.length === SEARCH_LIMIT,
@@ -162,6 +175,7 @@ export function SearchBar({
           artists: results.artists.length === SEARCH_LIMIT,
           playlists: results.playlists.length === SEARCH_LIMIT,
         });
+
         // Auto-select first tab with results
         if (results.tracks.length > 0) setActiveTab("tracks");
         else if (results.albums.length > 0) setActiveTab("albums");
@@ -193,7 +207,7 @@ export function SearchBar({
     };
 
     const currentCount = getTabCount(activeTab);
-    
+
     setIsLoadingMore(true);
     try {
       const moreResults = await SearchSpotifyByType({
@@ -207,6 +221,7 @@ export function SearchBar({
       if (moreResults.length > 0) {
         setSearchResults((prev) => {
           if (!prev) return prev;
+
           // Create new SearchResponse with updated array for the active tab
           const updated = new backend.SearchResponse({
             tracks: activeTab === "tracks" ? [...prev.tracks, ...moreResults] : prev.tracks,
@@ -218,7 +233,6 @@ export function SearchBar({
         });
       }
 
-      // Update hasMore for this tab
       setHasMore((prev) => ({
         ...prev,
         [activeTab]: moreResults.length === SEARCH_LIMIT,
@@ -241,22 +255,13 @@ export function SearchBar({
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  const hasAnyResults = searchResults && (
-    searchResults.tracks.length > 0 ||
-    searchResults.albums.length > 0 ||
-    searchResults.artists.length > 0 ||
-    searchResults.playlists.length > 0
+  const hasAnyResults = Boolean(
+    searchResults &&
+      (searchResults.tracks.length > 0 ||
+        searchResults.albums.length > 0 ||
+        searchResults.artists.length > 0 ||
+        searchResults.playlists.length > 0),
   );
-
-  const getTabCount = (tab: ResultTab): number => {
-    if (!searchResults) return 0;
-    switch (tab) {
-      case "tracks": return searchResults.tracks.length;
-      case "albums": return searchResults.albums.length;
-      case "artists": return searchResults.artists.length;
-      case "playlists": return searchResults.playlists.length;
-    }
-  };
 
   const tabs: { key: ResultTab; label: string }[] = [
     { key: "tracks", label: "Tracks" },
@@ -269,7 +274,6 @@ export function SearchBar({
     <div className="space-y-4">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          {/* Mode Toggle */}
           <div className="flex items-center bg-muted rounded-md p-1">
             <button
               type="button"
@@ -278,7 +282,7 @@ export function SearchBar({
                 "flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium transition-colors cursor-pointer",
                 !searchMode
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Link className="h-3.5 w-3.5" />
@@ -291,14 +295,14 @@ export function SearchBar({
                 "flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium transition-colors cursor-pointer",
                 searchMode
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Search className="h-3.5 w-3.5" />
               Search
             </button>
           </div>
-          
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Info className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -385,18 +389,12 @@ export function SearchBar({
       {!searchMode && !hasResult && (
         <div className="space-y-4">
           <PinnedPlaylists onOpenUrl={onFetchUrl} />
-          <FetchHistory
-            history={history}
-            onSelect={onHistorySelect}
-            onRemove={onHistoryRemove}
-          />
+          <FetchHistory history={history} onSelect={onHistorySelect} onRemove={onHistoryRemove} />
         </div>
       )}
 
-      {/* Search Results with Tabs */}
       {searchMode && (
         <div className="space-y-4">
-          {/* Recent Searches - show when no query or no results yet */}
           {!searchQuery && !searchResults && recentSearches.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Recent Searches</p>
@@ -432,18 +430,16 @@ export function SearchBar({
           )}
 
           {!isSearching && searchQuery && !hasAnyResults && (
-            <div className="text-center py-8 text-muted-foreground">
-              No results found for "{searchQuery}"
-            </div>
+            <div className="text-center py-8 text-muted-foreground">No results found for "{searchQuery}"</div>
           )}
 
           {!isSearching && hasAnyResults && (
             <>
-              {/* Tabs */}
               <div className="flex gap-1 border-b">
                 {tabs.map((tab) => {
                   const count = getTabCount(tab.key);
                   if (count === 0) return null;
+
                   return (
                     <button
                       key={tab.key}
@@ -453,7 +449,7 @@ export function SearchBar({
                         "px-4 py-2 text-sm font-medium transition-colors cursor-pointer border-b-2 -mb-px",
                         activeTab === tab.key
                           ? "border-primary text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
                       )}
                     >
                       {tab.label} ({count})
@@ -462,105 +458,99 @@ export function SearchBar({
                 })}
               </div>
 
-              {/* Tab Content */}
               <div className="grid gap-2">
-                {/* Tracks */}
-                {activeTab === "tracks" && searchResults?.tracks.map((track) => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
-                    onClick={() => handleResultClick(track.external_urls)}
-                  >
-                    {track.images ? (
-                      <img src={track.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded bg-muted shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{track.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">{track.artists}</p>
-                    </div>
-                    <span className="text-sm text-muted-foreground shrink-0">
-                      {formatDuration(track.duration_ms || 0)}
-                    </span>
-                  </button>
-                ))}
+                {activeTab === "tracks" &&
+                  searchResults?.tracks.map((track) => (
+                    <button
+                      key={track.id}
+                      type="button"
+                      className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
+                      onClick={() => handleResultClick(track.external_urls)}
+                    >
+                      {track.images ? (
+                        <img src={track.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded bg-muted shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{track.name}</p>
+                        <p className="text-sm text-muted-foreground truncate">{track.artists}</p>
+                      </div>
+                      <span className="text-sm text-muted-foreground shrink-0">
+                        {formatDuration(track.duration_ms || 0)}
+                      </span>
+                    </button>
+                  ))}
 
-                {/* Albums */}
-                {activeTab === "albums" && searchResults?.albums.map((album) => (
-                  <button
-                    key={album.id}
-                    type="button"
-                    className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
-                    onClick={() => handleResultClick(album.external_urls)}
-                  >
-                    {album.images ? (
-                      <img src={album.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded bg-muted shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{album.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">{album.artists}</p>
-                    </div>
-                    <span className="text-sm text-muted-foreground shrink-0">
-                      {album.total_tracks} tracks
-                    </span>
-                  </button>
-                ))}
+                {activeTab === "albums" &&
+                  searchResults?.albums.map((album) => (
+                    <button
+                      key={album.id}
+                      type="button"
+                      className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
+                      onClick={() => handleResultClick(album.external_urls)}
+                    >
+                      {album.images ? (
+                        <img src={album.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded bg-muted shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{album.name}</p>
+                        <p className="text-sm text-muted-foreground truncate">{album.artists}</p>
+                      </div>
+                      <span className="text-sm text-muted-foreground shrink-0">{album.release_date || ""}</span>
+                    </button>
+                  ))}
 
-                {/* Artists */}
-                {activeTab === "artists" && searchResults?.artists.map((artist) => (
-                  <button
-                    key={artist.id}
-                    type="button"
-                    className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
-                    onClick={() => handleResultClick(artist.external_urls)}
-                  >
-                    {artist.images ? (
-                      <img src={artist.images} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-muted shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{artist.name}</p>
-                      <p className="text-sm text-muted-foreground">Artist</p>
-                    </div>
-                  </button>
-                ))}
+                {activeTab === "artists" &&
+                  searchResults?.artists.map((artist) => (
+                    <button
+                      key={artist.id}
+                      type="button"
+                      className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
+                      onClick={() => handleResultClick(artist.external_urls)}
+                    >
+                      {artist.images ? (
+                        <img
+                          src={artist.images}
+                          alt=""
+                          className="w-12 h-12 rounded-full object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-muted shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{artist.name}</p>
+                        <p className="text-sm text-muted-foreground">Artist</p>
+                      </div>
+                    </button>
+                  ))}
 
-                {/* Playlists */}
-                {activeTab === "playlists" && searchResults?.playlists.map((playlist) => (
-                  <button
-                    key={playlist.id}
-                    type="button"
-                    className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
-                    onClick={() => handleResultClick(playlist.external_urls)}
-                  >
-                    {playlist.images ? (
-                      <img src={playlist.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded bg-muted shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{playlist.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {playlist.owner} • {playlist.total_tracks} tracks
-                      </p>
-                    </div>
-                  </button>
-                ))}
+                {activeTab === "playlists" &&
+                  searchResults?.playlists.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      type="button"
+                      className="flex items-center gap-3 p-3 rounded-lg bg-card hover:bg-accent border cursor-pointer text-left transition-colors"
+                      onClick={() => handleResultClick(playlist.external_urls)}
+                    >
+                      {playlist.images ? (
+                        <img src={playlist.images} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded bg-muted shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{playlist.name}</p>
+                        <p className="text-sm text-muted-foreground truncate">{playlist.owner || ""}</p>
+                      </div>
+                    </button>
+                  ))}
               </div>
 
-              {/* Load More Button */}
               {hasMore[activeTab] && (
                 <div className="flex justify-center pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={handleLoadMore}
-                    disabled={isLoadingMore}
-                  >
+                  <Button variant="outline" onClick={handleLoadMore} disabled={isLoadingMore}>
                     {isLoadingMore ? (
                       <>
                         <Spinner />

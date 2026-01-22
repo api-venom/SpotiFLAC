@@ -20,7 +20,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
         <div className="flex items-center justify-center gap-3">
           <img
             src="/icon.svg"
-            alt="Knight Music"
+            alt="SpotiFLAC"
             className="w-12 h-12 cursor-pointer"
             onClick={() => window.location.reload()}
           />
@@ -28,7 +28,7 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
             className="text-4xl font-bold cursor-pointer"
             onClick={() => window.location.reload()}
           >
-            Knight Music
+            SpotiFLAC
           </h1>
           <div className="relative">
             <Tooltip>
@@ -36,7 +36,9 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
                 <Badge variant="default" asChild>
                   <button
                     type="button"
-                    onClick={() => openExternal("https://github.com/afkarxyz/Knight-Music/releases")}
+                    onClick={() =>
+                      openExternal("https://github.com/afkarxyz/SpotiFLAC/releases")
+                    }
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                   >
                     v{version}
@@ -58,7 +60,8 @@ export function Header({ version, hasUpdate, releaseDate }: HeaderProps) {
           </div>
         </div>
         <p className="text-muted-foreground">
-          Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no account required.
+          Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no
+          account required.
         </p>
       </div>
     </div>

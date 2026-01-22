@@ -1,12 +1,15 @@
 package backend
 
 import (
+	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,6 +47,22 @@ type DoubleDoubleStatusResponse struct {
 	} `json:"current"`
 }
 
+type LucidaLoadResponse struct {
+	Success bool   `json:"success"`
+	Server  string `json:"server"`
+	Handoff string `json:"handoff"`
+	Error   string `json:"error"`
+}
+
+type LucidaStatusResponse struct {
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Progress struct {
+		Current int64 `json:"current"`
+		Total   int64 `json:"total"`
+	} `json:"progress"`
+}
+
 func NewAmazonDownloader() *AmazonDownloader {
 	return &AmazonDownloader{
 		client: &http.Client{
@@ -63,16 +82,14 @@ func (a *AmazonDownloader) getRandomUserAgent() string {
 }
 
 func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (string, error) {
-	// Rate limiting: max 10 requests per minute (song.link API limit)
-	// Reset counter every minute
+
 	now := time.Now()
 	if now.Sub(a.apiCallResetTime) >= time.Minute {
 		a.apiCallCount = 0
 		a.apiCallResetTime = now
 	}
 
-	// If we've hit the limit, wait until the next minute
-	if a.apiCallCount >= 9 { // Use 9 to be safe (limit is 10)
+	if a.apiCallCount >= 9 {
 		waitTime := time.Minute - now.Sub(a.apiCallResetTime)
 		if waitTime > 0 {
 			fmt.Printf("Rate limit reached, waiting %v...\n", waitTime.Round(time.Second))
@@ -82,10 +99,9 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 		}
 	}
 
-	// Add delay between requests (6 seconds = 10 requests per minute)
 	if !a.lastAPICallTime.IsZero() {
 		timeSinceLastCall := now.Sub(a.lastAPICallTime)
-		minDelay := 7 * time.Second // 7 seconds to be safe
+		minDelay := 7 * time.Second
 		if timeSinceLastCall < minDelay {
 			waitTime := minDelay - timeSinceLastCall
 			fmt.Printf("Rate limiting: waiting %v...\n", waitTime.Round(time.Second))
@@ -93,7 +109,6 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 		}
 	}
 
-	// Decode base64 API URL
 	spotifyBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9vcGVuLnNwb3RpZnkuY29tL3RyYWNrLw==")
 	spotifyURL := fmt.Sprintf("%s%s", string(spotifyBase), spotifyTrackID)
 
@@ -109,7 +124,6 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 
 	fmt.Println("Getting Amazon URL...")
 
-	// Retry logic for rate limit errors
 	maxRetries := 3
 	var resp *http.Response
 	for i := 0; i < maxRetries; i++ {
@@ -118,11 +132,10 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 			return "", fmt.Errorf("failed to get Amazon URL: %w", err)
 		}
 
-		// Update rate limit tracking
 		a.lastAPICallTime = time.Now()
 		a.apiCallCount++
 
-		if resp.StatusCode == 429 { // Too Many Requests
+		if resp.StatusCode == 429 {
 			resp.Body.Close()
 			if i < maxRetries-1 {
 				waitTime := 15 * time.Second
@@ -142,7 +155,6 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 	}
 	defer resp.Body.Close()
 
-	// Read body first to handle encoding issues and provide better error messages
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
@@ -154,7 +166,7 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 
 	var songLinkResp SongLinkResponse
 	if err := json.Unmarshal(body, &songLinkResp); err != nil {
-		// Truncate body for error message (max 200 chars)
+
 		bodyStr := string(body)
 		if len(bodyStr) > 200 {
 			bodyStr = bodyStr[:200] + "..."
@@ -169,7 +181,6 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 
 	amazonURL := amazonLink.URL
 
-	// Convert album URL to track URL if needed
 	if strings.Contains(amazonURL, "trackAsin=") {
 		parts := strings.Split(amazonURL, "trackAsin=")
 		if len(parts) > 1 {
@@ -183,17 +194,201 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 	return amazonURL, nil
 }
 
-func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (string, error) {
+func (a *AmazonDownloader) extractData(html string, patterns []string) string {
+	for _, p := range patterns {
+		re := regexp.MustCompile(p)
+		matches := re.FindStringSubmatch(html)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return ""
+}
+
+func (a *AmazonDownloader) DownloadFromLucida(amazonURL, outputDir, quality string) (string, error) {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Transport: tr,
+		Jar:       jar,
+		Timeout:   120 * time.Second,
+	}
+
+	userAgent := a.getRandomUserAgent()
+
+	fmt.Printf("Initializing lucida for Amazon Music... (Target: %s)\n", amazonURL)
+	lucidaBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9sdWNpZGEudG8vP3VybD0lcyZjb3VudHJ5PWF1dG8=")
+	lucidaURL := fmt.Sprintf(string(lucidaBase), url.QueryEscape(amazonURL))
+	req, _ := http.NewRequest("GET", lucidaURL, nil)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	html := string(bodyBytes)
+
+	token := a.extractData(html, []string{`token:"([^"]+)"`, `"token"\s*:\s*"([^"]+)"`})
+	streamURL := a.extractData(html, []string{`"url":"([^"]+)"`, `url:"([^"]+)"`})
+	expiry := a.extractData(html, []string{`tokenExpiry:(\d+)`, `"tokenExpiry"\s*:\s*(\d+)`})
+
+	if token == "" || streamURL == "" {
+		errorMsg := a.extractData(html, []string{`error:"([^"]+)"`, `"error"\s*:\s*"([^"]+)"`})
+		if errorMsg != "" {
+			return "", fmt.Errorf("lucida error: %s", errorMsg)
+		}
+		return "", fmt.Errorf("could not extract required data from lucida")
+	}
+
+	decodedToken := token
+	if secondBase64, err := base64.StdEncoding.DecodeString(token); err == nil {
+		if firstBase64, err := base64.StdEncoding.DecodeString(string(secondBase64)); err == nil {
+			decodedToken = string(firstBase64)
+		}
+	}
+
+	streamURL = strings.ReplaceAll(streamURL, `\/`, `/`)
+	fmt.Printf("Fetching Amazon stream via Lucida...\n")
+
+	loadPayload := map[string]interface{}{
+		"account": map[string]string{"id": "auto", "type": "country"},
+		"compat":  "false", "downscale": "original", "handoff": true,
+		"metadata": true, "private": true,
+		"token":  map[string]interface{}{"primary": decodedToken, "expiry": expiry},
+		"upload": map[string]bool{"enabled": false},
+		"url":    streamURL,
+	}
+
+	payloadBytes, _ := json.Marshal(loadPayload)
+	loadAPI, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9sdWNpZGEudG8vYXBpL2xvYWQ/dXJsPS9hcGkvZmV0Y2gvc3RyZWFtL3Yy")
+	req, _ = http.NewRequest("POST", string(loadAPI), bytes.NewBuffer(payloadBytes))
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Content-Type", "application/json")
+
+	for _, cookie := range client.Jar.Cookies(req.URL) {
+		if cookie.Name == "csrf_token" {
+			req.Header.Set("X-CSRF-Token", cookie.Value)
+		}
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var loadData LucidaLoadResponse
+	json.NewDecoder(resp.Body).Decode(&loadData)
+
+	if !loadData.Success {
+		return "", fmt.Errorf("lucida load request failed: %s", loadData.Error)
+	}
+
+	serviceBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly8=")
+	completionBase, _ := base64.StdEncoding.DecodeString("Lmx1Y2lkYS50by9hcGkvZmV0Y2gvcmVxdWVzdC8=")
+	completionURL := fmt.Sprintf("%s%s%s%s", string(serviceBase), loadData.Server, string(completionBase), loadData.Handoff)
+	fmt.Println("Processing on Lucida server...")
+
+	var finalStatus LucidaStatusResponse
+	for {
+		req, _ = http.NewRequest("GET", completionURL, nil)
+		req.Header.Set("User-Agent", userAgent)
+		resp, err = client.Do(req)
+		if err != nil {
+			return "", err
+		}
+
+		json.NewDecoder(resp.Body).Decode(&finalStatus)
+		resp.Body.Close()
+
+		if finalStatus.Status == "completed" {
+			fmt.Println("\nTrack processing completed!")
+			break
+		} else if finalStatus.Status == "error" {
+			return "", fmt.Errorf("lucida processing failed: %s", finalStatus.Message)
+		} else if finalStatus.Progress.Total > 0 {
+			percent := (finalStatus.Progress.Current * 100) / finalStatus.Progress.Total
+			fmt.Printf("\rLucida Progress: %d%%", percent)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	downloadSuffix, _ := base64.StdEncoding.DecodeString("L2Rvd25sb2Fk")
+	downloadURL := fmt.Sprintf("%s%s%s%s%s", string(serviceBase), loadData.Server, string(completionBase), loadData.Handoff, string(downloadSuffix))
+	req, _ = http.NewRequest("GET", downloadURL, nil)
+	req.Header.Set("User-Agent", userAgent)
+	resp, err = client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("lucida download failed with status %d", resp.StatusCode)
+	}
+
+	fileName := "track.flac"
+	contentDisp := resp.Header.Get("Content-Disposition")
+	if contentDisp != "" {
+		re := regexp.MustCompile(`filename[*]?=([^;]+)`)
+		if matches := re.FindStringSubmatch(contentDisp); len(matches) > 1 {
+			rawName := strings.Trim(matches[1], `"'`)
+			if strings.HasPrefix(rawName, "UTF-8''") {
+				decodedName, _ := url.PathUnescape(rawName[7:])
+				fileName = decodedName
+			} else {
+				fileName = rawName
+			}
+
+			reg := regexp.MustCompile(`[<>:"/\\|?*]`)
+			fileName = reg.ReplaceAllString(fileName, "")
+		}
+	}
+
+	filePath := filepath.Join(outputDir, fileName)
+	out, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	fmt.Printf("Downloading from Lucida: %s\n", fileName)
+
+	pw := NewProgressWriter(out)
+	_, err = io.Copy(pw, resp.Body)
+	if err != nil {
+		out.Close()
+		os.Remove(filePath)
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	fmt.Printf("\rDownloaded: %.2f MB (Complete)\n", float64(pw.GetTotal())/(1024*1024))
+	return filePath, nil
+}
+
+func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir, quality string) (string, error) {
+	fmt.Println("Attempting download via Lucida (Priority)...")
+	filePath, err := a.DownloadFromLucida(amazonURL, outputDir, quality)
+	if err == nil {
+		return filePath, nil
+	}
+	fmt.Printf("Lucida failed: %v\nTrying Double-Double as fallback...\n", err)
+
 	var lastError error
+	lastError = err
 
 	for _, region := range a.regions {
 		fmt.Printf("\nTrying region: %s...\n", region)
-		// Decode base64 service URL
+
 		serviceBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly8=")
 		serviceDomain, _ := base64.StdEncoding.DecodeString("LmRvdWJsZWRvdWJsZS50b3A=")
 		baseURL := fmt.Sprintf("%s%s%s", string(serviceBase), region, string(serviceDomain))
 
-		// Step 1: Submit download request
 		encodedURL := url.QueryEscape(amazonURL)
 		submitURL := fmt.Sprintf("%s/dl?url=%s", baseURL, encodedURL)
 
@@ -234,7 +429,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 		downloadID := submitResp.ID
 		fmt.Printf("Download ID: %s\n", downloadID)
 
-		// Step 2: Poll for completion
 		statusURL := fmt.Sprintf("%s/dl/%s", baseURL, downloadID)
 		fmt.Println("Waiting for download to complete...")
 
@@ -276,7 +470,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 			if status.Status == "done" {
 				fmt.Println("\nDownload ready!")
 
-				// Build download URL
 				fileURL := status.URL
 				if strings.HasPrefix(fileURL, "./") {
 					fileURL = fmt.Sprintf("%s/%s", baseURL, fileURL[2:])
@@ -289,7 +482,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 
 				fmt.Printf("Downloading: %s - %s\n", artist, trackName)
 
-				// Download file
 				downloadReq, err := http.NewRequest("GET", fileURL, nil)
 				if err != nil {
 					lastError = fmt.Errorf("failed to create download request: %w", err)
@@ -310,7 +502,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 					break
 				}
 
-				// Generate filename
 				fileName := fmt.Sprintf("%s - %s.flac", artist, trackName)
 				for _, char := range `<>:"/\|?*` {
 					fileName = strings.ReplaceAll(fileName, string(char), "")
@@ -319,7 +510,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 
 				filePath := filepath.Join(outputDir, fileName)
 
-				// Save file
 				out, err := os.Create(filePath)
 				if err != nil {
 					lastError = fmt.Errorf("failed to create file: %w", err)
@@ -328,7 +518,7 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 				defer out.Close()
 
 				fmt.Println("Downloading...")
-				// Use progress writer to track download
+
 				pw := NewProgressWriter(out)
 				_, err = io.Copy(pw, fileResp.Body)
 				if err != nil {
@@ -336,7 +526,6 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 					return "", fmt.Errorf("failed to write file: %w", err)
 				}
 
-				// Print final size
 				fmt.Printf("\rDownloaded: %.2f MB (Complete)\n", float64(pw.GetTotal())/(1024*1024))
 				fmt.Println("Download complete!")
 				return filePath, nil
@@ -349,7 +538,7 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 				lastError = fmt.Errorf("processing failed: %s", errorMsg)
 				break
 			} else {
-				// Still processing
+
 				friendlyStatus := status.FriendlyStatus
 				if friendlyStatus == "" {
 					friendlyStatus = status.Status
@@ -372,15 +561,14 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir string) (str
 	return "", fmt.Errorf("all regions failed. Last error: %v", lastError)
 }
 
-func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyISRC string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool) (string, error) {
-	// Create output directory if needed
+func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string) (string, error) {
+
 	if outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return "", fmt.Errorf("failed to create output directory: %w", err)
 		}
 	}
 
-	// Check if file with expected name already exists (Amazon doesn't provide ISRC before download)
 	if spotifyTrackName != "" && spotifyArtistName != "" {
 		expectedFilename := BuildExpectedFilename(spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, filenameFormat, includeTrackNumber, position, spotifyDiscNumber, false)
 		expectedPath := filepath.Join(outputDir, expectedFilename)
@@ -393,29 +581,24 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 
 	fmt.Printf("Using Amazon URL: %s\n", amazonURL)
 
-	// Download from service
-	filePath, err := a.DownloadFromService(amazonURL, outputDir)
+	filePath, err := a.DownloadFromService(amazonURL, outputDir, quality)
 	if err != nil {
 		return "", err
 	}
 
-	// Rename file based on Spotify metadata
 	if spotifyTrackName != "" && spotifyArtistName != "" {
 		safeArtist := sanitizeFilename(spotifyArtistName)
 		safeTitle := sanitizeFilename(spotifyTrackName)
 		safeAlbum := sanitizeFilename(spotifyAlbumName)
 		safeAlbumArtist := sanitizeFilename(spotifyAlbumArtist)
 
-		// Extract year from release date
 		year := ""
 		if len(spotifyReleaseDate) >= 4 {
 			year = spotifyReleaseDate[:4]
 		}
 
-		// Build filename based on format settings
 		var newFilename string
 
-		// Check if format is a template (contains {})
 		if strings.Contains(filenameFormat, "{") {
 			newFilename = filenameFormat
 			newFilename = strings.ReplaceAll(newFilename, "{title}", safeTitle)
@@ -424,34 +607,31 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 			newFilename = strings.ReplaceAll(newFilename, "{album_artist}", safeAlbumArtist)
 			newFilename = strings.ReplaceAll(newFilename, "{year}", year)
 
-			// Handle disc number
 			if spotifyDiscNumber > 0 {
 				newFilename = strings.ReplaceAll(newFilename, "{disc}", fmt.Sprintf("%d", spotifyDiscNumber))
 			} else {
 				newFilename = strings.ReplaceAll(newFilename, "{disc}", "")
 			}
 
-			// Handle track number - if position is 0, remove {track} and surrounding separators
 			if position > 0 {
 				newFilename = strings.ReplaceAll(newFilename, "{track}", fmt.Sprintf("%02d", position))
 			} else {
-				// Remove {track} with common separators
+
 				newFilename = regexp.MustCompile(`\{track\}\.\s*`).ReplaceAllString(newFilename, "")
 				newFilename = regexp.MustCompile(`\{track\}\s*-\s*`).ReplaceAllString(newFilename, "")
 				newFilename = regexp.MustCompile(`\{track\}\s*`).ReplaceAllString(newFilename, "")
 			}
 		} else {
-			// Legacy format support
+
 			switch filenameFormat {
 			case "artist-title":
 				newFilename = fmt.Sprintf("%s - %s", safeArtist, safeTitle)
 			case "title":
 				newFilename = safeTitle
-			default: // "title-artist"
+			default:
 				newFilename = fmt.Sprintf("%s - %s", safeTitle, safeArtist)
 			}
 
-			// Add track number prefix if enabled (legacy behavior)
 			if includeTrackNumber && position > 0 {
 				newFilename = fmt.Sprintf("%02d. %s", position, newFilename)
 			}
@@ -460,7 +640,6 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 		newFilename = newFilename + ".flac"
 		newFilePath := filepath.Join(outputDir, newFilename)
 
-		// Rename file
 		if err := os.Rename(filePath, newFilePath); err != nil {
 			fmt.Printf("Warning: Failed to rename file: %v\n", err)
 		} else {
@@ -469,11 +648,10 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 		}
 	}
 
-	// Embed Spotify metadata (replace Amazon's embedded metadata)
 	fmt.Println("Embedding Spotify metadata...")
 
 	coverPath := ""
-	// Download Spotify cover (with max resolution if enabled)
+
 	if spotifyCoverURL != "" {
 		coverPath = filePath + ".cover.jpg"
 		coverClient := NewCoverClient()
@@ -486,27 +664,24 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 		}
 	}
 
-	// Determine track number to embed
-	// Use Spotify track number (album track number) if available, otherwise use position
 	trackNumberToEmbed := spotifyTrackNumber
 	if trackNumberToEmbed == 0 {
-		trackNumberToEmbed = position // Fallback to playlist position
-	}
-	if trackNumberToEmbed == 0 {
-		trackNumberToEmbed = 1 // Default to track 1 for single track downloads without track number
+		trackNumberToEmbed = 1
 	}
 
-	// Build metadata from Spotify
 	metadata := Metadata{
 		Title:       spotifyTrackName,
 		Artist:      spotifyArtistName,
 		Album:       spotifyAlbumName,
 		AlbumArtist: spotifyAlbumArtist,
-		Date:        spotifyReleaseDate, // Recorded date (full date YYYY-MM-DD)
+		Date:        spotifyReleaseDate,
 		TrackNumber: trackNumberToEmbed,
-		TotalTracks: spotifyTotalTracks, // Total tracks in album from Spotify
-		DiscNumber:  spotifyDiscNumber,  // Disc number from Spotify
-		ISRC:        spotifyISRC,        // Use ISRC from Spotify
+		TotalTracks: spotifyTotalTracks,
+		DiscNumber:  spotifyDiscNumber,
+		TotalDiscs:  spotifyTotalDiscs,
+		URL:         spotifyURL,
+		Copyright:   spotifyCopyright,
+		Publisher:   spotifyPublisher,
 		Description: "https://github.com/afkarxyz/SpotiFLAC",
 	}
 
@@ -521,12 +696,12 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, filenameFormat st
 	return filePath, nil
 }
 
-func (a *AmazonDownloader) DownloadBySpotifyID(spotifyTrackID, outputDir, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyISRC string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool) (string, error) {
-	// Get Amazon URL from Spotify track ID
+func (a *AmazonDownloader) DownloadBySpotifyID(spotifyTrackID, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string) (string, error) {
+
 	amazonURL, err := a.GetAmazonURLFromSpotify(spotifyTrackID)
 	if err != nil {
 		return "", err
 	}
 
-	return a.DownloadByURL(amazonURL, outputDir, filenameFormat, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyISRC, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, embedMaxQualityCover)
+	return a.DownloadByURL(amazonURL, outputDir, quality, filenameFormat, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, embedMaxQualityCover, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyURL)
 }

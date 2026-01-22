@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import { downloadLyrics } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -14,7 +14,57 @@ export function useLyrics() {
   const [isBulkDownloadingLyrics, setIsBulkDownloadingLyrics] = useState(false);
   const [lyricsDownloadProgress, setLyricsDownloadProgress] = useState(0);
   const [lyricsFiles, setLyricsFiles] = useState<Record<string, string>>({});
+
   const stopBulkDownloadRef = useRef(false);
+
+  const buildOutputDir = (
+    os: string,
+    baseDownloadPath: string,
+    folderTemplate: string,
+    templateData: TemplateData,
+    playlistName?: string,
+    options?: { isAlbum?: boolean }
+  ) => {
+    const placeholder = "__SLASH_PLACEHOLDER__";
+
+    let outputDir = baseDownloadPath;
+
+    // Keep legacy behavior in a safer way:
+    // - If playlistName exists, usually prepend it as a folder.
+    // - If we're in an album context and the folder template already contains an album/album-artist/playlist token,
+    //   don't double-nest.
+    const useAlbumSubfolder =
+      folderTemplate.includes("{album}") ||
+      folderTemplate.includes("{album_artist}") ||
+      folderTemplate.includes("{playlist}");
+
+    if (playlistName && (!options?.isAlbum || !useAlbumSubfolder)) {
+      outputDir = joinPath(os, outputDir, sanitizePath(playlistName.replace(/\//g, " "), os));
+    }
+
+    if (!folderTemplate) return outputDir;
+
+    const folderPath = parseTemplate(folderTemplate, {
+      ...templateData,
+      // Ensure values won't be interpreted as path separators.
+      artist: templateData.artist?.replace(/\//g, placeholder),
+      album: templateData.album?.replace(/\//g, placeholder),
+      album_artist: templateData.album_artist?.replace(/\//g, placeholder),
+      title: templateData.title?.replace(/\//g, placeholder),
+      playlist: templateData.playlist?.replace(/\//g, placeholder),
+    });
+
+    if (!folderPath) return outputDir;
+
+    const parts = folderPath.split("/").filter((p) => p.trim());
+    for (const part of parts) {
+      // Restore any slashes that were in original values as spaces
+      const sanitizedPart = part.replace(new RegExp(placeholder, "g"), " ");
+      outputDir = joinPath(os, outputDir, sanitizePath(sanitizedPart, os));
+    }
+
+    return outputDir;
+  };
 
   const handleDownloadLyrics = async (
     spotifyId: string,
@@ -25,51 +75,39 @@ export function useLyrics() {
     position?: number,
     albumArtist?: string,
     releaseDate?: string,
-    discNumber?: number
-  ) => {
+    discNumber?: number,
+    isAlbum?: boolean
+  ): Promise<string | null> => {
     if (!spotifyId) {
       toast.error("No Spotify ID found for this track");
-      return;
+      return null;
     }
 
     logger.info(`downloading lyrics: ${trackName} - ${artistName}`);
+
     const settings = getSettings();
     setDownloadingLyricsTrack(spotifyId);
 
     try {
       const os = settings.operatingSystem;
-      let outputDir = settings.downloadPath;
+      const folderTemplate = settings.folderTemplate || "";
+      const useAlbumTrackNumber = folderTemplate.includes("{album}");
 
-      // Build output path using template system
-      // Replace forward slashes in template data values to prevent them from being interpreted as path separators
-      const placeholder = "__SLASH_PLACEHOLDER__";
-      const templateData: TemplateData = {
-        artist: artistName?.replace(/\//g, placeholder),
-        album: albumName?.replace(/\//g, placeholder),
-        title: trackName?.replace(/\//g, placeholder),
-        track: position,
-        playlist: playlistName?.replace(/\//g, placeholder),
-      };
-
-      // For playlist/discography, prepend the folder name
-      if (playlistName) {
-        outputDir = joinPath(os, outputDir, sanitizePath(playlistName.replace(/\//g, " "), os));
-      }
-
-      // Apply folder template
-      if (settings.folderTemplate) {
-        const folderPath = parseTemplate(settings.folderTemplate, templateData);
-        if (folderPath) {
-          const parts = folderPath.split("/").filter((p: string) => p.trim());
-          for (const part of parts) {
-            // Restore any slashes that were in the original values as spaces
-            const sanitizedPart = part.replace(new RegExp(placeholder, "g"), " ");
-            outputDir = joinPath(os, outputDir, sanitizePath(sanitizedPart, os));
-          }
-        }
-      }
-
-      const useAlbumTrackNumber = settings.folderTemplate?.includes("{album}") || false;
+      const outputDir = buildOutputDir(
+        os,
+        settings.downloadPath,
+        folderTemplate,
+        {
+          artist: artistName,
+          album: albumName,
+          title: trackName,
+          track: position,
+          playlist: playlistName,
+          album_artist: albumArtist,
+        },
+        playlistName,
+        { isAlbum }
+      );
 
       const response = await downloadLyrics({
         spotify_id: spotifyId,
@@ -90,6 +128,7 @@ export function useLyrics() {
         if (response.file) {
           setLyricsFiles((prev) => ({ ...prev, [spotifyId]: response.file! }));
         }
+
         if (response.already_exists) {
           toast.info("Lyrics file already exists");
           setSkippedLyrics((prev) => new Set(prev).add(spotifyId));
@@ -97,17 +136,19 @@ export function useLyrics() {
           toast.success("Lyrics downloaded successfully");
           setDownloadedLyrics((prev) => new Set(prev).add(spotifyId));
         }
+
         setFailedLyrics((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(spotifyId);
-          return newSet;
+          const next = new Set(prev);
+          next.delete(spotifyId);
+          return next;
         });
-        return response.file;
-      } else {
-        toast.error(response.error || "Failed to download lyrics");
-        setFailedLyrics((prev) => new Set(prev).add(spotifyId));
-        return null;
+
+        return response.file || null;
       }
+
+      toast.error(response.error || "Failed to download lyrics");
+      setFailedLyrics((prev) => new Set(prev).add(spotifyId));
+      return null;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download lyrics");
       setFailedLyrics((prev) => new Set(prev).add(spotifyId));
@@ -119,17 +160,16 @@ export function useLyrics() {
 
   const ensureLyricsFile = async (spotifyId: string): Promise<string | null> => {
     if (!spotifyId) return null;
-    const existing = lyricsFiles[spotifyId];
-    if (existing) return existing;
-    return null;
+    return lyricsFiles[spotifyId] || null;
   };
 
   const handleDownloadAllLyrics = async (
     tracks: TrackMetadata[],
     playlistName?: string,
-    _isArtistDiscography?: boolean
+    _isArtistDiscography?: boolean,
+    isAlbum?: boolean
   ) => {
-    const tracksWithSpotifyId = tracks.filter((track) => track.spotify_id);
+    const tracksWithSpotifyId = tracks.filter((t) => t.spotify_id);
 
     if (tracksWithSpotifyId.length === 0) {
       toast.error("No tracks with Spotify ID available for lyrics download");
@@ -147,8 +187,13 @@ export function useLyrics() {
     let skipped = 0;
     const total = tracksWithSpotifyId.length;
 
+    const os = settings.operatingSystem;
+    const folderTemplate = settings.folderTemplate || "";
+    const useAlbumTrackNumber = folderTemplate.includes("{album}");
+
     for (let i = 0; i < tracksWithSpotifyId.length; i++) {
       const track = tracksWithSpotifyId[i];
+
       if (stopBulkDownloadRef.current) {
         toast.info("Lyrics download stopped by user");
         break;
@@ -159,43 +204,26 @@ export function useLyrics() {
       setLyricsDownloadProgress(Math.round((completed / total) * 100));
 
       try {
-        const os = settings.operatingSystem;
-        let outputDir = settings.downloadPath;
+        // Align with downloads: use track.track_number when album context is expected.
+        const trackPosition = useAlbumTrackNumber
+          ? track.track_number || i + 1
+          : i + 1;
 
-        // Replace forward slashes in template data values to prevent them from being interpreted as path separators
-        const placeholder = "__SLASH_PLACEHOLDER__";
-        
-        // Determine if we should use album track number or sequential position
-        const useAlbumTrackNumber = settings.folderTemplate?.includes("{album}") || false;
-        // Use track.track_number for album context, otherwise use sequential position (consistent with track download)
-        const trackPosition = useAlbumTrackNumber ? (track.track_number || i + 1) : (i + 1);
-        
-        // Build output path using template system
-        const templateData: TemplateData = {
-          artist: track.artists?.replace(/\//g, placeholder),
-          album: track.album_name?.replace(/\//g, placeholder),
-          title: track.name?.replace(/\//g, placeholder),
-          track: trackPosition,
-          playlist: playlistName?.replace(/\//g, placeholder),
-        };
-
-        // For playlist/discography, prepend the folder name
-        if (playlistName) {
-          outputDir = joinPath(os, outputDir, sanitizePath(playlistName.replace(/\//g, " "), os));
-        }
-
-        // Apply folder template
-        if (settings.folderTemplate) {
-          const folderPath = parseTemplate(settings.folderTemplate, templateData);
-          if (folderPath) {
-            const parts = folderPath.split("/").filter((p: string) => p.trim());
-            for (const part of parts) {
-              // Restore any slashes that were in the original values as spaces
-              const sanitizedPart = part.replace(new RegExp(placeholder, "g"), " ");
-              outputDir = joinPath(os, outputDir, sanitizePath(sanitizedPart, os));
-            }
-          }
-        }
+        const outputDir = buildOutputDir(
+          os,
+          settings.downloadPath,
+          folderTemplate,
+          {
+            artist: track.artists,
+            album: track.album_name,
+            title: track.name,
+            track: trackPosition,
+            playlist: playlistName,
+            album_artist: track.album_artist,
+          },
+          playlistName,
+          { isAlbum }
+        );
 
         const response = await downloadLyrics({
           spotify_id: id,
@@ -216,6 +244,7 @@ export function useLyrics() {
           if (response.file) {
             setLyricsFiles((prev) => ({ ...prev, [id]: response.file! }));
           }
+
           if (response.already_exists) {
             skipped++;
             setSkippedLyrics((prev) => new Set(prev).add(id));
@@ -223,10 +252,11 @@ export function useLyrics() {
             success++;
             setDownloadedLyrics((prev) => new Set(prev).add(id));
           }
+
           setFailedLyrics((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(id);
-            return newSet;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
           });
         } else {
           failed++;
@@ -246,7 +276,9 @@ export function useLyrics() {
     setLyricsDownloadProgress(0);
 
     if (!stopBulkDownloadRef.current) {
-      toast.success(`Lyrics: ${success} downloaded, ${skipped} skipped, ${failed} failed`);
+      toast.success(
+        `Lyrics: ${success} downloaded, ${skipped} skipped, ${failed} failed`
+      );
     }
   };
 

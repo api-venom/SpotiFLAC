@@ -1,59 +1,45 @@
-import { useState, useEffect, useCallback, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback } from "react";
+import { ArrowUp, Search, X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Search, X, ArrowUp } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  getSettings,
-  getSettingsWithDefaults,
-  loadSettings,
-  saveSettings,
-  applyThemeMode,
-  applyFont,
-} from "@/lib/settings";
-import { applyTheme } from "@/lib/themes";
-import { OpenFolder, IsFFmpegInstalled, DownloadFFmpeg } from "../wailsjs/go/main/App";
-import { Quit } from "../wailsjs/runtime/runtime";
-import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { TitleBar } from "@/components/TitleBar";
-import { Sidebar, type PageType } from "@/components/Sidebar";
-import { Header } from "@/components/Header";
-import { SearchBar } from "@/components/SearchBar";
-import { TrackInfo } from "@/components/TrackInfo";
+
+import { AboutPage } from "@/components/AboutPage";
 import { AlbumInfo } from "@/components/AlbumInfo";
-import { PlaylistInfo } from "@/components/PlaylistInfo";
 import { ArtistInfo } from "@/components/ArtistInfo";
-import { DownloadQueue } from "@/components/DownloadQueue";
-import { DownloadProgressToast } from "@/components/DownloadProgressToast";
 import { AudioAnalysisPage } from "@/components/AudioAnalysisPage";
 import { AudioConverterPage } from "@/components/AudioConverterPage";
-import { FileManagerPage } from "@/components/FileManagerPage";
-import { SettingsPage } from "@/components/SettingsPage";
 import { DebugLoggerPage } from "@/components/DebugLoggerPage";
-import { AmbientBackground } from "@/components/AmbientBackground";
-import { LyricsOverlay, type LyricsOverlayTrack } from "@/components/LyricsOverlay";
-import { FullScreenPlayer } from "@/components/FullScreenPlayer";
-import { MiniPlayer } from "@/components/MiniPlayer";
-import { AboutPage } from "@/components/AboutPage";
-import { HistoryPage } from "@/components/HistoryPage";
+import { DownloadProgressToast } from "@/components/DownloadProgressToast";
+import { DownloadQueue } from "@/components/DownloadQueue";
+import { FileManagerPage } from "@/components/FileManagerPage";
 import type { HistoryItem } from "@/components/FetchHistory";
-import { useDownload } from "@/hooks/useDownload";
-import { useMetadata } from "@/hooks/useMetadata";
-import { useLyrics } from "@/hooks/useLyrics";
-import { useCover } from "@/hooks/useCover";
+import { Header } from "@/components/Header";
+import { HistoryPage } from "@/components/HistoryPage";
+import { PlaylistInfo } from "@/components/PlaylistInfo";
+import { SearchBar } from "@/components/SearchBar";
+import { SettingsPage } from "@/components/SettingsPage";
+import { Sidebar, type PageType } from "@/components/Sidebar";
+import { TitleBar } from "@/components/TitleBar";
+import { TrackInfo } from "@/components/TrackInfo";
+
+import { toastWithSound as toast } from "@/lib/toast-with-sound";
+import { applyTheme } from "@/lib/themes";
+import { applyFont, applyThemeMode, getSettings, getSettingsWithDefaults, loadSettings, saveSettings } from "@/lib/settings";
+
 import { useAvailability } from "@/hooks/useAvailability";
-import { useDownloadQueueDialog } from "@/hooks/useDownloadQueueDialog";
-import { usePlayer } from "@/hooks/usePlayer";
+import { useCover } from "@/hooks/useCover";
+import { useDownload } from "@/hooks/useDownload";
 import { useDownloadProgress } from "@/hooks/useDownloadProgress";
+import { useDownloadQueueDialog } from "@/hooks/useDownloadQueueDialog";
+import { useLyrics } from "@/hooks/useLyrics";
+import { useMetadata } from "@/hooks/useMetadata";
+
+import { DownloadFFmpeg, IsFFmpegInstalled, OpenFolder } from "../wailsjs/go/main/App";
+import { Quit } from "../wailsjs/runtime/runtime";
 
 const HISTORY_KEY = "spotiflac_fetch_history";
 const MAX_HISTORY = 5;
@@ -76,10 +62,6 @@ function App() {
   const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false);
   const [resetSettingsFn, setResetSettingsFn] = useState<(() => void) | null>(null);
 
-  // Local custom additions
-  const [lyricsOverlayOpen, setLyricsOverlayOpen] = useState(false);
-  const [lyricsOverlayTrack, setLyricsOverlayTrack] = useState<LyricsOverlayTrack | null>(null);
-
   const ITEMS_PER_PAGE = 50;
 
   const download = useDownload();
@@ -89,21 +71,11 @@ function App() {
   const availability = useAvailability();
   const downloadQueue = useDownloadQueueDialog();
   const downloadProgress = useDownloadProgress();
-  const { state: playerState } = usePlayer();
 
   const [isFFmpegInstalled, setIsFFmpegInstalled] = useState<boolean | null>(null);
   const [isInstallingFFmpeg, setIsInstallingFFmpeg] = useState(false);
   const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState(0);
   const [ffmpegInstallStatus, setFfmpegInstallStatus] = useState("");
-
-  const openLyricsOverlay = useCallback(
-    (name: string, artists: string, spotifyId?: string, coverUrl?: string) => {
-      if (!spotifyId) return;
-      setLyricsOverlayTrack({ spotify_id: spotifyId, name, artists, coverUrl });
-      setLyricsOverlayOpen(true);
-    },
-    [],
-  );
 
   const checkForUpdates = useCallback(async () => {
     try {
@@ -144,28 +116,28 @@ function App() {
 
   const addToHistory = useCallback(
     (item: Omit<HistoryItem, "id" | "timestamp">) => {
-      setFetchHistory((prev) => {
-        const filtered = prev.filter((h) => h.url !== item.url);
-        const newItem: HistoryItem = {
-          ...item,
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-        };
-        const updated = [newItem, ...filtered].slice(0, MAX_HISTORY);
-        saveHistory(updated);
-        return updated;
-      });
+    setFetchHistory((prev) => {
+      const filtered = prev.filter((h) => h.url !== item.url);
+      const newItem: HistoryItem = {
+        ...item,
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+      };
+      const updated = [newItem, ...filtered].slice(0, MAX_HISTORY);
+      saveHistory(updated);
+      return updated;
+    });
     },
     [saveHistory],
   );
 
   const removeFromHistory = useCallback(
     (id: string) => {
-      setFetchHistory((prev) => {
-        const updated = prev.filter((h) => h.id !== id);
-        saveHistory(updated);
-        return updated;
-      });
+    setFetchHistory((prev) => {
+      const updated = prev.filter((h) => h.id !== id);
+      saveHistory(updated);
+      return updated;
+    });
     },
     [saveHistory],
   );
@@ -207,7 +179,7 @@ function App() {
       }
     };
 
-    initSettings();
+    void initSettings();
 
     const checkFFmpeg = async () => {
       try {
@@ -219,7 +191,7 @@ function App() {
       }
     };
 
-    checkFFmpeg();
+    void checkFFmpeg();
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
@@ -231,7 +203,7 @@ function App() {
     };
 
     mediaQuery.addEventListener("change", handleChange);
-    checkForUpdates();
+    void checkForUpdates();
     loadHistory();
 
     const handleScroll = () => {
@@ -263,13 +235,35 @@ function App() {
     setCurrentListPage(1);
   }, [
     metadata.metadata,
+    availability.clearAvailability,
+    cover.resetCoverState,
     download.resetDownloadedTracks,
     lyrics.resetLyricsState,
-    cover.resetCoverState,
-    availability.clearAvailability,
   ]);
 
-  // Restore upstream history tracking tail
+  const handleInstallFFmpeg = async () => {
+    setIsInstallingFFmpeg(true);
+    setFfmpegInstallProgress(0);
+    setFfmpegInstallStatus("starting");
+
+    try {
+      const response = await DownloadFFmpeg();
+      if (response.success) {
+        toast.success("FFmpeg installed successfully!");
+        setIsFFmpegInstalled(true);
+      } else {
+        toast.error(`Failed to install FFmpeg: ${response.error}`);
+      }
+    } catch (error) {
+      console.error("Error installing FFmpeg:", error);
+      toast.error(`Error during FFmpeg installation: ${error}`);
+    } finally {
+      setIsInstallingFFmpeg(false);
+      setFfmpegInstallProgress(0);
+      setFfmpegInstallStatus("");
+    }
+  };
+
   useEffect(() => {
     if (!metadata.metadata || !spotifyUrl) return;
 
@@ -316,7 +310,7 @@ function App() {
     if (historyItem) {
       addToHistory(historyItem);
     }
-  }, [metadata.metadata, spotifyUrl, addToHistory]);
+  }, [addToHistory, metadata.metadata, spotifyUrl]);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -347,29 +341,6 @@ function App() {
     } catch (error) {
       console.error("Error opening folder:", error);
       toast.error(`Error opening folder: ${error}`);
-    }
-  };
-
-  const handleInstallFFmpeg = async () => {
-    setIsInstallingFFmpeg(true);
-    setFfmpegInstallProgress(0);
-    setFfmpegInstallStatus("starting");
-
-    try {
-      const response = await DownloadFFmpeg();
-      if (response.success) {
-        toast.success("FFmpeg installed successfully!");
-        setIsFFmpegInstalled(true);
-      } else {
-        toast.error(`Failed to install FFmpeg: ${response.error}`);
-      }
-    } catch (error) {
-      console.error("Error installing FFmpeg:", error);
-      toast.error(`Error during FFmpeg installation: ${error}`);
-    } finally {
-      setIsInstallingFFmpeg(false);
-      setFfmpegInstallProgress(0);
-      setFfmpegInstallStatus("");
     }
   };
 
@@ -410,7 +381,18 @@ function App() {
               discNumber,
             )
           }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _playlistName, _position, trackId, albumArtist, releaseDate, discNumber) =>
+          onDownloadCover={(
+            coverUrl,
+            trackName,
+            artistName,
+            albumName,
+            _playlistName,
+            _position,
+            trackId,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) =>
             cover.handleDownloadCover(
               coverUrl,
               trackName,
@@ -426,7 +408,6 @@ function App() {
           }
           onCheckAvailability={availability.checkAvailability}
           onOpenFolder={handleOpenFolder}
-          onViewLyrics={openLyricsOverlay}
         />
       );
     }
@@ -467,7 +448,18 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
+          onDownloadLyrics={(
+            spotifyId,
+            name,
+            artists,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) =>
             lyrics.handleDownloadLyrics(
               spotifyId,
               name,
@@ -481,7 +473,19 @@ function App() {
               true,
             )
           }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
+          onDownloadCover={(
+            coverUrl,
+            trackName,
+            artistName,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            trackId,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) =>
             cover.handleDownloadCover(
               coverUrl,
               trackName,
@@ -556,12 +560,31 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, playlist_info.name, position, albumArtist, releaseDate, discNumber)
-          }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, playlist_info.name, position, trackId, albumArtist, releaseDate, discNumber)
-          }
+          onDownloadLyrics={(
+            spotifyId,
+            name,
+            artists,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) => lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, playlist_info.name, position, albumArtist, releaseDate, discNumber)}
+          onDownloadCover={(
+            coverUrl,
+            trackName,
+            artistName,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            trackId,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) => cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, playlist_info.name, position, trackId, albumArtist, releaseDate, discNumber)}
           onCheckAvailability={availability.checkAvailability}
           onDownloadAllLyrics={() => lyrics.handleDownloadAllLyrics(track_list, playlist_info.name)}
           onDownloadAllCovers={() => cover.handleDownloadAllCovers(track_list, playlist_info.name)}
@@ -624,12 +647,31 @@ function App() {
           onToggleTrack={toggleTrackSelection}
           onToggleSelectAll={toggleSelectAll}
           onDownloadTrack={download.handleDownloadTrack}
-          onDownloadLyrics={(spotifyId, name, artists, albumName, _folderName, _isArtistDiscography, position, albumArtist, releaseDate, discNumber) =>
-            lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, artist_info.name, position, albumArtist, releaseDate, discNumber)
-          }
-          onDownloadCover={(coverUrl, trackName, artistName, albumName, _folderName, _isArtistDiscography, position, trackId, albumArtist, releaseDate, discNumber) =>
-            cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, artist_info.name, position, trackId, albumArtist, releaseDate, discNumber)
-          }
+          onDownloadLyrics={(
+            spotifyId,
+            name,
+            artists,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) => lyrics.handleDownloadLyrics(spotifyId, name, artists, albumName, artist_info.name, position, albumArtist, releaseDate, discNumber)}
+          onDownloadCover={(
+            coverUrl,
+            trackName,
+            artistName,
+            albumName,
+            _folderName,
+            _isArtistDiscography,
+            position,
+            trackId,
+            albumArtist,
+            releaseDate,
+            discNumber,
+          ) => cover.handleDownloadCover(coverUrl, trackName, artistName, albumName, artist_info.name, position, trackId, albumArtist, releaseDate, discNumber)}
           onCheckAvailability={availability.checkAvailability}
           onDownloadAllLyrics={() => lyrics.handleDownloadAllLyrics(track_list, artist_info.name)}
           onDownloadAllCovers={() => cover.handleDownloadAllCovers(track_list, artist_info.name)}
@@ -708,7 +750,7 @@ function App() {
         return <FileManagerPage />;
       default:
         return (
-          <> 
+          <>
             <Header version={CURRENT_VERSION} hasUpdate={hasUpdate} releaseDate={releaseDate} />
 
             <Dialog open={metadata.showTimeoutDialog} onOpenChange={metadata.setShowTimeoutDialog}>
@@ -826,7 +868,6 @@ function App() {
 
   return (
     <TooltipProvider>
-      <AmbientBackground />
       <div className="min-h-screen bg-background flex flex-col">
         <TitleBar />
         <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
@@ -837,28 +878,6 @@ function App() {
 
         <DownloadProgressToast onClick={downloadQueue.openQueue} />
         <DownloadQueue isOpen={downloadQueue.isOpen} onClose={downloadQueue.closeQueue} />
-
-        {/* custom player UI */}
-        <FullScreenPlayer />
-        <MiniPlayer />
-
-        {/* custom lyrics overlay (from TrackInfo "View Lyrics") */}
-        {lyricsOverlayTrack ? (
-          <LyricsOverlay
-            open={lyricsOverlayOpen}
-            onOpenChange={(open) => {
-              setLyricsOverlayOpen(open);
-              if (!open) setLyricsOverlayTrack(null);
-            }}
-            track={lyricsOverlayTrack}
-            ensureLyricsFile={lyrics.ensureLyricsFile}
-            currentPosition={playerState.position}
-            fetchLyrics={async (spotifyId, trackName, artistName) => {
-              await lyrics.handleDownloadLyrics(spotifyId, trackName, artistName);
-            }}
-            isPlaying={playerState.isPlaying}
-          />
-        ) : null}
 
         {showScrollTop && (
           <Button
@@ -938,11 +957,7 @@ function App() {
 
             <DialogFooter className="flex-row gap-3 pt-2">
               {!isInstallingFFmpeg && (
-                <Button
-                  variant="outline"
-                  className="flex-1 h-11 text-sm font-bold transition-colors"
-                  onClick={() => Quit()}
-                >
+                <Button variant="outline" className="flex-1 h-11 text-sm font-bold transition-colors" onClick={() => Quit()}>
                   Exit
                 </Button>
               )}

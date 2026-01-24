@@ -1,15 +1,32 @@
-import type { SpotifyMetadataResponse, DownloadRequest, DownloadResponse, HealthResponse, LyricsDownloadRequest, LyricsDownloadResponse, CoverDownloadRequest, CoverDownloadResponse, HeaderDownloadRequest, HeaderDownloadResponse, GalleryImageDownloadRequest, GalleryImageDownloadResponse, AvatarDownloadRequest, AvatarDownloadResponse, } from "@/types/api";
-import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover, DownloadHeader, DownloadGalleryImage, DownloadAvatar } from "../../wailsjs/go/main/App";
+import type {
+    SpotifyMetadataResponse,
+    DownloadRequest,
+    DownloadResponse,
+    HealthResponse,
+    LyricsDownloadRequest,
+    LyricsDownloadResponse,
+    CoverDownloadRequest,
+    CoverDownloadResponse,
+    HeaderDownloadRequest,
+    HeaderDownloadResponse,
+    GalleryImageDownloadRequest,
+    GalleryImageDownloadResponse,
+    AvatarDownloadRequest,
+    AvatarDownloadResponse,
+    AnalysisResult,
+} from "@/types/api";
+import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover, DownloadHeader, DownloadGalleryImage, DownloadAvatar, AnalyzeTrack } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
+
 export async function fetchSpotifyMetadata(url: string, batch: boolean = true, delay: number = 1.0, timeout: number = 300.0): Promise<SpotifyMetadataResponse> {
-    const req = new main.SpotifyMetadataRequest({
-        url,
-        batch,
-        delay,
-        timeout,
-    });
+    const req = new main.SpotifyMetadataRequest({ url, batch, delay, timeout });
     const jsonString = await GetSpotifyMetadata(req);
     return JSON.parse(jsonString);
+}
+
+export async function analyzeTrack(filePath: string): Promise<AnalysisResult> {
+    const jsonString = await AnalyzeTrack(filePath);
+    return JSON.parse(jsonString) as AnalysisResult;
 }
 export async function downloadTrack(request: DownloadRequest): Promise<DownloadResponse> {
     const req = new main.DownloadRequest(request);

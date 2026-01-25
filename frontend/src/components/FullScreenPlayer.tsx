@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, Loader2, Music } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
@@ -9,7 +9,6 @@ import { useCoverPalette } from "@/hooks/useCoverPalette";
 import { EqualizerControls } from "./EqualizerControls";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { buildLrcTimeline, findActiveIndex, getLineProgress } from "@/lib/lyrics/lrc";
-import { getSettings } from "@/lib/settings";
 import type { WordTimeline } from "@/lib/lyrics/wordLyrics";
 import { findActiveLineIndex, getWordProgress } from "@/lib/lyrics/wordLyrics";
 
@@ -17,7 +16,7 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
-type LyricsState = "idle" | "loading" | "fetching" | "loaded" | "error" | "no-lyrics" | "on-demand";
+type LyricsState = "idle" | "loading" | "fetching" | "loaded" | "error" | "no-lyrics";
 
 export function FullScreenPlayer() {
   const { state, player } = usePlayer();
@@ -85,7 +84,7 @@ export function FullScreenPlayer() {
     }
   }, [activeIndex, wordActiveLineIndex, showLyrics]);
 
-  // Load lyrics with proper state management
+  // Load lyrics with proper state management - AUTO-LOAD always
   useEffect(() => {
     const spotifyId = track?.spotifyId;
 
@@ -104,44 +103,49 @@ export function FullScreenPlayer() {
       return;
     }
 
-    const settings = getSettings();
-    const lyricsMode = settings.lyricsMode || "on-demand";
-
-    if (lyricsMode === "on-demand") {
-      setLyricsState("on-demand");
+    // Skip if we've already attempted to fetch for this track
+    if (fetchAttemptedRef.current === spotifyId) {
       return;
     }
 
     let cancelled = false;
 
     (async () => {
-      setLyricsState("loading");
+      fetchAttemptedRef.current = spotifyId;
+      setLyricsState("fetching");
 
       try {
-        const filePath = await lyrics.ensureLyricsFile(spotifyId);
+        // First, try to fetch word-level lyrics for perfect sync
+        const wordLyrics = await lyrics.handleFetchWordLyrics(
+          track.title,
+          track.artist,
+          track.album || "",
+          Math.floor(state.duration)
+        );
 
         if (cancelled) return;
 
-        if (filePath) {
-          const text = await ReadTextFile(filePath);
-          if (!cancelled) {
-            if (text && text.trim()) {
-              setLyricsContent(text);
-              setLyricsState("loaded");
-            } else {
-              setLyricsState("no-lyrics");
-            }
+        if (wordLyrics && wordLyrics.lines.length > 0) {
+          setWordTimeline(wordLyrics);
+          setLyricsContent(""); // Clear LRC content
+          setLyricsState("loaded");
+          console.log(`Word-level lyrics loaded: ${wordLyrics.lines.length} lines, source: ${wordLyrics.source}`);
+          return;
+        }
+
+        // Fall back to LRC-based lyrics
+        console.log("Word-level lyrics not available, trying LRC...");
+
+        const cachedFile = await lyrics.ensureLyricsFile(spotifyId);
+        if (cachedFile) {
+          const text = await ReadTextFile(cachedFile);
+          if (text && text.trim()) {
+            setLyricsContent(text);
+            setWordTimeline(null);
+            setLyricsState("loaded");
+            return;
           }
-          return;
         }
-
-        if (fetchAttemptedRef.current === spotifyId) {
-          setLyricsState("no-lyrics");
-          return;
-        }
-
-        fetchAttemptedRef.current = spotifyId;
-        setLyricsState("fetching");
 
         const downloadedFile = await lyrics.handleDownloadLyrics(
           spotifyId,
@@ -156,6 +160,7 @@ export function FullScreenPlayer() {
           if (!cancelled) {
             if (text && text.trim()) {
               setLyricsContent(text);
+              setWordTimeline(null);
               setLyricsState("loaded");
             } else {
               setLyricsState("no-lyrics");
@@ -175,69 +180,7 @@ export function FullScreenPlayer() {
     return () => {
       cancelled = true;
     };
-  }, [track?.spotifyId, track?.title, track?.artist]);
-
-  // Manual fetch for on-demand mode - tries word-level first, falls back to LRC
-  const handleManualFetch = useCallback(async () => {
-    if (!track?.spotifyId) return;
-
-    setLyricsState("fetching");
-    fetchAttemptedRef.current = track.spotifyId;
-
-    try {
-      // First, try to fetch word-level lyrics for perfect sync
-      const wordLyrics = await lyrics.handleFetchWordLyrics(
-        track.title,
-        track.artist,
-        track.album || "",
-        Math.floor(state.duration)
-      );
-
-      if (wordLyrics && wordLyrics.lines.length > 0) {
-        setWordTimeline(wordLyrics);
-        setLyricsContent(""); // Clear LRC content
-        setLyricsState("loaded");
-        console.log(`Word-level lyrics loaded: ${wordLyrics.lines.length} lines, source: ${wordLyrics.source}`);
-        return;
-      }
-
-      // Fall back to LRC-based lyrics
-      console.log("Word-level lyrics not available, trying LRC...");
-
-      const cachedFile = await lyrics.ensureLyricsFile(track.spotifyId);
-      if (cachedFile) {
-        const text = await ReadTextFile(cachedFile);
-        if (text && text.trim()) {
-          setLyricsContent(text);
-          setWordTimeline(null);
-          setLyricsState("loaded");
-          return;
-        }
-      }
-
-      const downloadedFile = await lyrics.handleDownloadLyrics(
-        track.spotifyId,
-        track.title,
-        track.artist
-      );
-
-      if (downloadedFile) {
-        const text = await ReadTextFile(downloadedFile);
-        if (text && text.trim()) {
-          setLyricsContent(text);
-          setWordTimeline(null);
-          setLyricsState("loaded");
-        } else {
-          setLyricsState("no-lyrics");
-        }
-      } else {
-        setLyricsState("no-lyrics");
-      }
-    } catch (error) {
-      console.error("Failed to fetch lyrics:", error);
-      setLyricsState("error");
-    }
-  }, [track?.spotifyId, track?.title, track?.artist, track?.album, state.duration, lyrics]);
+  }, [track?.spotifyId, track?.title, track?.artist, track?.album, state.duration]);
 
   // Close menu on click outside
   useEffect(() => {
@@ -553,21 +496,6 @@ export function FullScreenPlayer() {
                   </div>
                 )}
 
-                {/* On-demand mode */}
-                {lyricsState === "on-demand" && (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Button
-                      variant="ghost"
-                      size="lg"
-                      onClick={handleManualFetch}
-                      className="text-white/60 hover:text-white hover:bg-white/10 gap-3 h-14 px-8 rounded-full"
-                    >
-                      <FileText className="h-6 w-6" />
-                      <span className="text-lg">Load Lyrics</span>
-                    </Button>
-                  </div>
-                )}
-
                 {/* Idle state */}
                 {lyricsState === "idle" && (
                   <div className="flex flex-col items-center justify-center h-full text-white/30">
@@ -578,7 +506,7 @@ export function FullScreenPlayer() {
 
                 {/* Loaded lyrics - Word-level (best) with per-word karaoke highlighting */}
                 {lyricsState === "loaded" && wordTimeline && wordTimeline.lines.length > 0 && (
-                  <div className="space-y-4 px-4">
+                  <div className="space-y-5 px-4">
                     {wordTimeline.lines.map((line, index) => {
                       const isActive = index === wordActiveLineIndex;
                       const isPast = index < wordActiveLineIndex;
@@ -601,8 +529,9 @@ export function FullScreenPlayer() {
                             key={index}
                             ref={isActive ? activeLineRef : undefined}
                             className={cn(
-                              "relative transition-all duration-500 ease-out flex justify-center",
-                              isActive ? "opacity-100" : "opacity-0"
+                              "relative flex justify-center",
+                              "transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]",
+                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-95"
                             )}
                           >
                             <div
@@ -628,6 +557,7 @@ export function FullScreenPlayer() {
                                   style={{
                                     clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                     color: "#FFFFFF",
+                                    transition: "clip-path 50ms linear",
                                   }}
                                 >
                                   ...
@@ -643,15 +573,17 @@ export function FullScreenPlayer() {
                           key={index}
                           ref={isActive ? activeLineRef : undefined}
                           className={cn(
-                            "relative transition-all duration-500 ease-out cursor-pointer hover:opacity-80",
-                            isActive && "scale-[1.01]"
+                            "relative cursor-pointer",
+                            "transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]",
+                            "hover:opacity-90 active:scale-[0.99]",
+                            isActive && "scale-[1.02]"
                           )}
                           onClick={() => {
                             player.seek(line.startMs / 1000);
                           }}
                         >
                           <div
-                            className="relative inline-block w-full"
+                            className="relative inline-block w-full transition-all duration-300"
                             style={{
                               fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
                               fontWeight: isActive ? 700 : 600,
@@ -676,13 +608,14 @@ export function FullScreenPlayer() {
                               return (
                                 <span
                                   key={wordIdx}
-                                  className="relative inline-block"
+                                  className="relative inline-block transition-colors duration-200"
                                   style={{
                                     marginRight: wordIdx < line.words.length - 1 ? "0.25em" : 0,
                                   }}
                                 >
                                   {/* Background (unhighlighted) text */}
                                   <span
+                                    className="transition-colors duration-300"
                                     style={{
                                       color: isWordFuture
                                         ? "rgba(255, 255, 255, 0.3)"
@@ -701,6 +634,7 @@ export function FullScreenPlayer() {
                                       style={{
                                         clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                         color: "#FFFFFF",
+                                        transition: "clip-path 50ms linear",
                                       }}
                                     >
                                       {word.text}
@@ -718,7 +652,7 @@ export function FullScreenPlayer() {
 
                 {/* Loaded lyrics - LRC fallback (Apple Music style) */}
                 {lyricsState === "loaded" && !wordTimeline && timeline.length > 0 && (
-                  <div className="space-y-4 px-4">
+                  <div className="space-y-5 px-4">
                     {timeline.map((line, index) => {
                       const isActive = index === activeIndex;
                       const isPast = index < activeIndex;
@@ -743,8 +677,9 @@ export function FullScreenPlayer() {
                             key={index}
                             ref={isActive ? activeLineRef : undefined}
                             className={cn(
-                              "relative transition-all duration-500 ease-out flex justify-center",
-                              isActive ? "opacity-100" : "opacity-0"
+                              "relative flex justify-center",
+                              "transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]",
+                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-95"
                             )}
                           >
                             <div
@@ -770,6 +705,7 @@ export function FullScreenPlayer() {
                                   style={{
                                     clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                     color: "#FFFFFF",
+                                    transition: "clip-path 50ms linear",
                                   }}
                                 >
                                   ...
@@ -785,8 +721,10 @@ export function FullScreenPlayer() {
                           key={index}
                           ref={isActive ? activeLineRef : undefined}
                           className={cn(
-                            "relative transition-all duration-500 ease-out cursor-pointer hover:opacity-80",
-                            isActive && "scale-[1.01]"
+                            "relative cursor-pointer",
+                            "transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]",
+                            "hover:opacity-90 active:scale-[0.99]",
+                            isActive && "scale-[1.02]"
                           )}
                           onClick={() => {
                             if (line.t !== undefined) {
@@ -795,7 +733,7 @@ export function FullScreenPlayer() {
                           }}
                         >
                           <div
-                            className="relative inline-block w-full"
+                            className="relative inline-block w-full transition-all duration-300"
                             style={{
                               fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
                               fontWeight: isActive ? 700 : 600,
@@ -811,6 +749,7 @@ export function FullScreenPlayer() {
                           >
                             {/* Background text layer */}
                             <span
+                              className="transition-colors duration-300"
                               style={{
                                 color: isPast
                                   ? "rgba(255, 255, 255, 0.5)"
@@ -828,6 +767,7 @@ export function FullScreenPlayer() {
                                 className="absolute inset-0 overflow-hidden"
                                 style={{
                                   clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
+                                  transition: "clip-path 50ms linear",
                                 }}
                               >
                                 <span style={{ color: "#FFFFFF" }}>

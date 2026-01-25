@@ -258,6 +258,72 @@ func simplifyTrackName(name string) string {
 	return name
 }
 
+// cleanTrackNameForLyrics removes parenthetical info like "(feat. X)" or "(Remix)" from track name
+// This helps match lyrics APIs that expect clean track names
+func cleanTrackNameForLyrics(name string) string {
+	if name == "" {
+		return name
+	}
+
+	// Remove common parenthetical patterns: (feat. X), (ft. X), (Remix), (Live), etc.
+	// Keep the base track name
+	patterns := []string{
+		`\s*\(feat\.?\s+[^)]+\)`,       // (feat. Artist)
+		`\s*\(ft\.?\s+[^)]+\)`,          // (ft. Artist)
+		`\s*\(featuring\s+[^)]+\)`,      // (featuring Artist)
+		`\s*\(with\s+[^)]+\)`,           // (with Artist)
+		`\s*\[feat\.?\s+[^]]+\]`,        // [feat. Artist]
+		`\s*\[ft\.?\s+[^]]+\]`,          // [ft. Artist]
+		`\s*\[featuring\s+[^]]+\]`,      // [featuring Artist]
+		`\s*\[with\s+[^]]+\]`,           // [with Artist]
+	}
+
+	result := name
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(`(?i)` + pattern)
+		result = re.ReplaceAllString(result, "")
+	}
+
+	return strings.TrimSpace(result)
+}
+
+// cleanArtistNameForLyrics extracts the primary artist from a comma or "feat" separated list
+// e.g., "The Weeknd, Justice" -> "The Weeknd"
+// e.g., "Artist feat. Other" -> "Artist"
+func cleanArtistNameForLyrics(name string) string {
+	if name == "" {
+		return name
+	}
+
+	// First, remove any "feat." or similar suffixes
+	featPatterns := []string{
+		`\s+feat\.?\s+.*$`,      // feat. Artist at end
+		`\s+ft\.?\s+.*$`,        // ft. Artist at end
+		`\s+featuring\s+.*$`,    // featuring Artist at end
+		`\s+with\s+.*$`,         // with Artist at end
+		`\s+&\s+.*$`,            // & Artist at end
+		`\s+and\s+.*$`,          // and Artist at end
+	}
+
+	result := name
+	for _, pattern := range featPatterns {
+		re := regexp.MustCompile(`(?i)` + pattern)
+		result = re.ReplaceAllString(result, "")
+	}
+
+	// Then split by comma and take first artist
+	if idx := strings.Index(result, ","); idx > 0 {
+		result = strings.TrimSpace(result[:idx])
+	}
+
+	// Also handle semicolon separator
+	if idx := strings.Index(result, ";"); idx > 0 {
+		result = strings.TrimSpace(result[:idx])
+	}
+
+	return strings.TrimSpace(result)
+}
+
 func (c *LyricsClient) FetchLyricsAllSources(spotifyID, trackName, artistName string, duration int) (*LyricsResponse, string, error) {
 
 	resp, err := c.FetchLyricsWithMetadata(trackName, artistName, duration)
@@ -517,12 +583,19 @@ func (c *LyricsClient) DownloadLyrics(req LyricsDownloadRequest) (*LyricsDownloa
 // FetchWordLyrics fetches word-level synced lyrics from LyricsPlus API
 // This provides syllable/word-level timing for true karaoke-style sync
 func (c *LyricsClient) FetchWordLyrics(trackName, artistName, albumName string, durationSec int) (*WordLyricsResponse, error) {
+	// Clean track name and artist name for better API matching
+	cleanedTrack := cleanTrackNameForLyrics(trackName)
+	cleanedArtist := cleanArtistNameForLyrics(artistName)
+
+	fmt.Printf("[FetchWordLyrics] Original: track=%q, artist=%q\n", trackName, artistName)
+	fmt.Printf("[FetchWordLyrics] Cleaned: track=%q, artist=%q\n", cleanedTrack, cleanedArtist)
+
 	// LyricsPlus API endpoint
 	apiBase := "https://lyricsplus.prjktla.workers.dev/v2/lyrics/get"
 
 	params := url.Values{}
-	params.Set("title", trackName)
-	params.Set("artist", artistName)
+	params.Set("title", cleanedTrack)
+	params.Set("artist", cleanedArtist)
 	if albumName != "" {
 		params.Set("album", albumName)
 	}

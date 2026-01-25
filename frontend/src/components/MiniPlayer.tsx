@@ -1,11 +1,10 @@
-import { Play, Pause, SkipBack, SkipForward, Maximize2, Music, Loader2, ListMusic, FileText } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Maximize2, Music, Loader2, ListMusic } from "lucide-react";
 import { Button } from "./ui/button";
 import { usePlayer } from "@/hooks/usePlayer";
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { useLyrics } from "@/hooks/useLyrics";
 import { buildLrcTimeline, findActiveIndex, getLineProgress } from "@/lib/lyrics/lrc";
-import { getSettings } from "@/lib/settings";
 import type { WordTimeline } from "@/lib/lyrics/wordLyrics";
 import { findActiveLineIndex, getWordProgress } from "@/lib/lyrics/wordLyrics";
 
@@ -49,7 +48,7 @@ async function extractDominantColor(url?: string): Promise<string | null> {
   });
 }
 
-type LyricsState = "idle" | "loading" | "fetching" | "loaded" | "error" | "no-lyrics" | "on-demand";
+type LyricsState = "idle" | "loading" | "fetching" | "loaded" | "error" | "no-lyrics";
 
 interface MiniPlayerProps {
   onQueueOpen?: () => void;
@@ -76,7 +75,7 @@ export function MiniPlayer({ onQueueOpen }: MiniPlayerProps = {}) {
     }
   }, [track?.coverUrl]);
 
-  // Load lyrics with proper state management - no infinite loops
+  // Load lyrics with proper state management - AUTO-LOAD always
   useEffect(() => {
     const spotifyId = track?.spotifyId;
 
@@ -96,52 +95,50 @@ export function MiniPlayer({ onQueueOpen }: MiniPlayerProps = {}) {
       return;
     }
 
-    const settings = getSettings();
-    const lyricsMode = settings.lyricsMode || "on-demand";
-
-    // In on-demand mode, don't auto-load lyrics
-    if (lyricsMode === "on-demand") {
-      setLyricsState("on-demand");
+    // Skip if we've already attempted to fetch for this track
+    if (fetchAttemptedRef.current === spotifyId) {
       return;
     }
 
-    // Auto mode: try to load lyrics
     let cancelled = false;
 
     (async () => {
-      setLyricsState("loading");
+      fetchAttemptedRef.current = spotifyId;
+      setLyricsState("fetching");
 
       try {
-        // First check if we have cached lyrics
-        const filePath = await lyrics.ensureLyricsFile(spotifyId);
+        // First, try to fetch word-level lyrics for perfect sync
+        const wordLyrics = await lyrics.handleFetchWordLyrics(
+          track.title,
+          track.artist,
+          track.album || "",
+          Math.floor(state.duration)
+        );
 
         if (cancelled) return;
 
-        if (filePath) {
-          const text = await ReadTextFile(filePath);
-          if (!cancelled) {
-            if (text && text.trim()) {
-              setLyricsContent(text);
-              setLyricsState("loaded");
-            } else {
-              setLyricsState("no-lyrics");
-            }
+        if (wordLyrics && wordLyrics.lines.length > 0) {
+          setWordTimeline(wordLyrics);
+          setLyricsContent(""); // Clear LRC content
+          setLyricsState("loaded");
+          console.log(`[MiniPlayer] Word-level lyrics loaded: ${wordLyrics.lines.length} lines`);
+          return;
+        }
+
+        // Fall back to LRC-based lyrics
+        console.log("[MiniPlayer] Word-level lyrics not available, trying LRC...");
+
+        const cachedFile = await lyrics.ensureLyricsFile(spotifyId);
+        if (cachedFile) {
+          const text = await ReadTextFile(cachedFile);
+          if (text && text.trim()) {
+            setLyricsContent(text);
+            setWordTimeline(null);
+            setLyricsState("loaded");
+            return;
           }
-          return;
         }
 
-        // No cached lyrics - try to fetch if we haven't already
-        if (fetchAttemptedRef.current === spotifyId) {
-          // Already attempted fetch for this track
-          setLyricsState("no-lyrics");
-          return;
-        }
-
-        // Mark that we're attempting to fetch
-        fetchAttemptedRef.current = spotifyId;
-        setLyricsState("fetching");
-
-        // Try to download lyrics
         const downloadedFile = await lyrics.handleDownloadLyrics(
           spotifyId,
           track.title,
@@ -155,6 +152,7 @@ export function MiniPlayer({ onQueueOpen }: MiniPlayerProps = {}) {
           if (!cancelled) {
             if (text && text.trim()) {
               setLyricsContent(text);
+              setWordTimeline(null);
               setLyricsState("loaded");
             } else {
               setLyricsState("no-lyrics");
@@ -174,71 +172,7 @@ export function MiniPlayer({ onQueueOpen }: MiniPlayerProps = {}) {
     return () => {
       cancelled = true;
     };
-  }, [track?.spotifyId, track?.title, track?.artist]);
-
-  // Manual fetch for on-demand mode - tries word-level first, falls back to LRC
-  const handleManualFetch = useCallback(async () => {
-    if (!track?.spotifyId) return;
-
-    setLyricsState("fetching");
-    fetchAttemptedRef.current = track.spotifyId;
-
-    try {
-      // First, try to fetch word-level lyrics for perfect sync
-      const wordLyrics = await lyrics.handleFetchWordLyrics(
-        track.title,
-        track.artist,
-        track.album || "",
-        Math.floor(state.duration)
-      );
-
-      if (wordLyrics && wordLyrics.lines.length > 0) {
-        setWordTimeline(wordLyrics);
-        setLyricsContent(""); // Clear LRC content
-        setLyricsState("loaded");
-        console.log(`Word-level lyrics loaded: ${wordLyrics.lines.length} lines, source: ${wordLyrics.source}`);
-        return;
-      }
-
-      // Fall back to LRC-based lyrics
-      console.log("Word-level lyrics not available, trying LRC...");
-
-      // First check cache
-      const cachedFile = await lyrics.ensureLyricsFile(track.spotifyId);
-      if (cachedFile) {
-        const text = await ReadTextFile(cachedFile);
-        if (text && text.trim()) {
-          setLyricsContent(text);
-          setWordTimeline(null);
-          setLyricsState("loaded");
-          return;
-        }
-      }
-
-      // Download lyrics
-      const downloadedFile = await lyrics.handleDownloadLyrics(
-        track.spotifyId,
-        track.title,
-        track.artist
-      );
-
-      if (downloadedFile) {
-        const text = await ReadTextFile(downloadedFile);
-        if (text && text.trim()) {
-          setLyricsContent(text);
-          setWordTimeline(null);
-          setLyricsState("loaded");
-        } else {
-          setLyricsState("no-lyrics");
-        }
-      } else {
-        setLyricsState("no-lyrics");
-      }
-    } catch (error) {
-      console.error("Failed to fetch lyrics:", error);
-      setLyricsState("error");
-    }
-  }, [track?.spotifyId, track?.title, track?.artist, track?.album, state.duration, lyrics]);
+  }, [track?.spotifyId, track?.title, track?.artist, track?.album, state.duration]);
 
   const timeline = useMemo(() => buildLrcTimeline(lyricsContent), [lyricsContent]);
 
@@ -385,19 +319,6 @@ export function MiniPlayer({ onQueueOpen }: MiniPlayerProps = {}) {
               <Music className="h-4 w-4" />
               <span>No lyrics available</span>
             </div>
-          )}
-
-          {/* On-demand mode - show button to fetch */}
-          {lyricsState === "on-demand" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleManualFetch}
-              className="text-white/50 hover:text-white/80 hover:bg-white/10 gap-2 h-8"
-            >
-              <FileText className="h-4 w-4" />
-              <span className="text-sm">Show Lyrics</span>
-            </Button>
           )}
 
           {/* Loaded lyrics - Apple Music style display */}

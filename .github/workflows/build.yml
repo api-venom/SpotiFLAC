@@ -423,25 +423,51 @@ jobs:
           CGO_ENABLED: "0"
         run: wails build -platform darwin/universal -tags=stub
 
+      - name: Find and prepare app bundle
+        id: find_app
+        run: |
+          echo "Looking for .app bundle in build/bin..."
+          ls -la build/bin/ || true
+
+          # Find the .app bundle (could be SpotiFLAC.app or KnightMusic.app)
+          APP_PATH=$(find build/bin -name "*.app" -type d | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found in build/bin"
+            exit 1
+          fi
+
+          APP_NAME=$(basename "$APP_PATH")
+          echo "Found app: $APP_PATH"
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+
       - name: Create DMG
         run: |
           mkdir -p dist
           # Install create-dmg if not available
           brew install create-dmg || true
 
-          # Create DMG
-          create-dmg \
-            --volname "Knight Music" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "KnightMusic.app" 175 120 \
-            --hide-extension "KnightMusic.app" \
-            --app-drop-link 425 120 \
-            "dist/KnightMusic.dmg" \
-            "build/bin/KnightMusic.app" || \
-          # Fallback to hdiutil if create-dmg fails
-          hdiutil create -volname "Knight Music" -srcfolder build/bin/KnightMusic.app -ov -format UDZO dist/KnightMusic.dmg
+          APP_PATH="${{ steps.find_app.outputs.app_path }}"
+          APP_NAME="${{ steps.find_app.outputs.app_name }}"
+
+          echo "Creating DMG for: $APP_PATH"
+
+          # Create DMG using hdiutil (more reliable)
+          hdiutil create -volname "Knight Music" -srcfolder "$APP_PATH" -ov -format UDZO dist/KnightMusic.dmg || {
+            echo "hdiutil failed, trying create-dmg..."
+            create-dmg \
+              --volname "Knight Music" \
+              --window-pos 200 120 \
+              --window-size 600 400 \
+              --icon-size 100 \
+              --app-drop-link 425 120 \
+              "dist/KnightMusic.dmg" \
+              "$APP_PATH"
+          }
+
+          echo "DMG created successfully"
+          ls -la dist/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -517,9 +543,28 @@ jobs:
           CGO_ENABLED: "1"
         run: wails build -platform linux/amd64 -tags=cgo
 
-      - name: Compress with UPX
+      - name: Find binary and compress with UPX
+        id: find_binary
         run: |
-          upx --best --lzma build/bin/KnightMusic
+          echo "Looking for binary in build/bin..."
+          ls -la build/bin/ || true
+
+          # Find the binary (could be SpotiFLAC or KnightMusic)
+          BINARY_PATH=$(find build/bin -type f -executable ! -name "*.so" ! -name "*.a" | head -1)
+
+          if [ -z "$BINARY_PATH" ]; then
+            echo "ERROR: No executable found in build/bin"
+            exit 1
+          fi
+
+          BINARY_NAME=$(basename "$BINARY_PATH")
+          echo "Found binary: $BINARY_PATH"
+          echo "binary_path=$BINARY_PATH" >> $GITHUB_OUTPUT
+          echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
+
+          # Compress with UPX
+          echo "Compressing with UPX..."
+          upx --best --lzma "$BINARY_PATH" || echo "UPX compression failed, continuing without compression"
 
       - name: Cache appimagetool
         id: cache-appimagetool
@@ -539,12 +584,18 @@ jobs:
 
       - name: Create AppImage
         run: |
+          BINARY_PATH="${{ steps.find_binary.outputs.binary_path }}"
+          BINARY_NAME="${{ steps.find_binary.outputs.binary_name }}"
+
+          echo "Creating AppImage for: $BINARY_PATH"
+
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
           # Copy binary
-          cp build/bin/KnightMusic AppDir/usr/bin/
+          cp "$BINARY_PATH" AppDir/usr/bin/KnightMusic
+          chmod +x AppDir/usr/bin/KnightMusic
 
           # Create desktop file
           cat > AppDir/knightmusic.desktop << 'EOF'

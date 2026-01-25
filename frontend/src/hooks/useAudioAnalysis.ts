@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { analyzeTrack } from "@/lib/api";
-import type { AnalysisResult } from "@/types/api";
-import type { SpectrumPoint } from "@/types/api";
+import type { AnalysisResult, SpectrumData } from "@/types/api";
 import { setSpectrumCache, getSpectrumCache, clearSpectrumCache } from "@/lib/spectrum-cache";
 
 const STORAGE_KEY = "spotiflac_audio_analysis_state";
@@ -40,12 +39,12 @@ export function useAudioAnalysis() {
     }
   }, [filePath, analysis]);
 
-  const spectrum: SpectrumPoint[] = useMemo(() => {
-    if (!analysis) return [];
+  const spectrum: SpectrumData | undefined = useMemo(() => {
+    if (!analysis) return undefined;
     const cached = getSpectrumCache(filePath);
     if (cached) return cached;
-    const data = analysis.spectrum || [];
-    setSpectrumCache(filePath, data);
+    const data = analysis.spectrum;
+    if (data) setSpectrumCache(filePath, data);
     return data;
   }, [analysis, filePath]);
 

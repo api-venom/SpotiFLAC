@@ -11,7 +11,7 @@ interface AudioAnalysisPageProps {
     onBack?: () => void;
 }
 export function AudioAnalysisPage({ onBack }: AudioAnalysisPageProps) {
-    const { analyzing, result, analyzeFile, clearResult, selectedFilePath, spectrumLoading } = useAudioAnalysis();
+    const { loading: analyzing, analysis: result, runAnalysis: analyzeFile, clear: clearResult, filePath: selectedFilePath } = useAudioAnalysis();
     const [isDragging, setIsDragging] = useState(false);
     const handleSelectFile = async () => {
         try {
@@ -104,10 +104,7 @@ export function AudioAnalysisPage({ onBack }: AudioAnalysisPageProps) {
           <AudioAnalysis result={result} analyzing={analyzing} showAnalyzeButton={false} filePath={selectedFilePath}/>
 
           
-          {spectrumLoading ? (<div className="flex flex-col items-center justify-center py-16 border rounded-lg">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
-              <p className="text-sm text-muted-foreground">Loading spectrum data...</p>
-            </div>) : (<SpectrumVisualization sampleRate={result.sample_rate} bitsPerSample={result.bits_per_sample} duration={result.duration} spectrumData={result.spectrum}/>)}
+          <SpectrumVisualization sampleRate={result.sample_rate} bitsPerSample={result.bits_per_sample} duration={result.duration} spectrumData={result.spectrum}/>
         </div>)}
     </div>);
 }

@@ -1,10 +1,12 @@
-import { useRef, useState } from "react";
-import { downloadLyrics } from "@/lib/api";
+import { useRef, useState, useCallback } from "react";
+import { downloadLyrics, fetchWordLyrics } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { joinPath, sanitizePath } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import type { TrackMetadata } from "@/types/api";
+import type { WordTimeline } from "@/lib/lyrics/wordLyrics";
+import { buildWordTimeline } from "@/lib/lyrics/wordLyrics";
 
 export function useLyrics() {
   const [downloadingLyricsTrack, setDownloadingLyricsTrack] = useState<string | null>(null);
@@ -66,7 +68,7 @@ export function useLyrics() {
     return outputDir;
   };
 
-  const handleDownloadLyrics = async (
+  const handleDownloadLyrics = useCallback(async (
     spotifyId: string,
     trackName: string,
     artistName: string,
@@ -156,12 +158,12 @@ export function useLyrics() {
     } finally {
       setDownloadingLyricsTrack(null);
     }
-  };
+  }, []);
 
-  const ensureLyricsFile = async (spotifyId: string): Promise<string | null> => {
+  const ensureLyricsFile = useCallback(async (spotifyId: string): Promise<string | null> => {
     if (!spotifyId) return null;
     return lyricsFiles[spotifyId] || null;
-  };
+  }, [lyricsFiles]);
 
   const handleDownloadAllLyrics = async (
     tracks: TrackMetadata[],
@@ -288,7 +290,7 @@ export function useLyrics() {
     toast.info("Stopping lyrics download...");
   };
 
-  const resetLyricsState = () => {
+  const resetLyricsState = useCallback(() => {
     setDownloadingLyricsTrack(null);
     setDownloadedLyrics(new Set());
     setFailedLyrics(new Set());
@@ -296,7 +298,38 @@ export function useLyrics() {
     setIsBulkDownloadingLyrics(false);
     setLyricsDownloadProgress(0);
     setLyricsFiles({});
-  };
+  }, []);
+
+  // Fetch word-level lyrics for karaoke-style sync
+  // Returns a WordTimeline with syllable/word-level timing
+  const handleFetchWordLyrics = useCallback(async (
+    trackName: string,
+    artistName: string,
+    albumName: string,
+    durationSec: number
+  ): Promise<WordTimeline | null> => {
+    try {
+      logger.info(`fetching word lyrics: ${trackName} - ${artistName}`);
+      const response = await fetchWordLyrics(trackName, artistName, albumName, durationSec);
+
+      if (response.error) {
+        logger.error(`word lyrics error: ${response.error}`);
+        return null;
+      }
+
+      if (!response.lyrics || response.lyrics.length === 0) {
+        logger.info(`no word lyrics found for: ${trackName}`);
+        return null;
+      }
+
+      const timeline = buildWordTimeline(response);
+      logger.info(`word lyrics loaded: ${timeline.lines.length} lines, type: ${timeline.type}, source: ${timeline.source}`);
+      return timeline;
+    } catch (err) {
+      logger.error(`failed to fetch word lyrics: ${err}`);
+      return null;
+    }
+  }, []);
 
   return {
     downloadingLyricsTrack,
@@ -310,5 +343,6 @@ export function useLyrics() {
     handleStopLyricsDownload,
     resetLyricsState,
     ensureLyricsFile,
+    handleFetchWordLyrics,
   };
 }

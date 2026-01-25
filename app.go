@@ -786,6 +786,72 @@ func (a *App) DownloadLyrics(req LyricsDownloadRequest) (backend.LyricsDownloadR
 	return *resp, nil
 }
 
+// WordLyricsDownloadRequest extends LyricsDownloadRequest with duration
+type WordLyricsDownloadRequest struct {
+	SpotifyID           string `json:"spotify_id"`
+	TrackName           string `json:"track_name"`
+	ArtistName          string `json:"artist_name"`
+	AlbumName           string `json:"album_name"`
+	AlbumArtist         string `json:"album_artist"`
+	ReleaseDate         string `json:"release_date"`
+	OutputDir           string `json:"output_dir"`
+	FilenameFormat      string `json:"filename_format"`
+	TrackNumber         bool   `json:"track_number"`
+	Position            int    `json:"position"`
+	UseAlbumTrackNumber bool   `json:"use_album_track_number"`
+	DiscNumber          int    `json:"disc_number"`
+	DurationSec         int    `json:"duration_sec"` // Track duration in seconds
+}
+
+// DownloadWordLyrics fetches word-level synced lyrics from LyricsPlus API
+func (a *App) DownloadWordLyrics(req WordLyricsDownloadRequest) (backend.LyricsDownloadResponse, error) {
+	if req.SpotifyID == "" {
+		return backend.LyricsDownloadResponse{
+			Success: false,
+			Error:   "Spotify ID is required",
+		}, fmt.Errorf("spotify ID is required")
+	}
+
+	client := backend.NewLyricsClient()
+	backendReq := backend.LyricsDownloadRequest{
+		SpotifyID:           req.SpotifyID,
+		TrackName:           req.TrackName,
+		ArtistName:          req.ArtistName,
+		AlbumName:           req.AlbumName,
+		AlbumArtist:         req.AlbumArtist,
+		ReleaseDate:         req.ReleaseDate,
+		OutputDir:           req.OutputDir,
+		FilenameFormat:      req.FilenameFormat,
+		TrackNumber:         req.TrackNumber,
+		Position:            req.Position,
+		UseAlbumTrackNumber: req.UseAlbumTrackNumber,
+		DiscNumber:          req.DiscNumber,
+	}
+
+	resp, err := client.DownloadWordLyrics(backendReq, req.DurationSec)
+	if err != nil {
+		return backend.LyricsDownloadResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return *resp, nil
+}
+
+// FetchWordLyricsLive fetches word-level lyrics directly without saving to file
+// Returns the JSON response for immediate use in the player
+func (a *App) FetchWordLyricsLive(trackName, artistName, albumName string, durationSec int) (backend.WordLyricsResponse, error) {
+	client := backend.NewLyricsClient()
+	resp, err := client.FetchWordLyrics(trackName, artistName, albumName, durationSec)
+	if err != nil {
+		return backend.WordLyricsResponse{
+			Error: err.Error(),
+		}, err
+	}
+	return *resp, nil
+}
+
 type CoverDownloadRequest struct {
 	CoverURL       string `json:"cover_url"`
 	TrackName      string `json:"track_name"`

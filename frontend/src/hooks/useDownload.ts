@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { downloadTrack, fetchSpotifyMetadata } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -908,11 +908,11 @@ export function useDownload() {
         shouldStopDownloadRef.current = true;
         toast.info("Stopping download...");
     };
-    const resetDownloadedTracks = () => {
+    const resetDownloadedTracks = useCallback(() => {
         setDownloadedTracks(new Set());
         setFailedTracks(new Set());
         setSkippedTracks(new Set());
-    };
+    }, []);
     return {
         downloadProgress,
         isDownloading,

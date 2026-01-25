@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { HomeIcon } from "@/components/ui/home";
 import { HistoryIcon } from "@/components/ui/history-icon";
 import { SettingsIcon } from "@/components/ui/settings";
@@ -25,170 +24,103 @@ export type PageType =
 interface SidebarProps {
   currentPage: PageType;
   onPageChange: (page: PageType) => void;
-  children?: ReactNode;
 }
 
-const navButtonClass = (active: boolean) =>
-  `h-10 w-10 ${
-    active
-      ? "bg-primary/10 text-primary hover:bg-primary/20"
-      : "hover:bg-primary/10 hover:text-primary"
-  }`;
+export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
+  const navItems = [
+    { page: "main" as PageType, icon: HomeIcon, label: "Home" },
+    { page: "history" as PageType, icon: HistoryIcon, label: "Download History" },
+    { page: "audio-analysis" as PageType, icon: ActivityIcon, label: "Audio Quality Analyzer" },
+    { page: "audio-converter" as PageType, icon: FileMusicIcon, label: "Audio Converter" },
+    { page: "file-manager" as PageType, icon: FilePenIcon, label: "File Manager" },
+    { page: "debug" as PageType, icon: TerminalIcon, label: "Debug Logs" },
+    { page: "settings" as PageType, icon: SettingsIcon, label: "Settings" },
+  ];
 
-export function Sidebar({ currentPage, onPageChange, children }: SidebarProps) {
+  const bottomItems = [
+    { page: "about" as PageType, icon: BadgeAlertIcon, label: "About" },
+  ];
+
   return (
-    <div className="fixed left-0 top-0 h-full w-80 bg-card/70 supports-[backdrop-filter]:bg-card/50 backdrop-blur-xl border-r border-border/60 flex z-30">
-      <div className="h-full w-14 border-r border-border/60 flex flex-col items-center py-14">
-        <div className="flex flex-col gap-2 flex-1">
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "main" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "main")}
-                onClick={() => onPageChange("main")}
-              >
-                <HomeIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Home</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "history" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "history")}
-                onClick={() => onPageChange("history")}
-              >
-                <HistoryIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Download History</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "audio-analysis" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "audio-analysis")}
-                onClick={() => onPageChange("audio-analysis")}
-              >
-                <ActivityIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Audio Quality Analyzer</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "audio-converter" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "audio-converter")}
-                onClick={() => onPageChange("audio-converter")}
-              >
-                <FileMusicIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Audio Converter</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "file-manager" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "file-manager")}
-                onClick={() => onPageChange("file-manager")}
-              >
-                <FilePenIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>File Manager</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "debug" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "debug")}
-                onClick={() => onPageChange("debug")}
-              >
-                <TerminalIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Debug Logs</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "settings" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "settings")}
-                onClick={() => onPageChange("settings")}
-              >
-                <SettingsIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Settings</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        <div className="mt-auto flex flex-col gap-2">
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant={currentPage === "about" ? "secondary" : "ghost"}
-                size="icon"
-                className={navButtonClass(currentPage === "about")}
-                onClick={() => onPageChange("about")}
-              >
-                <BadgeAlertIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>About</p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={navButtonClass(false)}
-                onClick={() => openExternal("https://ko-fi.com/afkarxyz")}
-              >
-                <CoffeeIcon size={20} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Every coffee helps me keep going</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
+    <nav className="fixed left-0 top-0 h-full w-14 bg-card/80 backdrop-blur-xl border-r border-border/50 flex flex-col z-30">
+      {/* Navigation items */}
+      <div className="flex-1 flex flex-col items-center pt-14 gap-1">
+        {navItems.map(({ page, icon: Icon, label }) => {
+          const isActive = currentPage === page;
+          return (
+            <Tooltip key={page} delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-10 w-10 relative transition-all duration-200 ${
+                    isActive
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => onPageChange(page)}
+                >
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+                  )}
+                  <Icon size={20} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                <p>{label}</p>
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
       </div>
 
-      <div className="flex-1 h-full pt-14 pb-4 px-4 overflow-y-auto">{children}</div>
-    </div>
+      {/* Bottom items */}
+      <div className="flex flex-col items-center pb-4 gap-1">
+        {bottomItems.map(({ page, icon: Icon, label }) => {
+          const isActive = currentPage === page;
+          return (
+            <Tooltip key={page} delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-10 w-10 relative transition-all duration-200 ${
+                    isActive
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => onPageChange(page)}
+                >
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+                  )}
+                  <Icon size={20} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                <p>{label}</p>
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+
+        {/* Ko-fi link */}
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-200"
+              onClick={() => openExternal("https://ko-fi.com/afkarxyz")}
+            >
+              <CoffeeIcon size={20} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            <p>Support on Ko-fi</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </nav>
   );
 }

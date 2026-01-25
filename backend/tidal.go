@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
@@ -362,6 +363,117 @@ func (t *TidalDownloader) GetDownloadURL(trackID int64, quality string) (string,
 // GetTidalFileURL is an alias for GetDownloadURL for streaming compatibility
 func (t *TidalDownloader) GetTidalFileURL(trackID int64, quality string) (string, error) {
 	return t.GetDownloadURL(trackID, quality)
+}
+
+// GetStreamURLWithFallback tries all available APIs in parallel and returns the first successful stream URL.
+// This is optimized for streaming playback where we need quick response with fallback.
+func (t *TidalDownloader) GetStreamURLWithFallback(trackID int64, quality string) (string, error) {
+	apis, err := t.GetAvailableAPIs()
+	if err != nil || len(apis) == 0 {
+		return "", fmt.Errorf("no APIs available for streaming")
+	}
+
+	type streamResult struct {
+		apiURL    string
+		streamURL string
+		err       error
+	}
+
+	resultChan := make(chan streamResult, len(apis))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	fmt.Printf("Trying %d Tidal APIs for streaming...\n", len(apis))
+
+	for _, apiURL := range apis {
+		go func(api string) {
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			// Try the requested quality first
+			url := fmt.Sprintf("%s/track/?id=%d&quality=%s", api, trackID, quality)
+
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+			if err != nil {
+				resultChan <- streamResult{apiURL: api, err: err}
+				return
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				resultChan <- streamResult{apiURL: api, err: err}
+				return
+			}
+			defer resp.Body.Close()
+
+			// On 403/429/5xx, try fallback quality if hi-res was requested
+			if resp.StatusCode != 200 {
+				if (quality == "HI_RES_LOSSLESS" || quality == "HI_RES") && resp.StatusCode == 403 {
+					// Try LOSSLESS as fallback
+					url = fmt.Sprintf("%s/track/?id=%d&quality=LOSSLESS", api, trackID)
+					req, _ = http.NewRequestWithContext(ctx, "GET", url, nil)
+					resp, err = client.Do(req)
+					if err != nil {
+						resultChan <- streamResult{apiURL: api, err: err}
+						return
+					}
+					defer resp.Body.Close()
+				}
+
+				if resp.StatusCode != 200 {
+					resultChan <- streamResult{apiURL: api, err: fmt.Errorf("HTTP %d", resp.StatusCode)}
+					return
+				}
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				resultChan <- streamResult{apiURL: api, err: err}
+				return
+			}
+
+			// Try v2 API response (manifest format)
+			var v2Response TidalAPIResponseV2
+			if err := json.Unmarshal(body, &v2Response); err == nil && v2Response.Data.Manifest != "" {
+				resultChan <- streamResult{apiURL: api, streamURL: "MANIFEST:" + v2Response.Data.Manifest}
+				return
+			}
+
+			// Try v1 API response (direct URL)
+			var v1Responses []TidalAPIResponse
+			if err := json.Unmarshal(body, &v1Responses); err == nil {
+				for _, item := range v1Responses {
+					if item.OriginalTrackURL != "" {
+						resultChan <- streamResult{apiURL: api, streamURL: item.OriginalTrackURL}
+						return
+					}
+				}
+			}
+
+			resultChan <- streamResult{apiURL: api, err: fmt.Errorf("no stream URL in response")}
+		}(apiURL)
+	}
+
+	// Wait for first successful result or all failures
+	var errors []string
+	for i := 0; i < len(apis); i++ {
+		select {
+		case result := <-resultChan:
+			if result.err == nil && result.streamURL != "" {
+				fmt.Printf("✓ Stream URL from: %s\n", result.apiURL)
+				return result.streamURL, nil
+			}
+			errors = append(errors, fmt.Sprintf("%s: %v", result.apiURL, result.err))
+		case <-ctx.Done():
+			return "", fmt.Errorf("timeout waiting for stream URL")
+		}
+	}
+
+	fmt.Println("All Tidal APIs failed for streaming:")
+	for _, e := range errors {
+		fmt.Printf("  ✗ %s\n", e)
+	}
+
+	return "", fmt.Errorf("all %d APIs failed for streaming", len(apis))
 }
 
 func (t *TidalDownloader) DownloadAlbumArt(albumID string) ([]byte, error) {

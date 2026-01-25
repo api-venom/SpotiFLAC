@@ -93,6 +93,9 @@ export interface Settings {
     | "amazon-tidal"
     | "amazon-qobuz";
   autoQuality: "16" | "24";
+
+  // Lyrics settings
+  lyricsMode: "auto" | "on-demand"; // auto = download as song plays, on-demand = only when clicking lyrics
 }
 
 export const FOLDER_PRESETS: Record<
@@ -221,6 +224,9 @@ export const DEFAULT_SETTINGS: Settings = {
   amazonQuality: "original",
   autoOrder: "tidal-qobuz-amazon",
   autoQuality: "16",
+
+  // Lyrics settings - on-demand is more robust (only fetch when user clicks lyrics button)
+  lyricsMode: "on-demand",
 };
 
 export const FONT_OPTIONS: {

@@ -67,7 +67,7 @@ export function parseLRC(content: string): ParsedTimedLine[] {
 }
 
 export type BuildTimelineOptions = {
-  // How long a lyric line is considered “active” before we treat the remainder as a gap.
+  // How long a lyric line is considered "active" before we treat the remainder as a gap.
   maxLyricHoldSec?: number;
   // Only insert a gap marker if the span to the next timestamp is at least this long.
   gapMinSec?: number;
@@ -101,7 +101,7 @@ export function buildLrcTimeline(content: string, opts?: BuildTimelineOptions): 
     if (!next) continue;
 
     // If there is a long gap between timestamps, insert a virtual ellipsis marker.
-    // This prevents “holding” the previous lyric line for the entire gap.
+    // This prevents "holding" the previous lyric line for the entire gap.
     const gap = next.t - curr.t;
     if (gap < gapMinSec) continue;
 
@@ -116,7 +116,7 @@ export function buildLrcTimeline(content: string, opts?: BuildTimelineOptions): 
   return timeline;
 }
 
-export function findActiveIndex(lines: LrcTimelineLine[], positionSec: number, leadSec: number = 0.1) {
+export function findActiveIndex(lines: LrcTimelineLine[], positionSec: number, leadSec: number = 0.05) {
   if (!lines.length) return -1;
   let idx = -1;
   const t = positionSec + leadSec;
@@ -130,6 +130,11 @@ export function findActiveIndex(lines: LrcTimelineLine[], positionSec: number, l
   return idx;
 }
 
+/**
+ * Calculate fill progress for lyrics lines.
+ * Uses the ACTUAL LRC timestamps - the gap between lines is the authoritative timing.
+ * Start time = current line timestamp, End time = next line timestamp.
+ */
 export function getLineProgress(lines: LrcTimelineLine[], activeIndex: number, positionSec: number) {
   const result: Record<number, number> = {};
   if (activeIndex < 0 || !lines[activeIndex]) return result;
@@ -138,20 +143,25 @@ export function getLineProgress(lines: LrcTimelineLine[], activeIndex: number, p
   const next = lines[activeIndex + 1];
   if (!curr) return result;
 
-  // No fill for ellipsis lines.
+  // No fill for ellipsis lines
   if (curr.kind === "ellipsis") return result;
 
   const startTime = curr.t;
-  const endTime = next ? next.t : startTime + 3;
-  const elapsed = positionSec - startTime;
-  const duration = endTime - startTime;
-  result[activeIndex] = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
 
-  // Small pre-fill on next line if it's a lyric.
-  if (next && next.kind === "lyric") {
-    const nextDuration = next.t - startTime;
-    result[activeIndex + 1] = nextDuration > 0 ? Math.min(0.3, Math.max(0, elapsed / nextDuration)) : 0;
-  }
+  // Small delay before fill starts (singer often starts slightly after timestamp)
+  const FILL_DELAY = 0.15; // 150ms delay
+  const elapsed = Math.max(0, positionSec - startTime - FILL_DELAY);
+
+  // The gap to next timestamp IS the natural duration from the LRC file
+  const gapToNext = next ? next.t - startTime : 5;
+
+  // Fill takes the FULL gap minus the delay and a small end buffer
+  // This ensures fill matches the actual singing duration
+  const fillDuration = Math.max(1, gapToNext - FILL_DELAY - 0.1);
+
+  // Linear progress from 0 to 1 over the fill duration
+  const progress = elapsed / fillDuration;
+  result[activeIndex] = Math.min(1, Math.max(0, progress));
 
   return result;
 }

@@ -25,6 +25,9 @@ import { SettingsPage } from "@/components/SettingsPage";
 import { Sidebar, type PageType } from "@/components/Sidebar";
 import { TitleBar } from "@/components/TitleBar";
 import { TrackInfo } from "@/components/TrackInfo";
+import { MiniPlayer } from "@/components/MiniPlayer";
+import { FullScreenPlayer } from "@/components/FullScreenPlayer";
+import { NowPlayingQueue } from "@/components/NowPlayingQueue";
 
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { applyTheme } from "@/lib/themes";
@@ -37,6 +40,8 @@ import { useDownloadProgress } from "@/hooks/useDownloadProgress";
 import { useDownloadQueueDialog } from "@/hooks/useDownloadQueueDialog";
 import { useLyrics } from "@/hooks/useLyrics";
 import { useMetadata } from "@/hooks/useMetadata";
+import { usePlayer } from "@/hooks/usePlayer";
+import { useNowPlayingQueue } from "@/hooks/useNowPlayingQueue";
 
 import { DownloadFFmpeg, IsFFmpegInstalled, OpenFolder } from "../wailsjs/go/main/App";
 import { Quit } from "../wailsjs/runtime/runtime";
@@ -71,6 +76,8 @@ function App() {
   const availability = useAvailability();
   const downloadQueue = useDownloadQueueDialog();
   const downloadProgress = useDownloadProgress();
+  const { state: playerState } = usePlayer();
+  const nowPlayingQueue = useNowPlayingQueue();
 
   const [isFFmpegInstalled, setIsFFmpegInstalled] = useState<boolean | null>(null);
   const [isInstallingFFmpeg, setIsInstallingFFmpeg] = useState(false);
@@ -872,12 +879,17 @@ function App() {
         <TitleBar />
         <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
 
-        <div className="flex-1 ml-14 mt-10 p-4 md:p-8">
+        <div className={`flex-1 ml-14 mt-10 p-4 md:p-8 ${playerState.current && !playerState.isFullscreen ? 'pb-28' : ''}`}>
           <div className="max-w-4xl mx-auto space-y-6">{renderPage()}</div>
         </div>
 
         <DownloadProgressToast onClick={downloadQueue.openQueue} />
         <DownloadQueue isOpen={downloadQueue.isOpen} onClose={downloadQueue.closeQueue} />
+
+        {/* Music Player Components */}
+        <MiniPlayer onQueueOpen={nowPlayingQueue.openQueue} />
+        <FullScreenPlayer />
+        <NowPlayingQueue isOpen={nowPlayingQueue.isOpen} onClose={nowPlayingQueue.closeQueue} />
 
         {showScrollTop && (
           <Button

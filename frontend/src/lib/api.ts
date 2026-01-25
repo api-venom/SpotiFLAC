@@ -15,7 +15,8 @@ import type {
     AvatarDownloadResponse,
     AnalysisResult,
 } from "@/types/api";
-import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover, DownloadHeader, DownloadGalleryImage, DownloadAvatar, AnalyzeTrack } from "../../wailsjs/go/main/App";
+import type { WordLyricsResponse } from "@/lib/lyrics/wordLyrics";
+import { GetSpotifyMetadata, DownloadTrack, DownloadLyrics, DownloadCover, DownloadHeader, DownloadGalleryImage, DownloadAvatar, AnalyzeTrack, FetchWordLyricsLive } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
 
 export async function fetchSpotifyMetadata(url: string, batch: boolean = true, delay: number = 1.0, timeout: number = 300.0): Promise<SpotifyMetadataResponse> {
@@ -57,4 +58,14 @@ export async function downloadGalleryImage(request: GalleryImageDownloadRequest)
 export async function downloadAvatar(request: AvatarDownloadRequest): Promise<AvatarDownloadResponse> {
     const req = new main.AvatarDownloadRequest(request);
     return await DownloadAvatar(req);
+}
+
+// Fetch word-level lyrics for karaoke-style sync
+export async function fetchWordLyrics(
+    trackName: string,
+    artistName: string,
+    albumName: string,
+    durationSec: number
+): Promise<WordLyricsResponse> {
+    return await FetchWordLyricsLive(trackName, artistName, albumName, durationSec);
 }

@@ -14,6 +14,40 @@ import (
 	"time"
 )
 
+// Word-level lyrics types (from LyricsPlus API)
+type WordLyricsSyllable struct {
+	Time     int    `json:"time"`     // Start time in milliseconds
+	Duration int    `json:"duration"` // Duration in milliseconds
+	Text     string `json:"text"`     // Word/syllable text
+}
+
+type WordLyricsLine struct {
+	Time     int                  `json:"time"`     // Line start time in ms
+	Duration int                  `json:"duration"` // Line duration in ms
+	Text     string               `json:"text"`     // Full line text
+	Syllabus []WordLyricsSyllable `json:"syllabus"` // Word-by-word timing
+	Element  *struct {
+		Key      string `json:"key,omitempty"`
+		SongPart string `json:"songPart,omitempty"`
+		Singer   string `json:"singer,omitempty"`
+	} `json:"element,omitempty"`
+}
+
+type WordLyricsMetadata struct {
+	Source        string `json:"source,omitempty"`
+	Title         string `json:"title,omitempty"`
+	Language      string `json:"language,omitempty"`
+	TotalDuration string `json:"totalDuration,omitempty"`
+}
+
+type WordLyricsResponse struct {
+	KpoeTools string             `json:"KpoeTools,omitempty"`
+	Type      string             `json:"type"` // "Word" for word-level, "Line" for line-level
+	Metadata  WordLyricsMetadata `json:"metadata"`
+	Lyrics    []WordLyricsLine   `json:"lyrics"`
+	Error     string             `json:"error,omitempty"`
+}
+
 type LRCLibResponse struct {
 	ID           int     `json:"id"`
 	Name         string  `json:"name"`
@@ -476,6 +510,161 @@ func (c *LyricsClient) DownloadLyrics(req LyricsDownloadRequest) (*LyricsDownloa
 	return &LyricsDownloadResponse{
 		Success: true,
 		Message: "Lyrics downloaded successfully",
+		File:    filePath,
+	}, nil
+}
+
+// FetchWordLyrics fetches word-level synced lyrics from LyricsPlus API
+// This provides syllable/word-level timing for true karaoke-style sync
+func (c *LyricsClient) FetchWordLyrics(trackName, artistName, albumName string, durationSec int) (*WordLyricsResponse, error) {
+	// LyricsPlus API endpoint
+	apiBase := "https://lyricsplus.prjktla.workers.dev/v2/lyrics/get"
+
+	params := url.Values{}
+	params.Set("title", trackName)
+	params.Set("artist", artistName)
+	if albumName != "" {
+		params.Set("album", albumName)
+	}
+	if durationSec > 0 {
+		params.Set("duration", fmt.Sprintf("%d", durationSec))
+	}
+	// Request word-level lyrics from multiple sources
+	params.Set("source", "apple,lyricsplus,musixmatch,spotify,musixmatch-word")
+
+	apiURL := fmt.Sprintf("%s?%s", apiBase, params.Encode())
+	fmt.Printf("[FetchWordLyrics] Fetching from: %s\n", apiURL)
+
+	resp, err := c.httpClient.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch word lyrics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("LyricsPlus returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	var wordLyrics WordLyricsResponse
+	if err := json.Unmarshal(body, &wordLyrics); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	if wordLyrics.Error != "" {
+		return nil, fmt.Errorf("API error: %s", wordLyrics.Error)
+	}
+
+	if len(wordLyrics.Lyrics) == 0 {
+		return nil, fmt.Errorf("no lyrics found")
+	}
+
+	fmt.Printf("[FetchWordLyrics] Got %d lines, type: %s, source: %s\n",
+		len(wordLyrics.Lyrics), wordLyrics.Type, wordLyrics.Metadata.Source)
+
+	return &wordLyrics, nil
+}
+
+// SaveWordLyrics saves word-level lyrics as JSON file
+func (c *LyricsClient) SaveWordLyrics(lyrics *WordLyricsResponse, outputPath string) error {
+	data, err := json.MarshalIndent(lyrics, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal lyrics: %v", err)
+	}
+
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+
+	return nil
+}
+
+// DownloadWordLyrics fetches and saves word-level lyrics
+func (c *LyricsClient) DownloadWordLyrics(req LyricsDownloadRequest, durationSec int) (*LyricsDownloadResponse, error) {
+	if req.SpotifyID == "" {
+		return &LyricsDownloadResponse{
+			Success: false,
+			Error:   "Spotify ID is required",
+		}, fmt.Errorf("spotify ID is required")
+	}
+
+	outputDir := req.OutputDir
+	if outputDir == "" {
+		outputDir = GetDefaultMusicPath()
+	} else {
+		outputDir = NormalizePath(outputDir)
+	}
+
+	// Build path to artist/album folder if it exists
+	safeArtist := sanitizeFilename(req.AlbumArtist)
+	if safeArtist == "" {
+		safeArtist = sanitizeFilename(req.ArtistName)
+	}
+	safeAlbum := sanitizeFilename(req.AlbumName)
+
+	if safeArtist != "" && safeAlbum != "" {
+		artistAlbumPath := filepath.Join(outputDir, safeArtist, safeAlbum)
+		if info, err := os.Stat(artistAlbumPath); err == nil && info.IsDir() {
+			outputDir = artistAlbumPath
+		} else {
+			artistPath := filepath.Join(outputDir, safeArtist)
+			if info, err := os.Stat(artistPath); err == nil && info.IsDir() {
+				outputDir = artistPath
+			}
+		}
+	}
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return &LyricsDownloadResponse{
+			Success: false,
+			Error:   fmt.Sprintf("failed to create output directory: %v", err),
+		}, err
+	}
+
+	// Build filename with .wordlyrics.json extension
+	filenameFormat := req.FilenameFormat
+	if filenameFormat == "" {
+		filenameFormat = "title-artist"
+	}
+	baseFilename := buildLyricsFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, filenameFormat, req.TrackNumber, req.Position, req.DiscNumber)
+	// Replace .lrc with .wordlyrics.json
+	filename := strings.TrimSuffix(baseFilename, ".lrc") + ".wordlyrics.json"
+	filePath := filepath.Join(outputDir, filename)
+
+	// Check if file already exists
+	if fileInfo, err := os.Stat(filePath); err == nil && fileInfo.Size() > 0 {
+		return &LyricsDownloadResponse{
+			Success:       true,
+			Message:       "Word lyrics file already exists",
+			File:          filePath,
+			AlreadyExists: true,
+		}, nil
+	}
+
+	// Fetch word-level lyrics
+	lyrics, err := c.FetchWordLyrics(req.TrackName, req.ArtistName, req.AlbumName, durationSec)
+	if err != nil {
+		return &LyricsDownloadResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	// Save as JSON
+	if err := c.SaveWordLyrics(lyrics, filePath); err != nil {
+		return &LyricsDownloadResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &LyricsDownloadResponse{
+		Success: true,
+		Message: "Word lyrics downloaded successfully",
 		File:    filePath,
 	}, nil
 }

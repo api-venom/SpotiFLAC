@@ -330,7 +330,7 @@ class PlayerService {
       clearInterval(this.mpvStatusInterval);
     }
 
-    // Poll MPV status every 200ms
+    // Poll MPV status every 50ms for smooth lyrics sync
     this.mpvStatusInterval = setInterval(async () => {
       if (!this.state.useMPV) {
         return;
@@ -365,7 +365,7 @@ class PlayerService {
       } catch (err) {
         // Silently fail - MPV might not be initialized yet
       }
-    }, 200);
+    }, 50);
   }
 
   private stopMPVStatusPolling() {
@@ -545,6 +545,18 @@ class PlayerService {
       return;
     }
     this.seek(0);
+  }
+
+  async jumpToQueueIndex(index: number) {
+    if (this.state.queue.length === 0 || index < 0 || index >= this.state.queue.length) return;
+    await this.playAtIndex(index);
+  }
+
+  clearQueue() {
+    this.state.queue = [];
+    this.state.queueIndex = -1;
+    this.queueBase = [];
+    this.emit();
   }
 
   toggleShuffle() {

@@ -544,27 +544,27 @@ func resolveRemoteStreamURL(spotifyID, isrc, audioFormat, provider string) (stri
 	return "", fmt.Errorf("no provider URL available")
 }
 
-// tryTidalStream attempts to get a stream URL from Tidal
+// tryTidalStream attempts to get a stream URL from Tidal with fallback across multiple APIs
 func tryTidalStream(tidalURL, audioFormat string) (string, error) {
 	// Extract Tidal track ID from URL
 	trackID, err := extractTidalTrackID(tidalURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid Tidal URL format: %w", err)
 	}
-	
-	// Use Tidal downloader to get authenticated stream URL
+
+	// Use Tidal downloader with fallback to get authenticated stream URL
 	downloader := NewTidalDownloader("")
 	quality := audioFormat
 	if quality == "" {
 		quality = "LOSSLESS"
 	}
-	
-	// Get stream URL using the new method
-	streamURL, err := downloader.GetTidalFileURL(trackID, quality)
+
+	// Get stream URL using the new fallback method that tries all APIs
+	streamURL, err := downloader.GetStreamURLWithFallback(trackID, quality)
 	if err != nil {
 		return "", fmt.Errorf("failed to get Tidal stream URL: %w", err)
 	}
-	
+
 	// If the stream URL is a manifest (DASH/BTS format), parse it to get the direct URL
 	if strings.HasPrefix(streamURL, "MANIFEST:") {
 		manifestB64 := strings.TrimPrefix(streamURL, "MANIFEST:")
@@ -577,7 +577,7 @@ func tryTidalStream(tidalURL, audioFormat string) (string, error) {
 		}
 		return directURL, nil
 	}
-	
+
 	return streamURL, nil
 }
 

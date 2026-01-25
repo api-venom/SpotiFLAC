@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { downloadCover } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -191,11 +191,11 @@ export function useCover() {
     const handleStopCoverDownload = () => {
         stopBulkDownloadRef.current = true;
     };
-    const resetCoverState = () => {
+    const resetCoverState = useCallback(() => {
         setDownloadedCovers(new Set());
         setFailedCovers(new Set());
         setSkippedCovers(new Set());
-    };
+    }, []);
     return {
         downloadingCover,
         downloadingCoverTrack,

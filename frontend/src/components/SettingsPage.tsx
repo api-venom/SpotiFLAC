@@ -353,6 +353,31 @@ export function SettingsPage({ onUnsavedChangesChange, onResetRequest }: Setting
           </div>
         </div>
 
+        {/* Lyrics Mode Setting */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Lyrics Fetch Mode</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help"/>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-xs"><strong>On-demand:</strong> Lyrics are fetched only when you click the lyrics button. More reliable.</p>
+                <p className="text-xs mt-1"><strong>Auto:</strong> Lyrics are fetched automatically when a song starts playing.</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Select value={tempSettings.lyricsMode || "on-demand"} onValueChange={(value: "auto" | "on-demand") => setTempSettings(prev => ({ ...prev, lyricsMode: value }))}>
+            <SelectTrigger className="h-9 w-fit">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on-demand">On-demand (Recommended)</SelectItem>
+              <SelectItem value="auto">Auto-fetch when playing</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="border-t"/>
 
 

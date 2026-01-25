@@ -15,6 +15,16 @@
   }
 }
 
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes eq-bar {
+  0%, 100% { height: 20%; }
+  50% { height: 100%; }
+}
+
 .ambient-blob {
   position: absolute;
   width: 44rem;
@@ -311,4 +321,14 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   filter: brightness(1.2);
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

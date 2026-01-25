@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(pnpm tsc:*)",
-      "Bash(pnpm build)"
+      "Bash(pnpm build)",
+      "Bash(go build:*)",
+      "Bash(npm run build)",
+      "Bash(wails generate:*)",
+      "Bash(go generate:*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:lyricsplus.prjktla.workers.dev)"
     ]
   }
 }

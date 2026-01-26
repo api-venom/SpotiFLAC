@@ -116,11 +116,17 @@ export function FullScreenPlayer() {
 
       try {
         // First, try to fetch word-level lyrics for perfect sync
+        // Use track's durationMs from Spotify metadata if available (more accurate)
+        // Fall back to state.duration (from audio element) if not
+        const durationSec = track.durationMs
+          ? Math.floor(track.durationMs / 1000)
+          : Math.floor(state.duration);
+
         const wordLyrics = await lyrics.handleFetchWordLyrics(
           track.title,
           track.artist,
           track.album || "",
-          Math.floor(state.duration)
+          durationSec
         );
 
         if (cancelled) return;
@@ -180,7 +186,7 @@ export function FullScreenPlayer() {
     return () => {
       cancelled = true;
     };
-  }, [track?.spotifyId, track?.title, track?.artist, track?.album, state.duration]);
+  }, [track?.spotifyId, track?.title, track?.artist, track?.album, track?.durationMs]);
 
   // Close menu on click outside
   useEffect(() => {

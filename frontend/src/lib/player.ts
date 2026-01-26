@@ -76,6 +76,7 @@ export type PlayerTrack = {
   artist: string;
   album?: string;
   coverUrl?: string;
+  durationMs?: number; // Duration in milliseconds from Spotify metadata
 };
 
 export type RepeatMode = "off" | "all" | "one";

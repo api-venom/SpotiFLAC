@@ -163,6 +163,7 @@ export function AlbumInfo({
       artist: t.artists,
       album: t.album_name,
       coverUrl: t.images,
+      durationMs: t.duration_ms,
     }));
 
   return (

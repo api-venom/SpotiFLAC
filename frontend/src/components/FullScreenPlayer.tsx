@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from "react";
-import { FileText, X, Heart, MoreHorizontal, Repeat, Shuffle, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, Loader2, Music } from "lucide-react";
+import { FileText, X, MoreHorizontal, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, Loader2, Music } from "lucide-react";
 import { usePlayer } from "../hooks/usePlayer";
 import { Button } from "./ui/button";
 import { useLyrics } from "../hooks/useLyrics";
@@ -11,6 +11,7 @@ import { ReadTextFile } from "../../wailsjs/go/main/App";
 import { buildLrcTimeline, findActiveIndex, getLineProgress } from "@/lib/lyrics/lrc";
 import type { WordTimeline } from "@/lib/lyrics/wordLyrics";
 import { findActiveLineIndex, getWordProgress } from "@/lib/lyrics/wordLyrics";
+import { WindowFullscreen, WindowUnfullscreen } from "../../wailsjs/runtime/runtime";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -23,9 +24,9 @@ export function FullScreenPlayer() {
   const track = state.current;
 
   const lyrics = useLyrics();
-  const [isFavorite, setIsFavorite] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showLyrics, setShowLyrics] = useState(true);
+  const [isOsFullscreen, setIsOsFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Lyrics state
@@ -202,40 +203,64 @@ export function FullScreenPlayer() {
     }
   }, [showMenu]);
 
+  // Manage OS-level fullscreen when entering/exiting the player
+  useEffect(() => {
+    if (state.isFullscreen) {
+      // Enter OS fullscreen mode (hides taskbar)
+      WindowFullscreen();
+      setIsOsFullscreen(true);
+    } else if (isOsFullscreen) {
+      // Exit OS fullscreen mode
+      WindowUnfullscreen();
+      setIsOsFullscreen(false);
+    }
+  }, [state.isFullscreen]);
+
+  // Handle close - exit both fullscreen modes
+  const handleClose = () => {
+    if (isOsFullscreen) {
+      WindowUnfullscreen();
+      setIsOsFullscreen(false);
+    }
+    player.setFullscreen(false);
+  };
+
   if (!state.isFullscreen || !track) return null;
 
   const progress = state.duration > 0 ? clamp01(state.position / state.duration) : 0;
 
   return (
     <div className="fixed inset-0 z-50 text-white overflow-hidden" style={bgStyle}>
-      {/* Animated background elements - larger and more subtle */}
+      {/* Subtle animated background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
-          className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] opacity-25 animate-[pulse_10s_ease-in-out_infinite]"
-          style={{ backgroundColor: palette?.vibrant || "rgba(100, 100, 200, 0.3)" }}
+          className="absolute -top-1/4 -left-1/4 w-[80%] h-[80%] rounded-full blur-[150px] opacity-30"
+          style={{
+            backgroundColor: palette?.vibrant || "rgba(100, 100, 200, 0.3)",
+            animation: "pulse 15s ease-in-out infinite"
+          }}
         />
         <div
-          className="absolute top-1/4 -right-40 w-[400px] h-[400px] rounded-full blur-[100px] opacity-20 animate-[pulse_14s_ease-in-out_infinite]"
-          style={{ backgroundColor: palette?.dominant || "rgba(150, 100, 150, 0.3)" }}
-        />
-        <div
-          className="absolute -bottom-40 left-1/3 w-[450px] h-[450px] rounded-full blur-[120px] opacity-15 animate-[pulse_12s_ease-in-out_infinite]"
-          style={{ backgroundColor: palette?.light || "rgba(200, 150, 100, 0.3)" }}
+          className="absolute top-1/3 -right-1/4 w-[60%] h-[60%] rounded-full blur-[120px] opacity-25"
+          style={{
+            backgroundColor: palette?.dominant || "rgba(150, 100, 150, 0.3)",
+            animation: "pulse 18s ease-in-out infinite reverse"
+          }}
         />
       </div>
 
-      {/* Backdrop blur overlay - darker for better text readability */}
-      <div className="absolute inset-0 backdrop-blur-3xl bg-black/40" />
+      {/* Backdrop blur overlay */}
+      <div className="absolute inset-0 backdrop-blur-3xl bg-black/50" />
 
       <div className="relative h-full flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/20 to-transparent">
+        {/* Header bar - Apple Music style */}
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/30 to-transparent z-20">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => player.setFullscreen(false)}
-              className="bg-white/10 hover:bg-white/20 text-white border-0 rounded-full w-10 h-10 backdrop-blur-sm"
+              onClick={handleClose}
+              className="bg-white/10 hover:bg-white/20 text-white border-0 rounded-full w-10 h-10 backdrop-blur-sm transition-all hover:scale-105"
             >
               <X className="h-5 w-5" />
             </Button>
@@ -246,13 +271,12 @@ export function FullScreenPlayer() {
           </div>
 
           <div className="flex items-center gap-2 relative" ref={menuRef}>
-            {/* Toggle lyrics button */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setShowLyrics(!showLyrics)}
               className={cn(
-                "bg-white/10 hover:bg-white/20 border-0 rounded-full w-10 h-10 backdrop-blur-sm transition-colors",
+                "bg-white/10 hover:bg-white/20 border-0 rounded-full w-10 h-10 backdrop-blur-sm transition-all hover:scale-105",
                 showLyrics ? "text-white" : "text-white/50"
               )}
             >
@@ -262,11 +286,12 @@ export function FullScreenPlayer() {
               variant="ghost"
               size="icon"
               onClick={() => setShowMenu(!showMenu)}
-              className="bg-white/10 hover:bg-white/20 text-white border-0 rounded-full w-10 h-10 backdrop-blur-sm"
+              className="bg-white/10 hover:bg-white/20 text-white border-0 rounded-full w-10 h-10 backdrop-blur-sm transition-all hover:scale-105"
             >
               <MoreHorizontal className="h-5 w-5" />
             </Button>
 
+            {/* Equalizer dropdown */}
             {showMenu && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in-0 slide-in-from-top-2 duration-200">
                 <EqualizerControls useMPV={state.useMPV} />
@@ -275,19 +300,22 @@ export function FullScreenPlayer() {
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 flex items-stretch px-8 py-4 gap-8 overflow-hidden">
-          {/* Left Side - Album Art & Controls */}
+        {/* Main Content - Apple Music Style Layout */}
+        <div className="flex-1 flex items-center justify-center px-8 pb-4 gap-12 overflow-hidden">
+          {/* Left Side - Album Art & Track Info */}
           <div className={cn(
-            "flex flex-col justify-center transition-all duration-500",
-            showLyrics ? "w-[420px] flex-shrink-0" : "flex-1 max-w-2xl mx-auto"
+            "flex flex-col items-center justify-center transition-all duration-700 ease-out",
+            showLyrics ? "w-[380px] flex-shrink-0" : "flex-1 max-w-lg"
           )}>
-            {/* Album Art */}
-            <div className="relative group mb-6">
-              <div className="absolute -inset-3 bg-white/5 rounded-2xl blur-xl opacity-50" />
+            {/* Album Art with shadow */}
+            <div className="relative mb-8">
+              <div
+                className="absolute inset-0 rounded-lg blur-2xl opacity-40"
+                style={{ backgroundColor: palette?.dominant || "rgba(0,0,0,0.3)" }}
+              />
               <div className={cn(
-                "relative aspect-square overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/10 transition-all duration-500",
-                showLyrics ? "w-full" : "w-full max-w-md mx-auto"
+                "relative aspect-square overflow-hidden rounded-lg shadow-2xl transition-all duration-700",
+                showLyrics ? "w-[340px]" : "w-[420px]"
               )}>
                 {track.coverUrl ? (
                   <img
@@ -297,178 +325,45 @@ export function FullScreenPlayer() {
                   />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center">
-                    <div className="text-6xl text-white/20">♫</div>
+                    <Music className="w-24 h-24 text-white/20" />
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Track Info */}
-            <div className="mb-6">
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className={cn(
-                  "font-bold leading-tight text-white truncate",
-                  showLyrics ? "text-2xl" : "text-4xl"
-                )}>
-                  {track.title}
-                </h1>
+            {/* Track Info - Apple Music style */}
+            <div className="text-center w-full max-w-[400px]">
+              <h1 className={cn(
+                "font-semibold leading-tight text-white truncate mb-1",
+                showLyrics ? "text-xl" : "text-2xl"
+              )}>
+                {track.title}
                 {state.useMPV && (
-                  <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded flex-shrink-0">
+                  <span className="ml-2 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded inline-block align-middle">
                     Hi-Res
                   </span>
                 )}
-              </div>
+              </h1>
               <h2 className={cn(
-                "text-white/60 font-medium truncate",
-                showLyrics ? "text-lg" : "text-xl"
+                "text-white/50 font-normal truncate",
+                showLyrics ? "text-base" : "text-lg"
               )}>
-                {track.artist}
+                {track.artist} — {track.album || "Unknown Album"}
               </h2>
             </div>
-
-            {/* Progress Bar */}
-            <div className="mb-6">
-              <div
-                className="group h-1 w-full bg-white/20 rounded-full overflow-hidden cursor-pointer hover:h-1.5 transition-all duration-200"
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const percent = x / rect.width;
-                  player.seek(percent * state.duration);
-                }}
-              >
-                <div
-                  className="h-full bg-white/90 rounded-full relative transition-all duration-100"
-                  style={{ width: `${progress * 100}%` }}
-                >
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg" />
-                </div>
-              </div>
-              <div className="flex justify-between mt-2 text-[13px] text-white/50 font-mono tabular-nums">
-                <span>{formatTime(state.position)}</span>
-                <span>-{formatTime(state.duration - state.position)}</span>
-              </div>
-            </div>
-
-            {/* Playback Controls */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => player.toggleShuffle()}
-                  className={cn(
-                    "h-10 w-10 hover:bg-white/10 transition-colors rounded-full",
-                    state.shuffle ? "text-green-400" : "text-white/50 hover:text-white"
-                  )}
-                >
-                  <Shuffle className="h-5 w-5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 hover:bg-white/10 text-white/80 hover:text-white rounded-full"
-                  onClick={() => player.previous()}
-                >
-                  <SkipBack className="h-5 w-5" />
-                </Button>
-              </div>
-
-              <Button
-                onClick={() => player.togglePlay()}
-                size="icon"
-                className="w-14 h-14 rounded-full bg-white hover:bg-white/90 text-black hover:scale-105 transition-all duration-200 shadow-xl"
-              >
-                {state.isPlaying ? (
-                  <Pause className="h-6 w-6 fill-current" />
-                ) : (
-                  <Play className="h-6 w-6 fill-current ml-0.5" />
-                )}
-              </Button>
-
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 hover:bg-white/10 text-white/80 hover:text-white rounded-full"
-                  onClick={() => player.next()}
-                >
-                  <SkipForward className="h-5 w-5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => player.cycleRepeat()}
-                  className={cn(
-                    "h-10 w-10 hover:bg-white/10 transition-colors rounded-full",
-                    state.repeat !== "off" ? "text-green-400" : "text-white/50 hover:text-white"
-                  )}
-                >
-                  <Repeat className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Volume & Actions */}
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => player.setVolume(state.volume > 0 ? 0 : 1)}
-                className="h-9 w-9 hover:bg-white/10 text-white/60 hover:text-white rounded-full flex-shrink-0"
-              >
-                {state.volume === 0 ? (
-                  <VolumeX className="h-4 w-4" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-              </Button>
-              <div className="flex-1">
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={state.volume}
-                  onChange={(e) => player.setVolume(Number(e.target.value))}
-                  className="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg hover:[&::-webkit-slider-thumb]:scale-110 [&::-webkit-slider-thumb]:transition-transform"
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsFavorite(!isFavorite)}
-                className={cn(
-                  "h-9 w-9 hover:bg-white/10 transition-colors rounded-full",
-                  isFavorite ? "text-red-500 hover:text-red-400" : "text-white/60 hover:text-white"
-                )}
-              >
-                <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
-              </Button>
-            </div>
-
-            {/* Quality Info */}
-            {track.isrc && (
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <div className="flex items-center gap-4 text-[12px] text-white/40">
-                  <span>ISRC: {track.isrc}</span>
-                  <span>Quality: {state.useMPV ? "Hi-Res FLAC" : "High"}</span>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right Side - Lyrics */}
           {showLyrics && (
-            <div className="flex-1 flex flex-col min-w-0 relative">
-              {/* Gradient overlays for scroll fade effect */}
-              <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-black/30 to-transparent z-10 pointer-events-none" />
-              <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/30 to-transparent z-10 pointer-events-none" />
+            <div className="flex-1 flex flex-col min-w-0 relative h-full">
+              {/* Gradient overlays for scroll fade effect - more prominent */}
+              <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/60 via-black/30 to-transparent z-10 pointer-events-none" />
+              <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-black/60 via-black/30 to-transparent z-10 pointer-events-none" />
 
               {/* Lyrics content */}
               <div
                 ref={scrollContainerRef}
-                className="flex-1 overflow-y-auto scrollbar-hide py-20"
+                className="flex-1 overflow-y-auto scrollbar-hide py-24"
               >
                 {/* Loading state */}
                 {lyricsState === "loading" && (
@@ -512,19 +407,18 @@ export function FullScreenPlayer() {
 
                 {/* Loaded lyrics - Word-level (best) with per-word karaoke highlighting */}
                 {lyricsState === "loaded" && wordTimeline && wordTimeline.lines.length > 0 && (
-                  <div className="space-y-5 px-4">
+                  <div className="space-y-8 px-6">
                     {wordTimeline.lines.map((line, index) => {
                       const isActive = index === wordActiveLineIndex;
                       const isPast = index < wordActiveLineIndex;
+                      const isFuture = index > wordActiveLineIndex;
                       const activeWordIdx = isActive && wordLineProgress ? wordLineProgress.wordIndex : -1;
                       const wordProgress = isActive && wordLineProgress ? wordLineProgress.wordProgress : 0;
 
                       // Handle ellipsis/pause lines with animated dots
                       if (line.isEllipsis) {
-                        // Don't show past ellipsis lines
                         if (isPast) return null;
 
-                        // Calculate fill progress for the dots (same as lyrics fill)
                         const ellipsisProgress = isActive && line.durationMs > 0
                           ? ((state.position * 1000 - line.startMs) / line.durationMs)
                           : 0;
@@ -535,38 +429,35 @@ export function FullScreenPlayer() {
                             key={index}
                             ref={isActive ? activeLineRef : undefined}
                             className={cn(
-                              "relative flex justify-center",
+                              "relative flex justify-center py-4",
                               "transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]",
-                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-95"
+                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-90"
                             )}
                           >
                             <div
                               className="relative text-center"
                               style={{
                                 fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
-                                fontWeight: 600,
-                                fontSize: "clamp(2rem, 4vw, 3rem)",
+                                fontWeight: 700,
+                                fontSize: "clamp(2.5rem, 5vw, 4rem)",
                                 lineHeight: 1,
-                                letterSpacing: "0.3em",
-                                WebkitFontSmoothing: "antialiased",
-                                MozOsxFontSmoothing: "grayscale",
+                                letterSpacing: "0.4em",
                               }}
                             >
-                              {/* Background dots (unfilled) */}
-                              <span style={{ color: "rgba(255, 255, 255, 0.3)" }}>
-                                ...
+                              <span style={{ color: "rgba(255, 255, 255, 0.25)" }}>
+                                • • •
                               </span>
-                              {/* Filled dots overlay with clip animation */}
                               {fillPercent > 0 && (
                                 <span
                                   className="absolute inset-0"
                                   style={{
                                     clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                     color: "#FFFFFF",
-                                    transition: "clip-path 50ms linear",
+                                    transition: "clip-path 80ms linear",
+                                    textShadow: "0 0 30px rgba(255,255,255,0.5)",
                                   }}
                                 >
-                                  ...
+                                  • • •
                                 </span>
                               )}
                             </div>
@@ -582,65 +473,68 @@ export function FullScreenPlayer() {
                             "relative cursor-pointer",
                             "transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]",
                             "hover:opacity-90 active:scale-[0.99]",
-                            isActive && "scale-[1.02]"
+                            isActive && "scale-[1.02]",
+                            isFuture && "opacity-60"
                           )}
                           onClick={() => {
                             player.seek(line.startMs / 1000);
                           }}
                         >
                           <div
-                            className="relative inline-block w-full transition-all duration-300"
+                            className={cn(
+                              "relative inline-block w-full transition-all duration-400",
+                              isActive && "drop-shadow-[0_0_40px_rgba(255,255,255,0.15)]"
+                            )}
                             style={{
                               fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
-                              fontWeight: isActive ? 700 : 600,
-                              fontSize: isActive ? "clamp(1.5rem, 2.5vw, 2.25rem)" : "clamp(1.25rem, 2vw, 1.75rem)",
+                              fontWeight: isActive ? 700 : isPast ? 600 : 500,
+                              fontSize: isActive ? "clamp(1.6rem, 2.8vw, 2.4rem)" : "clamp(1.3rem, 2.2vw, 1.9rem)",
                               lineHeight: 1.4,
-                              letterSpacing: "-0.02em",
+                              letterSpacing: "-0.015em",
                               whiteSpace: "normal",
                               wordBreak: "break-word",
-                              WebkitFontSmoothing: "antialiased",
-                              MozOsxFontSmoothing: "grayscale",
                             }}
                           >
-                            {/* Render each word separately for per-word karaoke highlighting */}
                             {line.words.map((word, wordIdx) => {
                               const isWordPast = isPast || (isActive && wordIdx < activeWordIdx);
                               const isWordActive = isActive && wordIdx === activeWordIdx;
                               const isWordFuture = !isPast && !isWordPast && !isWordActive;
-
-                              // For the active word, calculate the fill percentage
                               const fillPercent = isWordActive ? wordProgress * 100 : (isWordPast ? 100 : 0);
 
                               return (
                                 <span
                                   key={wordIdx}
-                                  className="relative inline-block transition-colors duration-200"
+                                  className={cn(
+                                    "relative inline-block transition-all duration-200",
+                                    isWordActive && "scale-[1.02]"
+                                  )}
                                   style={{
-                                    marginRight: wordIdx < line.words.length - 1 ? "0.25em" : 0,
+                                    marginRight: wordIdx < line.words.length - 1 ? "0.22em" : 0,
                                   }}
                                 >
-                                  {/* Background (unhighlighted) text */}
                                   <span
                                     className="transition-colors duration-300"
                                     style={{
                                       color: isWordFuture
-                                        ? "rgba(255, 255, 255, 0.3)"
+                                        ? "rgba(255, 255, 255, 0.35)"
                                         : isWordActive
-                                          ? "rgba(255, 255, 255, 0.4)"
-                                          : "rgba(255, 255, 255, 0.5)",
+                                          ? "rgba(255, 255, 255, 0.45)"
+                                          : isPast
+                                            ? "rgba(255, 255, 255, 0.55)"
+                                            : "rgba(255, 255, 255, 0.4)",
                                     }}
                                   >
                                     {word.text}
                                   </span>
 
-                                  {/* Highlighted overlay with clip for active word fill effect */}
                                   {(isWordPast || isWordActive) && fillPercent > 0 && (
                                     <span
                                       className="absolute inset-0"
                                       style={{
                                         clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                         color: "#FFFFFF",
-                                        transition: "clip-path 50ms linear",
+                                        transition: "clip-path 60ms linear",
+                                        textShadow: isWordActive ? "0 0 20px rgba(255,255,255,0.4)" : "none",
                                       }}
                                     >
                                       {word.text}
@@ -656,21 +550,19 @@ export function FullScreenPlayer() {
                   </div>
                 )}
 
-                {/* Loaded lyrics - LRC fallback (Apple Music style) */}
+                {/* Loaded lyrics - LRC fallback */}
                 {lyricsState === "loaded" && !wordTimeline && timeline.length > 0 && (
-                  <div className="space-y-5 px-4">
+                  <div className="space-y-8 px-6">
                     {timeline.map((line, index) => {
                       const isActive = index === activeIndex;
                       const isPast = index < activeIndex;
+                      const isFuture = index > activeIndex;
                       const isEllipsis = line.kind === "ellipsis";
                       const progress = lineProgress[index] || 0;
 
-                      // Handle ellipsis/pause lines with animated dots
                       if (isEllipsis) {
-                        // Don't show past ellipsis lines
                         if (isPast) return null;
 
-                        // Calculate fill progress for the dots (same as lyrics fill)
                         const nextLine = timeline[index + 1];
                         const ellipsisDuration = nextLine ? nextLine.t - line.t : 3;
                         const ellipsisProgress = isActive && ellipsisDuration > 0
@@ -683,38 +575,35 @@ export function FullScreenPlayer() {
                             key={index}
                             ref={isActive ? activeLineRef : undefined}
                             className={cn(
-                              "relative flex justify-center",
+                              "relative flex justify-center py-4",
                               "transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]",
-                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-95"
+                              isActive ? "opacity-100 scale-100" : "opacity-0 scale-90"
                             )}
                           >
                             <div
                               className="relative text-center"
                               style={{
                                 fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
-                                fontWeight: 600,
-                                fontSize: "clamp(2rem, 4vw, 3rem)",
+                                fontWeight: 700,
+                                fontSize: "clamp(2.5rem, 5vw, 4rem)",
                                 lineHeight: 1,
-                                letterSpacing: "0.3em",
-                                WebkitFontSmoothing: "antialiased",
-                                MozOsxFontSmoothing: "grayscale",
+                                letterSpacing: "0.4em",
                               }}
                             >
-                              {/* Background dots (unfilled) */}
-                              <span style={{ color: "rgba(255, 255, 255, 0.3)" }}>
-                                ...
+                              <span style={{ color: "rgba(255, 255, 255, 0.25)" }}>
+                                • • •
                               </span>
-                              {/* Filled dots overlay with clip animation */}
                               {fillPercent > 0 && (
                                 <span
                                   className="absolute inset-0"
                                   style={{
                                     clipPath: `inset(0 ${100 - fillPercent}% 0 0)`,
                                     color: "#FFFFFF",
-                                    transition: "clip-path 50ms linear",
+                                    transition: "clip-path 80ms linear",
+                                    textShadow: "0 0 30px rgba(255,255,255,0.5)",
                                   }}
                                 >
-                                  ...
+                                  • • •
                                 </span>
                               )}
                             </div>
@@ -730,7 +619,8 @@ export function FullScreenPlayer() {
                             "relative cursor-pointer",
                             "transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]",
                             "hover:opacity-90 active:scale-[0.99]",
-                            isActive && "scale-[1.02]"
+                            isActive && "scale-[1.02]",
+                            isFuture && "opacity-60"
                           )}
                           onClick={() => {
                             if (line.t !== undefined) {
@@ -739,44 +629,46 @@ export function FullScreenPlayer() {
                           }}
                         >
                           <div
-                            className="relative inline-block w-full transition-all duration-300"
+                            className={cn(
+                              "relative inline-block w-full transition-all duration-400",
+                              isActive && "drop-shadow-[0_0_40px_rgba(255,255,255,0.15)]"
+                            )}
                             style={{
                               fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
-                              fontWeight: isActive ? 700 : 600,
-                              fontSize: isActive ? "clamp(1.5rem, 2.5vw, 2.25rem)" : "clamp(1.25rem, 2vw, 1.75rem)",
+                              fontWeight: isActive ? 700 : isPast ? 600 : 500,
+                              fontSize: isActive ? "clamp(1.6rem, 2.8vw, 2.4rem)" : "clamp(1.3rem, 2.2vw, 1.9rem)",
                               lineHeight: 1.4,
-                              letterSpacing: "-0.02em",
+                              letterSpacing: "-0.015em",
                               whiteSpace: "nowrap",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
-                              WebkitFontSmoothing: "antialiased",
-                              MozOsxFontSmoothing: "grayscale",
                             }}
                           >
-                            {/* Background text layer */}
                             <span
                               className="transition-colors duration-300"
                               style={{
                                 color: isPast
-                                  ? "rgba(255, 255, 255, 0.5)"
+                                  ? "rgba(255, 255, 255, 0.55)"
                                   : isActive
-                                    ? "rgba(255, 255, 255, 0.4)"
-                                    : "rgba(255, 255, 255, 0.3)",
+                                    ? "rgba(255, 255, 255, 0.45)"
+                                    : "rgba(255, 255, 255, 0.35)",
                               }}
                             >
                               {line.text}
                             </span>
 
-                            {/* Active line fill animation */}
                             {isActive && progress > 0 && (
                               <span
                                 className="absolute inset-0 overflow-hidden"
                                 style={{
                                   clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
-                                  transition: "clip-path 50ms linear",
+                                  transition: "clip-path 60ms linear",
                                 }}
                               >
-                                <span style={{ color: "#FFFFFF" }}>
+                                <span style={{
+                                  color: "#FFFFFF",
+                                  textShadow: "0 0 20px rgba(255,255,255,0.4)",
+                                }}>
                                   {line.text}
                                 </span>
                               </span>
@@ -790,6 +682,118 @@ export function FullScreenPlayer() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Bottom Control Bar - Apple Music Style */}
+        <div className="px-8 pb-8">
+          {/* Progress Bar */}
+          <div className="max-w-3xl mx-auto mb-4">
+            <div
+              className="group h-1 w-full bg-white/20 rounded-full overflow-hidden cursor-pointer hover:h-1.5 transition-all duration-200"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const percent = x / rect.width;
+                player.seek(percent * state.duration);
+              }}
+            >
+              <div
+                className="h-full bg-white/80 rounded-full relative transition-all duration-100"
+                style={{ width: `${progress * 100}%` }}
+              >
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg" />
+              </div>
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-white/50 font-mono tabular-nums">
+              <span>{formatTime(state.position)}</span>
+              <span>-{formatTime(state.duration - state.position)}</span>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center justify-center gap-6">
+            {/* Volume */}
+            <div className="flex items-center gap-2 w-32">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => player.setVolume(state.volume > 0 ? 0 : 1)}
+                className="h-8 w-8 hover:bg-white/10 text-white/60 hover:text-white rounded-full flex-shrink-0"
+              >
+                {state.volume === 0 ? (
+                  <VolumeX className="h-4 w-4" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
+              </Button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={state.volume}
+                onChange={(e) => player.setVolume(Number(e.target.value))}
+                className="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer"
+              />
+            </div>
+
+            {/* Menu button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMenu(!showMenu)}
+              className="h-9 w-9 hover:bg-white/10 text-white/60 hover:text-white rounded-full"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </Button>
+
+            {/* Playback controls */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 hover:bg-white/10 text-white/80 hover:text-white rounded-full"
+              onClick={() => player.previous()}
+            >
+              <SkipBack className="h-5 w-5 fill-current" />
+            </Button>
+
+            <Button
+              onClick={() => player.togglePlay()}
+              size="icon"
+              className="w-14 h-14 rounded-full bg-white/10 hover:bg-white/20 text-white hover:scale-105 transition-all duration-200"
+            >
+              {state.isPlaying ? (
+                <Pause className="h-6 w-6 fill-current" />
+              ) : (
+                <Play className="h-6 w-6 fill-current ml-0.5" />
+              )}
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 hover:bg-white/10 text-white/80 hover:text-white rounded-full"
+              onClick={() => player.next()}
+            >
+              <SkipForward className="h-5 w-5 fill-current" />
+            </Button>
+
+            {/* Lyrics toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowLyrics(!showLyrics)}
+              className={cn(
+                "h-9 w-9 hover:bg-white/10 border-0 rounded-full transition-colors",
+                showLyrics ? "text-white bg-white/20" : "text-white/60"
+              )}
+            >
+              <FileText className="h-5 w-5" />
+            </Button>
+
+            {/* Empty spacer to balance volume */}
+            <div className="w-32" />
+          </div>
         </div>
       </div>
     </div>

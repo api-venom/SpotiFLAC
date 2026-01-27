@@ -9,7 +9,8 @@
       "Bash(go generate:*)",
       "Bash(npx tsc:*)",
       "Bash(curl:*)",
-      "WebFetch(domain:lyricsplus.prjktla.workers.dev)"
+      "WebFetch(domain:lyricsplus.prjktla.workers.dev)",
+      "Bash(pnpm exec tsc:*)"
     ]
   }
 }

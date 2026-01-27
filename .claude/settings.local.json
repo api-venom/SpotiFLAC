@@ -12,7 +12,9 @@
       "WebFetch(domain:lyricsplus.prjktla.workers.dev)",
       "Bash(pnpm exec tsc:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pnpm add:*)",
+      "Bash(wails build:*)"
     ]
   }
 }

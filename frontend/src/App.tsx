@@ -3,8 +3,6 @@ import { ArrowUp, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AboutPage } from "@/components/AboutPage";
@@ -759,55 +757,6 @@ function App() {
         return (
           <>
             <Header version={CURRENT_VERSION} hasUpdate={hasUpdate} releaseDate={releaseDate} />
-
-            <Dialog open={metadata.showTimeoutDialog} onOpenChange={metadata.setShowTimeoutDialog}>
-              <DialogContent className="sm:max-w-[425px] p-6 [&>button]:hidden">
-                <div className="absolute right-4 top-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 opacity-70 hover:opacity-100"
-                    onClick={() => metadata.setShowTimeoutDialog(false)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <DialogTitle className="text-sm font-medium">Fetch Artist</DialogTitle>
-                <DialogDescription>
-                  Set timeout for fetching metadata. Longer timeout is recommended for artists with large discography.
-                </DialogDescription>
-                {metadata.pendingArtistName && (
-                  <div className="py-2">
-                    <p className="font-medium bg-muted/50 rounded-md px-3 py-2">{metadata.pendingArtistName}</p>
-                  </div>
-                )}
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="timeout">Timeout (seconds)</Label>
-                    <Input
-                      id="timeout"
-                      type="number"
-                      min="10"
-                      max="600"
-                      value={metadata.timeoutValue}
-                      onChange={(e) => metadata.setTimeoutValue(Number(e.target.value))}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Default: 60 seconds. For large discographies, try 300-600 seconds (5-10 minutes).
-                    </p>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => metadata.setShowTimeoutDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={metadata.handleConfirmFetch}>
-                    <Search className="h-4 w-4" />
-                    Fetch
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
 
             <Dialog open={metadata.showAlbumDialog} onOpenChange={metadata.setShowAlbumDialog}>
               <DialogContent className="sm:max-w-[425px] p-6 [&>button]:hidden">

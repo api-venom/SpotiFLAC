@@ -488,7 +488,7 @@ func contentTypeFromPath(p string) string {
 func resolveRemoteStreamURL(spotifyID, isrc, audioFormat, provider string) (string, error) {
 	// Get provider URLs from SongLink API
 	client := NewSongLinkClient()
-	urls, err := client.GetAllURLsFromSpotify(spotifyID)
+	urls, err := client.GetAllURLsFromSpotify(spotifyID, "US")
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve provider URLs: %w", err)
 	}

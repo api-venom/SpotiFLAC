@@ -153,6 +153,9 @@ export function TrackInfo({
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-bold wrap-break-word">{track.name}</h1>
+                {track.is_explicit && (
+                  <span className="inline-flex items-center justify-center bg-red-600 text-white text-[10px] h-4 w-4 rounded shrink-0" title="Explicit">E</span>
+                )}
                 {isSkipped ? (
                   <FileCheck className="h-6 w-6 text-yellow-500 shrink-0" />
                 ) : isDownloaded ? (

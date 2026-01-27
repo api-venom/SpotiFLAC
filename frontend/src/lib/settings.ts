@@ -96,6 +96,9 @@ export interface Settings {
 
   // Lyrics settings
   lyricsMode: "auto" | "on-demand"; // auto = download as song plays, on-demand = only when clicking lyrics
+
+  // Allow fallback to lower quality if hi-res is not available
+  allowFallback: boolean;
 }
 
 export const FOLDER_PRESETS: Record<
@@ -227,6 +230,9 @@ export const DEFAULT_SETTINGS: Settings = {
 
   // Lyrics settings - on-demand is more robust (only fetch when user clicks lyrics button)
   lyricsMode: "on-demand",
+
+  // Allow fallback to lower quality if hi-res is not available
+  allowFallback: true,
 };
 
 export const FONT_OPTIONS: {
@@ -396,6 +402,12 @@ function migrateSettingsShape(parsed: any): Settings {
   if (!("amazonQuality" in parsed)) parsed.amazonQuality = DEFAULT_SETTINGS.amazonQuality;
   if (!("autoOrder" in parsed)) parsed.autoOrder = DEFAULT_SETTINGS.autoOrder;
   if (!("autoQuality" in parsed)) parsed.autoQuality = DEFAULT_SETTINGS.autoQuality;
+
+  // Set default for allowFallback if not present
+  if (!("allowFallback" in parsed)) parsed.allowFallback = DEFAULT_SETTINGS.allowFallback;
+
+  // Set default for lyricsMode if not present
+  if (!("lyricsMode" in parsed)) parsed.lyricsMode = DEFAULT_SETTINGS.lyricsMode;
 
   return { ...DEFAULT_SETTINGS, ...parsed };
 }

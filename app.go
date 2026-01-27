@@ -101,6 +101,9 @@ type DownloadRequest struct {
 	SpotifyTotalDiscs    int    `json:"spotify_total_discs,omitempty"`
 	Copyright            string `json:"copyright,omitempty"`
 	Publisher            string `json:"publisher,omitempty"`
+	PlaylistName         string `json:"playlist_name,omitempty"`
+	PlaylistOwner        string `json:"playlist_owner,omitempty"`
+	AllowFallback        bool   `json:"allow_fallback"`
 }
 
 type DownloadResponse struct {
@@ -112,14 +115,14 @@ type DownloadResponse struct {
 	ItemID        string `json:"item_id,omitempty"`
 }
 
-func (a *App) GetStreamingURLs(spotifyTrackID string) (string, error) {
+func (a *App) GetStreamingURLs(spotifyTrackID string, region string) (string, error) {
 	if spotifyTrackID == "" {
 		return "", fmt.Errorf("spotify track ID is required")
 	}
 
-	fmt.Printf("[GetStreamingURLs] Called for track ID: %s\n", spotifyTrackID)
+	fmt.Printf("[GetStreamingURLs] Called for track ID: %s, Region: %s\n", spotifyTrackID, region)
 	client := backend.NewSongLinkClient()
-	urls, err := client.GetAllURLsFromSpotify(spotifyTrackID)
+	urls, err := client.GetAllURLsFromSpotify(spotifyTrackID, region)
 	if err != nil {
 		return "", err
 	}
@@ -225,7 +228,12 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		req.OutputDir = "."
 	} else {
 
-		req.OutputDir = backend.NormalizePath(req.OutputDir)
+		if req.PlaylistName != "" {
+			sanitizedPlaylist := backend.SanitizeFilename(req.PlaylistName)
+			req.OutputDir = filepath.Join(req.OutputDir, sanitizedPlaylist)
+		}
+
+		req.OutputDir = backend.SanitizeFolderPath(req.OutputDir)
 	}
 
 	if req.AudioFormat == "" {
@@ -305,7 +313,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 	}
 
 	if req.TrackName != "" && req.ArtistName != "" {
-		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.FilenameFormat, req.TrackNumber, req.Position, req.SpotifyDiscNumber, req.UseAlbumTrackNumber)
+		expectedFilename := backend.BuildExpectedFilename(req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.FilenameFormat, req.PlaylistName, req.PlaylistOwner, req.TrackNumber, req.Position, req.SpotifyDiscNumber, req.UseAlbumTrackNumber)
 		expectedPath := filepath.Join(req.OutputDir, expectedFilename)
 
 		if fileInfo, err := os.Stat(expectedPath); err == nil && fileInfo.Size() > 100*1024 {
@@ -325,8 +333,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 	case "amazon":
 		downloader := backend.NewAmazonDownloader()
 		if req.ServiceURL != "" {
-
-			filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.EmbedMaxQualityCover, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+			filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.PlaylistName, req.PlaylistOwner, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.EmbedMaxQualityCover, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
 		} else {
 			if req.SpotifyID == "" {
 				return DownloadResponse{
@@ -334,15 +341,14 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					Error:   "Spotify ID is required for Amazon Music",
 				}, fmt.Errorf("spotify ID is required for Amazon Music")
 			}
-			filename, err = downloader.DownloadBySpotifyID(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.EmbedMaxQualityCover, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+			filename, err = downloader.DownloadBySpotifyID(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.PlaylistName, req.PlaylistOwner, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.EmbedMaxQualityCover, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
 		}
 
 	case "tidal":
 		if req.ApiURL == "" || req.ApiURL == "auto" {
 			downloader := backend.NewTidalDownloader("")
 			if req.ServiceURL != "" {
-
-				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+				filename, err = downloader.DownloadByURLWithFallback(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL, req.AllowFallback)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -350,14 +356,12 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 						Error:   "Spotify ID is required for Tidal",
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
-
-				filename, err = downloader.Download(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+				filename, err = downloader.Download(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL, req.AllowFallback)
 			}
 		} else {
 			downloader := backend.NewTidalDownloader(req.ApiURL)
 			if req.ServiceURL != "" {
-
-				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+				filename, err = downloader.DownloadByURL(req.ServiceURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL, req.AllowFallback)
 			} else {
 				if req.SpotifyID == "" {
 					return DownloadResponse{
@@ -365,8 +369,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 						Error:   "Spotify ID is required for Tidal",
 					}, fmt.Errorf("spotify ID is required for Tidal")
 				}
-
-				filename, err = downloader.Download(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+				filename, err = downloader.Download(req.SpotifyID, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL, req.AllowFallback)
 			}
 		}
 
@@ -408,7 +411,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 				Error:   "ISRC is required for Qobuz (could not fetch from Deezer)",
 			}, fmt.Errorf("ISRC is required for Qobuz")
 		}
-		filename, err = downloader.DownloadByISRC(deezerISRC, req.OutputDir, quality, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL)
+		filename, err = downloader.DownloadByISRC(deezerISRC, req.OutputDir, quality, req.FilenameFormat, req.TrackNumber, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, spotifyURL, req.AllowFallback)
 
 	default:
 		return DownloadResponse{
@@ -537,6 +540,12 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 					item.Format = strings.ToUpper(ext[1:])
 				}
 			}
+
+			switch item.Format {
+			case "6", "7", "27":
+				item.Format = "FLAC"
+			}
+
 			backend.AddHistoryItem(item, "SpotiFLAC")
 		}(filename, req.TrackName, req.ArtistName, req.AlbumName, req.SpotifyID, req.CoverURL, req.AudioFormat)
 	}
@@ -692,6 +701,30 @@ func (a *App) GetDownloadHistory() ([]backend.HistoryItem, error) {
 
 func (a *App) ClearDownloadHistory() error {
 	return backend.ClearHistory("SpotiFLAC")
+}
+
+func (a *App) DeleteDownloadHistoryItem(id string) error {
+	return backend.DeleteHistoryItem(id, "SpotiFLAC")
+}
+
+func (a *App) GetFetchHistory() ([]backend.FetchHistoryItem, error) {
+	return backend.GetFetchHistoryItems("SpotiFLAC")
+}
+
+func (a *App) AddFetchHistory(item backend.FetchHistoryItem) error {
+	return backend.AddFetchHistoryItem(item, "SpotiFLAC")
+}
+
+func (a *App) ClearFetchHistory() error {
+	return backend.ClearFetchHistory("SpotiFLAC")
+}
+
+func (a *App) DeleteFetchHistoryItem(id string) error {
+	return backend.DeleteFetchHistoryItem(id, "SpotiFLAC")
+}
+
+func (a *App) ClearFetchHistoryByType(itemType string) error {
+	return backend.ClearFetchHistoryByType(itemType, "SpotiFLAC")
 }
 
 func (a *App) AnalyzeTrack(filePath string) (string, error) {
@@ -1173,6 +1206,27 @@ func (a *App) RenameFileTo(oldPath, newName string) error {
 	return os.Rename(oldPath, newPath)
 }
 
+func (a *App) UploadImage(filePath string) (string, error) {
+	return backend.UploadToSendNow(filePath)
+}
+
+func (a *App) UploadImageBytes(filename string, base64Data string) (string, error) {
+
+	if idx := strings.Index(base64Data, ","); idx != -1 {
+		base64Data = base64Data[idx+1:]
+	}
+
+	data, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64: %v", err)
+	}
+	return backend.UploadBytesToSendNow(filename, data)
+}
+
+func (a *App) SelectImageVideo() ([]string, error) {
+	return backend.SelectImageVideoDialog(a.ctx)
+}
+
 func (a *App) ReadImageAsBase64(filePath string) (string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -1212,6 +1266,7 @@ type CheckFileExistenceRequest struct {
 	FilenameFormat      string `json:"filename_format,omitempty"`
 	IncludeTrackNumber  bool   `json:"include_track_number,omitempty"`
 	AudioFormat         string `json:"audio_format,omitempty"`
+	RelativePath        string `json:"relative_path,omitempty"`
 }
 
 type CheckFileExistenceResult struct {
@@ -1274,6 +1329,8 @@ func (a *App) CheckFilesExistence(outputDir string, tracks []CheckFileExistenceR
 				t.AlbumArtist,
 				t.ReleaseDate,
 				filenameFormat,
+				"",
+				"",
 				t.IncludeTrackNumber,
 				trackNumber,
 				t.DiscNumber,
@@ -1282,7 +1339,12 @@ func (a *App) CheckFilesExistence(outputDir string, tracks []CheckFileExistenceR
 
 			expectedFilename := strings.TrimSuffix(expectedFilenameBase, ".flac") + fileExt
 
-			expectedPath := filepath.Join(outputDir, expectedFilename)
+			targetDir := outputDir
+			if t.RelativePath != "" {
+				targetDir = filepath.Join(outputDir, t.RelativePath)
+			}
+
+			expectedPath := filepath.Join(targetDir, expectedFilename)
 
 			if fileInfo, err := os.Stat(expectedPath); err == nil && fileInfo.Size() > 100*1024 {
 				res.Exists = true

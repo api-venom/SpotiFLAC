@@ -129,6 +129,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import androidx.compose.material3.rememberModalBottomSheetState

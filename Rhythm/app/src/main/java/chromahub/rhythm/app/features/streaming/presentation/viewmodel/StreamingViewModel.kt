@@ -8,8 +8,8 @@ import androidx.lifecycle.viewModelScope
 import chromahub.rhythm.app.features.streaming.data.repository.SpotifyAuthManager
 import chromahub.rhythm.app.features.streaming.data.repository.StreamingRepository
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
-import chromahub.rhythm.app.infrastructure.network.AppleMusicApiService
-import chromahub.rhythm.app.infrastructure.network.LRCLibApiService
+import chromahub.rhythm.app.network.AppleMusicApiService
+import chromahub.rhythm.app.network.LRCLibApiService
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.shared.data.model.LyricsData
 import kotlinx.coroutines.Dispatchers
@@ -344,7 +344,7 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
                 // Find best match by duration if provided
                 val bestMatch = if (durationSeconds > 0) {
                     lrcResults.minByOrNull {
-                        kotlin.math.abs((it.duration ?: 0) - durationSeconds)
+                        kotlin.math.abs((it.duration ?: 0.0) - durationSeconds)
                     }
                 } else {
                     lrcResults.firstOrNull()
@@ -366,15 +366,15 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
             if (appleMusicResults.isNotEmpty()) {
                 // Find best match
                 val bestMatch = appleMusicResults.firstOrNull { result ->
-                    result.name?.contains(title, ignoreCase = true) == true ||
-                    title.contains(result.name ?: "", ignoreCase = true)
+                    result.songName?.contains(title, ignoreCase = true) == true ||
+                    title.contains(result.songName ?: "", ignoreCase = true)
                 } ?: appleMusicResults.firstOrNull()
 
                 bestMatch?.id?.let { trackId ->
                     val lyricsResponse = appleMusicApi.getLyrics(trackId)
-                    if (lyricsResponse.lyrics?.isNotEmpty() == true) {
+                    if (lyricsResponse.content?.isNotEmpty() == true) {
                         // Convert to JSON string for storage
-                        wordByWordLyrics = com.google.gson.Gson().toJson(lyricsResponse.lyrics)
+                        wordByWordLyrics = com.google.gson.Gson().toJson(lyricsResponse.content)
                         Log.d(TAG, "Apple Music word-by-word lyrics found")
                     }
                 }

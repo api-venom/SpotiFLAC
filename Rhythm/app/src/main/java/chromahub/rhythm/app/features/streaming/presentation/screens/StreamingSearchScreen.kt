@@ -235,7 +235,7 @@ fun StreamingSearchScreen(
             }
 
             // Loading overlay when fetching stream
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = isLoadingStream,
                 enter = fadeIn(),
                 exit = fadeOut(),

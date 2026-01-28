@@ -177,37 +177,38 @@ fun StreamingPlayerScreen(
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                AnimatedVisibility(
-                    visible = !showLyrics,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    // Album Art View
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                Column(modifier = Modifier.fillMaxSize()) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !showLyrics,
+                        enter = fadeIn(),
+                        exit = fadeOut()
                     ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(song.artworkUri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = song.album,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(16.dp))
-                        )
+                        // Album Art View
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(song.artworkUri)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = song.album,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(16.dp))
+                            )
+                        }
                     }
-                }
 
-                AnimatedVisibility(
-                    visible = showLyrics,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut() + slideOutVertically { it / 2 }
-                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showLyrics,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut() + slideOutVertically { it / 2 }
+                    ) {
                     // Lyrics View
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -285,6 +286,7 @@ fun StreamingPlayerScreen(
                         }
                     }
                 }
+                } // End of Column wrapper
             }
 
             // Song Info

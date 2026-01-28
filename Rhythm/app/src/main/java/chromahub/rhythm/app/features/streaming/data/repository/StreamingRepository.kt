@@ -18,8 +18,10 @@ class StreamingRepository(
     companion object {
         private const val TAG = "StreamingRepository"
 
-        // Search query hash (same as Windows app)
+        // Query hashes (same as Windows app)
         private const val SEARCH_HASH = "fcad5a3e0d5af727fb76966f06971c19cfa2275e6ff7671196753e008611873c"
+        private const val TRACK_HASH = "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294"
+        private const val ALBUM_HASH = "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10"
     }
 
     /**
@@ -238,6 +240,152 @@ class StreamingRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Error checking availability", e)
             emptyMap()
+        }
+    }
+
+    /**
+     * Fetch full track metadata (like Windows SpotiFLAC)
+     * Gets detailed track info using the getTrack query
+     */
+    suspend fun fetchTrackMetadata(spotifyId: String): StreamingSong? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("variables", JSONObject().apply {
+                    put("uri", "spotify:track:$spotifyId")
+                })
+                put("operationName", "getTrack")
+                put("extensions", JSONObject().apply {
+                    put("persistedQuery", JSONObject().apply {
+                        put("version", 1)
+                        put("sha256Hash", TRACK_HASH)
+                    })
+                })
+            }
+
+            val response = authManager.query(payload)
+            if (response == null) {
+                Log.e(TAG, "Failed to fetch track metadata")
+                return@withContext null
+            }
+
+            parseTrackUnion(response, spotifyId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching track metadata", e)
+            null
+        }
+    }
+
+    /**
+     * Parse trackUnion response (like Windows FilterTrack)
+     */
+    private suspend fun parseTrackUnion(response: JSONObject, spotifyId: String): StreamingSong? {
+        try {
+            val data = response.optJSONObject("data") ?: return null
+            val trackUnion = data.optJSONObject("trackUnion") ?: return null
+
+            val name = trackUnion.optString("name", "")
+            if (name.isEmpty()) return null
+
+            // Parse duration
+            val durationMs = trackUnion.optJSONObject("duration")?.optLong("totalMilliseconds")
+                ?: trackUnion.optLong("duration_ms", 0)
+
+            // Parse artists (try multiple locations like Windows app)
+            val artists = mutableListOf<String>()
+
+            // Try artists.items
+            val artistsData = trackUnion.optJSONObject("artists")
+            val artistItems = artistsData?.optJSONArray("items") ?: JSONArray()
+            for (i in 0 until artistItems.length()) {
+                val artist = artistItems.optJSONObject(i)
+                val profile = artist?.optJSONObject("profile")
+                val artistName = profile?.optString("name") ?: artist?.optString("name", "")
+                if (!artistName.isNullOrEmpty()) {
+                    artists.add(artistName)
+                }
+            }
+
+            // Fallback: try firstArtist and otherArtists
+            if (artists.isEmpty()) {
+                val firstArtistItems = trackUnion.optJSONObject("firstArtist")?.optJSONArray("items") ?: JSONArray()
+                for (i in 0 until firstArtistItems.length()) {
+                    val artist = firstArtistItems.optJSONObject(i)
+                    val profile = artist?.optJSONObject("profile")
+                    val artistName = profile?.optString("name", "") ?: ""
+                    if (artistName.isNotEmpty()) {
+                        artists.add(artistName)
+                    }
+                }
+
+                val otherArtistItems = trackUnion.optJSONObject("otherArtists")?.optJSONArray("items") ?: JSONArray()
+                for (i in 0 until otherArtistItems.length()) {
+                    val artist = otherArtistItems.optJSONObject(i)
+                    val profile = artist?.optJSONObject("profile")
+                    val artistName = profile?.optString("name", "") ?: ""
+                    if (artistName.isNotEmpty()) {
+                        artists.add(artistName)
+                    }
+                }
+            }
+
+            // Parse album
+            val albumOfTrack = trackUnion.optJSONObject("albumOfTrack")
+            val albumName = albumOfTrack?.optString("name", "") ?: ""
+            val albumId = albumOfTrack?.optString("uri", "")?.removePrefix("spotify:album:") ?: ""
+
+            // Parse cover image
+            var albumArt: String? = null
+            val coverArt = albumOfTrack?.optJSONObject("coverArt")
+            val sources = coverArt?.optJSONArray("sources")
+            if (sources != null) {
+                var maxWidth = 0
+                for (i in 0 until sources.length()) {
+                    val source = sources.optJSONObject(i)
+                    val width = source?.optInt("width", 0) ?: 0
+                    val url = source?.optString("url", "")
+                    if (width > maxWidth && !url.isNullOrEmpty()) {
+                        maxWidth = width
+                        albumArt = url
+                    }
+                }
+            }
+
+            // Parse release date from album
+            val releaseDate = albumOfTrack?.optJSONObject("date")?.let { date ->
+                val year = date.optInt("year", 0)
+                val month = date.optInt("month", 1)
+                val day = date.optInt("day", 1)
+                if (year > 0) "$year-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}" else null
+            }
+
+            // Parse explicit
+            val contentRating = trackUnion.optJSONObject("contentRating")
+            val isExplicit = contentRating?.optString("label") == "EXPLICIT"
+
+            // Parse track number
+            val trackNumber = trackUnion.optInt("trackNumber", 0)
+            val discNumber = trackUnion.optInt("discNumber", 1)
+
+            // Parse playcount
+            val playcount = trackUnion.optString("playcount", "0").toLongOrNull() ?: 0
+
+            Log.d(TAG, "Fetched metadata for: $name by ${artists.joinToString(", ")}")
+
+            return StreamingSong(
+                id = "spotify:$spotifyId",
+                title = name,
+                artist = artists.joinToString(", "),
+                album = albumName,
+                duration = durationMs,
+                artworkUri = albumArt,
+                spotifyId = spotifyId,
+                releaseDate = releaseDate,
+                explicit = isExplicit,
+                popularity = (playcount / 1000000).toInt().coerceIn(0, 100) // Rough popularity
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing trackUnion", e)
+            return null
         }
     }
 }

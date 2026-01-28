@@ -145,7 +145,14 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SPOTIFY_API_ENABLED = "spotify_api_enabled"
         private const val KEY_SPOTIFY_CLIENT_ID = "spotify_client_id"
         private const val KEY_SPOTIFY_CLIENT_SECRET = "spotify_client_secret"
-        
+
+        // Streaming Services
+        private const val KEY_TIDAL_ENABLED = "tidal_enabled"
+        private const val KEY_QOBUZ_ENABLED = "qobuz_enabled"
+        private const val KEY_AMAZON_MUSIC_ENABLED = "amazon_music_enabled"
+        private const val KEY_PREFERRED_STREAMING_PROVIDER = "preferred_streaming_provider"
+        private const val KEY_PREFERRED_STREAMING_QUALITY = "preferred_streaming_quality"
+
         // Scrobbling Settings
         private const val KEY_SCROBBLING_ENABLED = "scrobbling_enabled"
         
@@ -812,6 +819,22 @@ class AppSettings private constructor(context: Context) {
     
     private val _spotifyClientSecret = MutableStateFlow(prefs.getString(KEY_SPOTIFY_CLIENT_SECRET, "") ?: "")
     val spotifyClientSecret: StateFlow<String> = _spotifyClientSecret.asStateFlow()
+
+    // Streaming Services Settings
+    private val _tidalEnabled = MutableStateFlow(prefs.getBoolean(KEY_TIDAL_ENABLED, true))
+    val tidalEnabled: StateFlow<Boolean> = _tidalEnabled.asStateFlow()
+
+    private val _qobuzEnabled = MutableStateFlow(prefs.getBoolean(KEY_QOBUZ_ENABLED, true))
+    val qobuzEnabled: StateFlow<Boolean> = _qobuzEnabled.asStateFlow()
+
+    private val _amazonMusicEnabled = MutableStateFlow(prefs.getBoolean(KEY_AMAZON_MUSIC_ENABLED, true))
+    val amazonMusicEnabled: StateFlow<Boolean> = _amazonMusicEnabled.asStateFlow()
+
+    private val _preferredStreamingProvider = MutableStateFlow(prefs.getString(KEY_PREFERRED_STREAMING_PROVIDER, "auto") ?: "auto")
+    val preferredStreamingProvider: StateFlow<String> = _preferredStreamingProvider.asStateFlow()
+
+    private val _preferredStreamingQuality = MutableStateFlow(prefs.getString(KEY_PREFERRED_STREAMING_QUALITY, "lossless") ?: "lossless")
+    val preferredStreamingQuality: StateFlow<String> = _preferredStreamingQuality.asStateFlow()
 
     // Scrobbling Settings
     private val _scrobblingEnabled = MutableStateFlow(prefs.getBoolean(KEY_SCROBBLING_ENABLED, false))
@@ -1712,6 +1735,32 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setSpotifyClientSecret(clientSecret: String) {
         prefs.edit().putString(KEY_SPOTIFY_CLIENT_SECRET, clientSecret).apply()
         _spotifyClientSecret.value = clientSecret
+    }
+
+    // Streaming Services Methods
+    fun setTidalEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TIDAL_ENABLED, enabled).apply()
+        _tidalEnabled.value = enabled
+    }
+
+    fun setQobuzEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_QOBUZ_ENABLED, enabled).apply()
+        _qobuzEnabled.value = enabled
+    }
+
+    fun setAmazonMusicEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AMAZON_MUSIC_ENABLED, enabled).apply()
+        _amazonMusicEnabled.value = enabled
+    }
+
+    fun setPreferredStreamingProvider(provider: String) {
+        prefs.edit().putString(KEY_PREFERRED_STREAMING_PROVIDER, provider).apply()
+        _preferredStreamingProvider.value = provider
+    }
+
+    fun setPreferredStreamingQuality(quality: String) {
+        prefs.edit().putString(KEY_PREFERRED_STREAMING_QUALITY, quality).apply()
+        _preferredStreamingQuality.value = quality
     }
 
     // Scrobbling Methods
@@ -2869,7 +2918,14 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _spotifyApiEnabled.value = prefs.getBoolean(KEY_SPOTIFY_API_ENABLED, BuildConfig.FLAVOR != "fdroid")
         _spotifyClientId.value = prefs.getString(KEY_SPOTIFY_CLIENT_ID, "") ?: ""
         _spotifyClientSecret.value = prefs.getString(KEY_SPOTIFY_CLIENT_SECRET, "") ?: ""
-        
+
+        // Streaming Services Settings
+        _tidalEnabled.value = prefs.getBoolean(KEY_TIDAL_ENABLED, true)
+        _qobuzEnabled.value = prefs.getBoolean(KEY_QOBUZ_ENABLED, true)
+        _amazonMusicEnabled.value = prefs.getBoolean(KEY_AMAZON_MUSIC_ENABLED, true)
+        _preferredStreamingProvider.value = prefs.getString(KEY_PREFERRED_STREAMING_PROVIDER, "auto") ?: "auto"
+        _preferredStreamingQuality.value = prefs.getString(KEY_PREFERRED_STREAMING_QUALITY, "lossless") ?: "lossless"
+
         // Scrobbling Settings
         _scrobblingEnabled.value = prefs.getBoolean(KEY_SCROBBLING_ENABLED, false)
         

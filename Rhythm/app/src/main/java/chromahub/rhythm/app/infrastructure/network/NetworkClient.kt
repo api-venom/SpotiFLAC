@@ -240,15 +240,75 @@ object NetworkClient {
         .addInterceptor(deezerHeadersInterceptor())
         .addInterceptor(loggingInterceptor)
         .build()
-    
+
+    // Streaming services (lazy initialized)
+    private var _tidalService: TidalService? = null
+    private var _qobuzService: QobuzService? = null
+    private var _amazonMusicService: AmazonMusicService? = null
+    private var _songLinkService: SongLinkService? = null
+    private var _streamingManager: StreamingManager? = null
+
+    val tidalService: TidalService?
+        get() {
+            if (!isTidalEnabled()) return null
+            if (_tidalService == null) _tidalService = TidalService()
+            return _tidalService
+        }
+
+    val qobuzService: QobuzService?
+        get() {
+            if (!isQobuzEnabled()) return null
+            if (_qobuzService == null) _qobuzService = QobuzService()
+            return _qobuzService
+        }
+
+    val amazonMusicService: AmazonMusicService?
+        get() {
+            if (!isAmazonMusicEnabled()) return null
+            if (_amazonMusicService == null) _amazonMusicService = AmazonMusicService()
+            return _amazonMusicService
+        }
+
+    val songLinkService: SongLinkService?
+        get() {
+            if (!isSongLinkEnabled()) return null
+            if (_songLinkService == null) _songLinkService = SongLinkService()
+            return _songLinkService
+        }
+
+    val streamingManager: StreamingManager?
+        get() {
+            // Streaming manager is available if any streaming service is enabled
+            if (!isTidalEnabled() && !isQobuzEnabled() && !isAmazonMusicEnabled()) return null
+            if (_streamingManager == null) {
+                _streamingManager = StreamingManager(
+                    tidalService = tidalService ?: TidalService(),
+                    qobuzService = qobuzService ?: QobuzService(),
+                    amazonService = amazonMusicService ?: AmazonMusicService(),
+                    songLinkService = songLinkService ?: SongLinkService()
+                )
+            }
+            return _streamingManager
+        }
+
     // Helper methods to check if APIs are enabled (respects both BuildConfig AND runtime settings)
     fun isDeezerApiEnabled(): Boolean = BuildConfig.ENABLE_DEEZER && (appSettings?.deezerApiEnabled?.value ?: false)
     fun isCanvasApiEnabled(): Boolean = BuildConfig.ENABLE_SPOTIFY_CANVAS && (appSettings?.canvasApiEnabled?.value ?: false)
     fun isLrcLibApiEnabled(): Boolean = BuildConfig.ENABLE_LRCLIB && (appSettings?.lrclibApiEnabled?.value ?: false)
     fun isYTMusicApiEnabled(): Boolean = BuildConfig.ENABLE_YOUTUBE_MUSIC && (appSettings?.ytMusicApiEnabled?.value ?: false)
     fun isSpotifyApiEnabled(): Boolean = BuildConfig.ENABLE_SPOTIFY_SEARCH && (appSettings?.spotifyApiEnabled?.value ?: false)
-    
+
+    // Streaming service availability checks
+    fun isTidalEnabled(): Boolean = BuildConfig.ENABLE_TIDAL && (appSettings?.tidalEnabled?.value ?: true)
+    fun isQobuzEnabled(): Boolean = BuildConfig.ENABLE_QOBUZ && (appSettings?.qobuzEnabled?.value ?: true)
+    fun isAmazonMusicEnabled(): Boolean = BuildConfig.ENABLE_AMAZON_MUSIC && (appSettings?.amazonMusicEnabled?.value ?: true)
+    fun isSongLinkEnabled(): Boolean = BuildConfig.ENABLE_SONGLINK
+
     // Get Spotify API credentials
     fun getSpotifyClientId(): String = appSettings?.spotifyClientId?.value ?: ""
     fun getSpotifyClientSecret(): String = appSettings?.spotifyClientSecret?.value ?: ""
+
+    // Get preferred streaming provider
+    fun getPreferredStreamingProvider(): String = appSettings?.preferredStreamingProvider?.value ?: StreamingManager.PROVIDER_AUTO
+    fun getPreferredStreamingQuality(): String = appSettings?.preferredStreamingQuality?.value ?: StreamingManager.QUALITY_LOSSLESS
 }

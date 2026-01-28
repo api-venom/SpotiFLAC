@@ -29,7 +29,7 @@ android {
         create("fdroid") {
             dimension = "distribution"
             applicationId = "chromahub.rhythm.app"
-            
+
             // F-Droid build: Enable all features (FOSS ethos)
             buildConfigField("boolean", "ENABLE_YOUTUBE_MUSIC", "true")
             buildConfigField("boolean", "ENABLE_SPOTIFY_CANVAS", "true")
@@ -37,15 +37,20 @@ android {
             buildConfigField("boolean", "ENABLE_DEEZER", "true")
             buildConfigField("boolean", "ENABLE_LRCLIB", "true")
             buildConfigField("boolean", "ENABLE_SPOTIFY_SEARCH", "true")
+            // Streaming services
+            buildConfigField("boolean", "ENABLE_TIDAL", "true")
+            buildConfigField("boolean", "ENABLE_QOBUZ", "true")
+            buildConfigField("boolean", "ENABLE_AMAZON_MUSIC", "true")
+            buildConfigField("boolean", "ENABLE_SONGLINK", "true")
             buildConfigField("String", "FLAVOR", "\"fdroid\"")
-            
+
             versionNameSuffix = "-fdroid"
         }
-        
+
         create("github") {
             dimension = "distribution"
             applicationId = "chromahub.rhythm.app"
-            
+
             // GitHub releases: Enable all features (same as F-Droid)
             buildConfigField("boolean", "ENABLE_YOUTUBE_MUSIC", "true")
             buildConfigField("boolean", "ENABLE_SPOTIFY_CANVAS", "true")
@@ -53,8 +58,13 @@ android {
             buildConfigField("boolean", "ENABLE_DEEZER", "true")
             buildConfigField("boolean", "ENABLE_LRCLIB", "true")
             buildConfigField("boolean", "ENABLE_SPOTIFY_SEARCH", "true")
+            // Streaming services
+            buildConfigField("boolean", "ENABLE_TIDAL", "true")
+            buildConfigField("boolean", "ENABLE_QOBUZ", "true")
+            buildConfigField("boolean", "ENABLE_AMAZON_MUSIC", "true")
+            buildConfigField("boolean", "ENABLE_SONGLINK", "true")
             buildConfigField("String", "FLAVOR", "\"github\"")
-            
+
             versionNameSuffix = "-gh"
         }
     }

@@ -34,5 +34,8 @@ enum class SourceType {
     APPLE_MUSIC,
     YOUTUBE_MUSIC,
     DEEZER,
+    TIDAL,
+    QOBUZ,
+    AMAZON_MUSIC,
     UNKNOWN
 }

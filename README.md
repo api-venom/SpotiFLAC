@@ -11,6 +11,7 @@ Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no account 
 ![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgMjAgMjAiPjxwYXRoIGZpbGw9IiNmZmZmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTIwIDEwLjg3M1YyMEw4LjQ3OSAxOC41MzdsLjAwMS03LjY2NEgyMFptLTEzLjEyIDBsLS4wMDEgNy40NjFMMCAxNy40NjF2LTYuNTg4aDYuODhaTTIwIDkuMjczSDguNDhsLS4wMDEtNy44MUwyMCAwdjkuMjczWk02Ljg3OSAxLjY2NmwuMDAxIDcuNjA3SDBWMi41MzlsNi44NzktLjg3M1oiLz48L3N2Zz4=)
 ![macOS](https://img.shields.io/badge/macOS-10.13%2B-000000?style=for-the-badge&logo=apple&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-Any-FCC624?style=for-the-badge&logo=linux&logoColor=white)
+![Android](https://img.shields.io/badge/Android-8.0%2B-34A853?style=for-the-badge&logo=android&logoColor=white)
 
 <a href="https://trendshift.io/repositories/15737" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15737" alt="afkarxyz%2FSpotiFLAC | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -21,6 +22,20 @@ Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no account 
 ## Screenshot
 
 ![Image](https://github.com/user-attachments/assets/adbdc056-bace-44a9-8ba6-898b4526b65a)
+
+## Android App
+
+The Android version (Knight Music) is a full-featured music player with:
+
+- **Material 3 Design** - Beautiful UI with Material You dynamic theming
+- **Media3 ExoPlayer** - Professional-grade audio playback
+- **FLAC Support** - Native lossless audio playback for all your hi-res files
+- **Synced Lyrics** - Real-time lyrics with word-by-word highlighting
+- **10-Band Equalizer** - Professional EQ with 6000+ AutoEQ device presets
+- **Widgets** - Modern Glance widgets with Material 3 design
+- **Gapless Playback** - Seamless track transitions
+
+Download the APK from the [Releases](https://github.com/afkarxyz/SpotiFLAC/releases) page.
 
 ## Other projects
 
@@ -35,10 +50,6 @@ Get Spotify tracks in MP3 and FLAC via spotidownloader.com
 ### [SpotubeDL](https://spotubedl.com)
 
 Download Spotify Tracks, Albums, Playlists as MP3/OGG/Opus with High Quality.
-
-### [SpotiFLAC (Mobile)](https://github.com/zarzet/SpotiFLAC-Mobile)
-
-SpotiFLAC for Android & iOS — maintained by [@zarzet](https://github.com/zarzet)
 
 ## FAQ
 

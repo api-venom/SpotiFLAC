@@ -647,9 +647,106 @@ jobs:
           path: dist/KnightMusic.AppImage
           retention-days: 7
 
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="dev"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Create signing files
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          SIGNING_PROPERTIES: ${{ secrets.SIGNING_PROPERTIES }}
+          PRIVATE_PROPERTIES: ${{ secrets.PRIVATE_PROPERTIES }}
+        run: |
+          cd Rhythm
+          mkdir -p config/signing
+          if [ -n "$SIGNING_KEYSTORE" ]; then
+            echo $SIGNING_KEYSTORE | base64 -di > ./config/signing/rhythm_keystore.jks
+          fi
+          if [ -n "$SIGNING_PROPERTIES" ]; then
+            echo $SIGNING_PROPERTIES | base64 -di > ./config/signing/keystore.properties
+          fi
+          if [ -n "$PRIVATE_PROPERTIES" ]; then
+            echo $PRIVATE_PROPERTIES | base64 -di > ./config/signing/private.properties
+          else
+            touch ./private.properties
+          fi
+
+      - name: Make Gradle executable
+        run: chmod +x ./Rhythm/gradlew
+
+      - name: Build Android APK (GitHub flavor)
+        working-directory: Rhythm
+        run: ./gradlew assembleGithubRelease --stacktrace
+
+      - name: Generate checksums
+        run: |
+          cd Rhythm/app/build/outputs/apk/githubRelease
+          for file in *.apk; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+              md5sum "$file" > "$file.md5"
+            fi
+          done
+
+      - name: Prepare Android artifacts
+        run: |
+          mkdir -p android-dist
+          cp Rhythm/app/build/outputs/apk/githubRelease/*.apk android-dist/
+          cp Rhythm/app/build/outputs/apk/githubRelease/*.sha256 android-dist/ 2>/dev/null || true
+          cp Rhythm/app/build/outputs/apk/githubRelease/*.md5 android-dist/ 2>/dev/null || true
+
+          # Rename APK to KnightMusic for branding consistency
+          cd android-dist
+          for file in Rhythm-*.apk; do
+            if [ -f "$file" ]; then
+              newname=$(echo "$file" | sed 's/Rhythm/KnightMusic/')
+              mv "$file" "$newname"
+              # Also rename checksums
+              if [ -f "${file}.sha256" ]; then
+                mv "${file}.sha256" "${newname}.sha256"
+              fi
+              if [ -f "${file}.md5" ]; then
+                mv "${file}.md5" "${newname}.md5"
+              fi
+            fi
+          done
+
+          echo "Android artifacts prepared:"
+          ls -la
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android-dist/
+          retention-days: 7
+
   create-release:
     name: Create Release
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos, build-linux, build-android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -679,20 +776,25 @@ jobs:
           prerelease: false
           generate_release_notes: false
           body: |
-            ## Knight Music with Full FLAC Playback Support
+            ## Knight Music - Multi-Platform Music Streaming
 
             ### What's New
 
-            #### FLAC Streaming & Playback
-            - [x] **Windows:** Full MPV integration - FLAC streams work natively (no more "source not supported" errors!)
+            #### Desktop (Windows/Linux/macOS)
+            - [x] **FLAC Streaming:** Full MPV integration for lossless audio playback
+            - [x] **Windows:** All MPV DLLs bundled - works out of the box
             - [x] **Linux:** MPV-powered playback with native FLAC decoding
-            - [x] **Automatic fallback:** Tries HTML5 audio first, switches to MPV if needed
-            - [x] **Zero setup:** All MPV DLLs bundled - works out of the box on fresh Windows machines
+            - [x] **Automatic fallback:** HTML5 audio → MPV backend seamlessly
 
-            #### Streaming Improvements
-            - [x] Fixed "upstream returned html" error - now gets authenticated audio URLs from Tidal API
-            - [x] Supports both direct URLs and BTS manifest parsing
-            - [x] Local file priority - downloaded tracks play instantly
+            #### Android (NEW!)
+            - [x] **Material 3 Design:** Beautiful UI with Material You theming
+            - [x] **Media3 ExoPlayer:** Professional-grade audio playback
+            - [x] **FLAC Support:** Native lossless audio playback
+            - [x] **Synced Lyrics:** LRCLib integration with word-by-word highlighting
+            - [x] **10-Band Equalizer:** Professional EQ with 6000+ device presets
+            - [x] **Widgets:** Modern Glance widgets with Material 3 design
+            - [x] **Gapless Playback:** Seamless track transitions
+            - [x] **Android Auto:** Full Android Auto support
 
             ---
 
@@ -705,20 +807,31 @@ jobs:
             - Just extract and run - no installation needed
             - FLAC playback works immediately
 
-            ### Alternative Downloads
-            - `KnightMusic.dmg` - macOS (MPV not yet supported)
+            ### Android
+            **`KnightMusic-*-githubRelease.apk`**
+            - Material 3 design with dynamic theming
+            - Supports Android 8.0+ (API 26+)
+            - Full FLAC/ALAC/MP3/AAC/Opus support
+            - Just download APK and install
+
+            ### Other Platforms
+            - `KnightMusic.dmg` - macOS (Universal binary)
             - `KnightMusic.AppImage` - Linux (includes MPV support)
 
             ---
 
-            ## Quick Start (Windows)
+            ## Quick Start
 
+            ### Windows
             1. **Download** `KnightMusic-Windows-Portable.zip`
-            2. **Extract** to any folder (e.g., Desktop)
+            2. **Extract** to any folder
             3. **Run** `KnightMusic.exe`
-            4. **Enjoy!** FLAC playback works immediately
 
-            **That's it!** No manual DLL downloads, no configuration needed.
+            ### Android
+            1. **Download** `KnightMusic-*-githubRelease.apk`
+            2. **Install** (enable "Install from unknown sources" if needed)
+            3. **Grant** storage permissions for local music
+            4. **Enjoy!**
 
             ---
 
@@ -734,7 +847,20 @@ jobs:
 
             ---
 
-            ## How FLAC Playback Works
+            ## Android Features
+
+            - 🎨 **Material You** - Dynamic colors from your wallpaper (Android 12+)
+            - 🎵 **Pro Audio** - Media3 ExoPlayer with gapless playback
+            - 🎤 **Synced Lyrics** - Real-time lyrics with word highlighting
+            - 🎛️ **Equalizer** - 10-band EQ with AutoEQ presets
+            - 📊 **Stats** - Listening statistics and insights
+            - 📱 **Widgets** - Multiple responsive home screen widgets
+            - 🔊 **Chromecast** - Cast music to compatible devices
+            - 🔒 **Privacy** - 100% FOSS, no tracking
+
+            ---
+
+            ## How Desktop FLAC Playback Works
 
             When you play a song:
 
@@ -785,10 +911,20 @@ jobs:
 
             ## Troubleshooting
 
-            ### MPV not working?
+            ### Windows - MPV not working?
             1. Check `libmpv-2.dll` is in same folder as `.exe`
             2. Run as administrator
             3. Check Windows Defender hasn't blocked files
+
+            ### Android - App won't install?
+            1. Enable "Install from unknown sources" in Settings
+            2. If updating, uninstall old version first (backup data!)
+            3. Minimum Android 8.0 (API 26) required
+
+            ### Android - No music showing?
+            1. Grant storage permissions in app settings
+            2. Check music files are in standard folders
+            3. Supported formats: FLAC, MP3, AAC, M4A, OGG, WAV, ALAC
 
             ### Still having issues?
             Open an issue: https://github.com/afkarxyz/SpotiFLAC/issues
@@ -798,10 +934,10 @@ jobs:
             ## Build Info
 
             - **MPV Version:** Latest from shinchiro/mpv-winbuild-cmake
-            - **Build Type:** CGO-enabled with libmpv
-            - **Windows:** All DLLs bundled automatically
+            - **Windows:** CGO-enabled with bundled MPV DLLs
             - **Linux:** Uses system libmpv
-            - **macOS:** Stub implementation (MPV coming in future update)
+            - **macOS:** Universal binary (Intel + Apple Silicon)
+            - **Android:** Media3 ExoPlayer 1.9.0, Kotlin 2.3.0, Compose BOM 2026.01
 
             <details>
             <summary><b>Linux Requirements</b></summary>
@@ -830,9 +966,21 @@ jobs:
             ```
 
             </details>
+
+            <details>
+            <summary><b>Android Requirements</b></summary>
+
+            - **Minimum:** Android 8.0 (Oreo, API 26)
+            - **Target:** Android 14 (API 34)
+            - **RAM:** 2GB minimum
+            - **Storage:** 50MB for app + music library
+
+            </details>
           files: |
             artifacts/windows-portable-zip/KnightMusic-Windows-Portable.zip
             artifacts/macos-portable/KnightMusic.dmg
             artifacts/linux-portable/KnightMusic.AppImage
+            artifacts/android-apk/KnightMusic-*-githubRelease.apk
+            artifacts/android-apk/KnightMusic-*-githubRelease.apk.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

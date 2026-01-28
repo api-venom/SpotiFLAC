@@ -66,6 +66,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SHOW_LYRICS = "show_lyrics"
         private const val KEY_ONLINE_ONLY_LYRICS = "online_only_lyrics" // Deprecated, kept for migration
         private const val KEY_LYRICS_SOURCE_PREFERENCE = "lyrics_source_preference"
+        private const val KEY_WORD_BY_WORD_LYRICS_ENABLED = "word_by_word_lyrics_enabled"
         
         // Theme Settings
         private const val KEY_USE_SYSTEM_THEME = "use_system_theme"
@@ -433,7 +434,11 @@ class AppSettings private constructor(context: Context) {
     // Keep for backward compatibility but make it read from new preference
     private val _onlineOnlyLyrics = MutableStateFlow(_lyricsSourcePreference.value == LyricsSourcePreference.API_FIRST)
     val onlineOnlyLyrics: StateFlow<Boolean> = _onlineOnlyLyrics.asStateFlow()
-    
+
+    // Word-by-word lyrics (Apple Music style with syllable highlighting)
+    private val _wordByWordLyricsEnabled = MutableStateFlow(prefs.getBoolean(KEY_WORD_BY_WORD_LYRICS_ENABLED, true))
+    val wordByWordLyricsEnabled: StateFlow<Boolean> = _wordByWordLyricsEnabled.asStateFlow()
+
     // Theme Settings
     private val _useSystemTheme = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_THEME, true))
     val useSystemTheme: StateFlow<Boolean> = _useSystemTheme.asStateFlow()
@@ -1228,7 +1233,12 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         val preference = if (onlineOnly) LyricsSourcePreference.API_FIRST else LyricsSourcePreference.EMBEDDED_FIRST
         setLyricsSourcePreference(preference)
     }
-    
+
+    fun setWordByWordLyricsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WORD_BY_WORD_LYRICS_ENABLED, enabled).apply()
+        _wordByWordLyricsEnabled.value = enabled
+    }
+
     // Theme Settings Methods
     fun setUseSystemTheme(use: Boolean) {
         prefs.edit().putBoolean(KEY_USE_SYSTEM_THEME, use).apply()

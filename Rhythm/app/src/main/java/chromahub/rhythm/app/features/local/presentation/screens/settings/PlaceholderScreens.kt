@@ -11971,8 +11971,19 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
     // Broadcast Status state
     val broadcastStatusEnabled by appSettings.broadcastStatusEnabled.collectAsState()
 
+    // Streaming Services states
+    val tidalEnabled by appSettings.tidalEnabled.collectAsState()
+    val qobuzEnabled by appSettings.qobuzEnabled.collectAsState()
+    val amazonMusicEnabled by appSettings.amazonMusicEnabled.collectAsState()
+    val preferredStreamingProvider by appSettings.preferredStreamingProvider.collectAsState()
+    val preferredStreamingQuality by appSettings.preferredStreamingQuality.collectAsState()
+
     // Spotify API dialog state
     var showSpotifyConfigDialog by remember { mutableStateOf(false) }
+
+    // Streaming provider/quality dialog states
+    var showStreamingProviderDialog by remember { mutableStateOf(false) }
+    var showStreamingQualityDialog by remember { mutableStateOf(false) }
 
     CollapsibleHeaderScreen(
         title = "Integrations",
@@ -12179,7 +12190,169 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
             }
 
             item { Spacer(modifier = Modifier.height(24.dp)) }
-            
+
+            // Streaming Services Section
+            item {
+                Text(
+                    text = "Streaming Services",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column {
+                        // Tidal Toggle
+                        if (chromahub.rhythm.app.BuildConfig.ENABLE_TIDAL) {
+                            ApiServiceRow(
+                                title = "Tidal",
+                                description = "Hi-Res lossless streaming (24-bit FLAC)",
+                                status = if (tidalEnabled) "Enabled" else "Disabled",
+                                isConfigured = true,
+                                isEnabled = tidalEnabled,
+                                icon = Icons.Default.MusicNote,
+                                showToggle = true,
+                                onToggle = { enabled -> appSettings.setTidalEnabled(enabled) },
+                                onClick = { }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                        }
+
+                        // Qobuz Toggle
+                        if (chromahub.rhythm.app.BuildConfig.ENABLE_QOBUZ) {
+                            ApiServiceRow(
+                                title = "Qobuz",
+                                description = "Hi-Res streaming up to 192kHz/24-bit",
+                                status = if (qobuzEnabled) "Enabled" else "Disabled",
+                                isConfigured = true,
+                                isEnabled = qobuzEnabled,
+                                icon = Icons.Default.HighQuality,
+                                showToggle = true,
+                                onToggle = { enabled -> appSettings.setQobuzEnabled(enabled) },
+                                onClick = { }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                        }
+
+                        // Amazon Music Toggle
+                        if (chromahub.rhythm.app.BuildConfig.ENABLE_AMAZON_MUSIC) {
+                            ApiServiceRow(
+                                title = "Amazon Music",
+                                description = "Amazon HD lossless streaming",
+                                status = if (amazonMusicEnabled) "Enabled" else "Disabled",
+                                isConfigured = true,
+                                isEnabled = amazonMusicEnabled,
+                                icon = Icons.Default.ShoppingCart,
+                                showToggle = true,
+                                onToggle = { enabled -> appSettings.setAmazonMusicEnabled(enabled) },
+                                onClick = { }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                        }
+
+                        // Preferred Provider Selector
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showStreamingProviderDialog = true
+                                }
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Preferred Provider",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = when (preferredStreamingProvider) {
+                                        "tidal" -> "Tidal (Priority)"
+                                        "qobuz" -> "Qobuz (Priority)"
+                                        "amazon" -> "Amazon Music (Priority)"
+                                        else -> "Auto (Best Available)"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                        )
+
+                        // Preferred Quality Selector
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showStreamingQualityDialog = true
+                                }
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Streaming Quality",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = when (preferredStreamingQuality) {
+                                        "hires" -> "Hi-Res (24-bit, up to 192kHz)"
+                                        "lossless" -> "Lossless (16-bit, 44.1kHz)"
+                                        "high" -> "High (AAC 320kbps)"
+                                        else -> "Lossless"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+
             // Scrobbling Section
             item {
                 Text(
@@ -12645,6 +12818,193 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
             appSettings = appSettings
         )
     }
+
+    // Streaming Provider Selection Dialog
+    if (showStreamingProviderDialog) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showStreamingProviderDialog = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                Text(
+                    text = "Preferred Streaming Provider",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "Choose which service to try first for streaming",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                val providerOptions = listOf(
+                    Triple("auto", "Auto (Best Available)", "Automatically picks the best available source"),
+                    Triple("tidal", "Tidal", "Prioritize Tidal for Hi-Res lossless"),
+                    Triple("qobuz", "Qobuz", "Prioritize Qobuz for Hi-Res streaming"),
+                    Triple("amazon", "Amazon Music", "Prioritize Amazon HD")
+                )
+
+                providerOptions.forEach { (value, title, description) ->
+                    val isSelected = preferredStreamingProvider == value
+                    Card(
+                        onClick = {
+                            appSettings.setPreferredStreamingProvider(value)
+                            showStreamingProviderDialog = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    // Streaming Quality Selection Dialog
+    if (showStreamingQualityDialog) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showStreamingQualityDialog = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                Text(
+                    text = "Streaming Quality",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "Higher quality uses more data",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                val qualityOptions = listOf(
+                    Triple("hires", "Hi-Res (24-bit)", "Up to 192kHz/24-bit FLAC - Best quality, highest data usage"),
+                    Triple("lossless", "Lossless (CD Quality)", "16-bit/44.1kHz FLAC - Excellent quality, moderate data"),
+                    Triple("high", "High (AAC 320kbps)", "Compressed audio - Good quality, lowest data usage")
+                )
+
+                qualityOptions.forEach { (value, title, description) ->
+                    val isSelected = preferredStreamingQuality == value
+                    Card(
+                        onClick = {
+                            appSettings.setPreferredStreamingQuality(value)
+                            showStreamingQualityDialog = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
 }
 
 // Equalizer Settings Screen
@@ -13017,6 +13377,7 @@ fun LyricsSourceSettingsScreen(onBackClick: () -> Unit) {
     val hapticFeedback = LocalHapticFeedback.current
 
     val lyricsSourcePreference by appSettings.lyricsSourcePreference.collectAsState()
+    val wordByWordLyricsEnabled by appSettings.wordByWordLyricsEnabled.collectAsState()
 
     CollapsibleHeaderScreen(
         title = "Lyrics Source",
@@ -13159,6 +13520,63 @@ fun LyricsSourceSettingsScreen(onBackClick: () -> Unit) {
                                 modifier = Modifier.size(28.dp)
                             )
                         }
+                    }
+                }
+            }
+
+            // Word-by-Word Lyrics Section
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Word-by-Word Sync",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                )
+            }
+
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Word-by-Word Lyrics",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Enable Apple Music-style word-by-word highlighting for synced lyrics",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = wordByWordLyricsEnabled,
+                            onCheckedChange = { enabled ->
+                                HapticUtils.performHapticFeedback(
+                                    context,
+                                    hapticFeedback,
+                                    HapticFeedbackType.TextHandleMove
+                                )
+                                appSettings.setWordByWordLyricsEnabled(enabled)
+                            }
+                        )
                     }
                 }
             }

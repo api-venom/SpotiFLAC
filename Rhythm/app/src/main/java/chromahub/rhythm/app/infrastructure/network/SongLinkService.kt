@@ -65,16 +65,16 @@ class SongLinkService {
 
                 when {
                     response.isSuccessful -> {
-                        val json = JSONObject(response.body()?.string() ?: "{}")
+                        val json = JSONObject(response.body?.string() ?: "{}")
                         return@withContext parsePlatformUrls(json, spotifyTrackId)
                     }
-                    response.code() == 429 -> {
+                    response.code == 429 -> {
                         Log.w(TAG, "Rate limited, waiting ${RATE_LIMIT_DELAY_MS}ms")
                         delay(RATE_LIMIT_DELAY_MS)
                         retries++
                     }
                     else -> {
-                        Log.e(TAG, "SongLink API error: ${response.code()}")
+                        Log.e(TAG, "SongLink API error: ${response.code}")
                         return@withContext null
                     }
                 }
@@ -107,7 +107,7 @@ class SongLinkService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body()?.string() ?: "{}")
+                val json = JSONObject(response.body?.string() ?: "{}")
                 val isrc = json.optString("isrc")
                 if (isrc.isNotEmpty()) {
                     Log.d(TAG, "Got ISRC from Deezer: $isrc")

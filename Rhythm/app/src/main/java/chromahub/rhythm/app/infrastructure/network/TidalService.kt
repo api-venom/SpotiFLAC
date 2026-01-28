@@ -8,8 +8,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -74,16 +76,14 @@ class TidalService {
                 .url(TIDAL_AUTH_URL)
                 .addHeader("Authorization", "Basic $encodedCredentials")
                 .addHeader("Content-Type", "application/x-www-form-urlencoded")
-                .post(okhttp3.RequestBody.create(
-                    okhttp3.MediaType.parse("application/x-www-form-urlencoded"),
-                    "client_id=$TIDAL_CLIENT_ID&grant_type=client_credentials"
-                ))
+                .post("client_id=$TIDAL_CLIENT_ID&grant_type=client_credentials"
+                    .toRequestBody("application/x-www-form-urlencoded".toMediaType()))
                 .build()
 
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body()?.string() ?: "{}")
+                val json = JSONObject(response.body?.string() ?: "{}")
                 val token = json.optString("access_token")
                 val expiresIn = json.optInt("expires_in", 3600)
 
@@ -95,7 +95,7 @@ class TidalService {
                 }
             }
 
-            Log.e(TAG, "Failed to get Tidal access token: ${response.code()}")
+            Log.e(TAG, "Failed to get Tidal access token: ${response.code}")
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error getting Tidal access token", e)
@@ -119,11 +119,11 @@ class TidalService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body()?.string() ?: "{}")
+                val json = JSONObject(response.body?.string() ?: "{}")
                 return@withContext parseTrackInfo(json)
             }
 
-            Log.e(TAG, "Failed to get track info: ${response.code()}")
+            Log.e(TAG, "Failed to get track info: ${response.code}")
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error getting track info", e)
@@ -189,10 +189,10 @@ class TidalService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val body = response.body()?.string() ?: return null
+                val body = response.body?.string() ?: return null
                 parseStreamResponse(body, quality)
             } else {
-                Log.d(TAG, "API returned ${response.code()}: $apiBase")
+                Log.d(TAG, "API returned ${response.code}: $apiBase")
                 null
             }
         } catch (e: Exception) {

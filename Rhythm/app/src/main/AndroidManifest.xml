@@ -78,7 +78,7 @@
         <receiver
             android:name=".infrastructure.widget.MusicWidgetProvider"
             android:exported="true"
-            android:label="Rhythm Music (Legacy)">
+            android:label="Knight Music (Legacy)">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="chromahub.rhythm.app.infrastructure.widget.PLAY_PAUSE" />

@@ -64,7 +64,7 @@ class QobuzService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body()?.string() ?: "{}")
+                val json = JSONObject(response.body?.string() ?: "{}")
                 val tracks = json.optJSONObject("tracks")?.optJSONArray("items")
 
                 if (tracks != null && tracks.length() > 0) {
@@ -146,7 +146,7 @@ class QobuzService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val body = response.body()?.bytes() ?: return null
+                val body = response.body?.bytes() ?: return null
 
                 val responseStr = if (isJumo) {
                     decodeXOR(body)
@@ -156,7 +156,7 @@ class QobuzService {
 
                 parseStreamResponse(responseStr, quality)
             } else {
-                Log.d(TAG, "Qobuz API returned ${response.code()}: $url")
+                Log.d(TAG, "Qobuz API returned ${response.code}: $url")
                 null
             }
         } catch (e: Exception) {

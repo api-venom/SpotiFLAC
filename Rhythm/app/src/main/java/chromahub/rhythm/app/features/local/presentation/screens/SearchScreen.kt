@@ -140,6 +140,10 @@ import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.
 import chromahub.rhythm.app.util.ImageUtils
 import chromahub.rhythm.app.util.HapticUtils
 import chromahub.rhythm.app.shared.presentation.components.common.M3PlaceholderType
+import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingViewModel
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Explicit
 
 // Experimental API opt-ins required for:
 // - Material3 SearchBar APIs (DockedSearchBar, SearchBarDefaults) - stable in Material3 1.4.0
@@ -167,6 +171,7 @@ fun SearchScreen(
 ) {
     val context = LocalContext.current
     val viewModel: MusicViewModel = viewModel()
+    val streamingViewModel: StreamingViewModel = viewModel()
     var searchQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -174,9 +179,15 @@ fun SearchScreen(
     var showFilterOptions by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("All") }
     var showAllSongsPage by remember { mutableStateOf(false) }
-    
+
+    // Spotify streaming search state
+    val spotifyResults by streamingViewModel.searchResults.collectAsState()
+    val isSearchingSpotify by streamingViewModel.isSearching.collectAsState()
+    val isLoadingStream by streamingViewModel.isLoadingStream.collectAsState()
+
     // Filter states
     var filterSongs by remember { mutableStateOf(true) }
+    var filterSpotify by remember { mutableStateOf(true) }
     var filterAlbums by remember { mutableStateOf(true) }
     var filterArtists by remember { mutableStateOf(true) }
     var filterPlaylists by remember { mutableStateOf(true) }
@@ -184,6 +195,22 @@ fun SearchScreen(
     // Collect search history from ViewModel
     val searchHistory by viewModel.searchHistory.collectAsState()
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
+
+    // Trigger Spotify search when query changes
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.length >= 2) {
+            streamingViewModel.updateSearchQuery(searchQuery)
+        } else {
+            streamingViewModel.clearSearch()
+        }
+    }
+
+    // Filter Spotify results
+    val filteredSpotifyResults by remember(spotifyResults, filterSpotify) {
+        derivedStateOf {
+            if (filterSpotify) spotifyResults else emptyList()
+        }
+    }
     
     // Enhanced search logic with better ranking and fuzzy matching
     val searchedSongs by remember(searchQuery, songs) {
@@ -300,10 +327,10 @@ fun SearchScreen(
             if (filterPlaylists) searchedPlaylists else emptyList()
         }
     }
-    
-    val totalResults = filteredSongs.size + filteredAlbums.size + filteredArtists.size + filteredPlaylists.size
-    val hasSearchResults = totalResults > 0
-    val hasNoResults = searchQuery.isNotEmpty() && totalResults == 0
+
+    val totalResults = filteredSongs.size + filteredAlbums.size + filteredArtists.size + filteredPlaylists.size + filteredSpotifyResults.size
+    val hasSearchResults = totalResults > 0 || isSearchingSpotify
+    val hasNoResults = searchQuery.isNotEmpty() && totalResults == 0 && !isSearchingSpotify
     
     val scope = rememberCoroutineScope()
     
@@ -526,12 +553,18 @@ fun SearchScreen(
                             albums = filteredAlbums,
                             artists = filteredArtists,
                             playlists = filteredPlaylists,
+                            spotifySongs = filteredSpotifyResults,
+                            isSearchingSpotify = isSearchingSpotify,
+                            isLoadingStream = isLoadingStream,
                             searchQuery = searchQuery,
                             totalResults = totalResults,
                             onSongClick = onSongClick,
                             onAlbumClick = onAlbumClick,
                             onArtistClick = onArtistClick,
                             onPlaylistClick = onPlaylistClick,
+                            onSpotifySongClick = { song ->
+                                streamingViewModel.playSong(song, filteredSpotifyResults)
+                            },
                             onAddSongToPlaylist = { song ->
                                 selectedSong = song
                                 showAddToPlaylistSheet = true
@@ -579,8 +612,8 @@ fun SearchScreen(
                                             ) {
                                                 // Select All / Deselect All chip
                                                 item {
-                                                    val allSelected = filterSongs && filterAlbums && filterArtists && filterPlaylists
-                                                    val noneSelected = !filterSongs && !filterAlbums && !filterArtists && !filterPlaylists
+                                                    val allSelected = filterSongs && filterAlbums && filterArtists && filterPlaylists && filterSpotify
+                                                    val noneSelected = !filterSongs && !filterAlbums && !filterArtists && !filterPlaylists && !filterSpotify
 
                                                     FilterChip(
                                                         onClick = {
@@ -591,12 +624,14 @@ fun SearchScreen(
                                                                 filterAlbums = false
                                                                 filterArtists = false
                                                                 filterPlaylists = false
+                                                                filterSpotify = false
                                                             } else {
                                                                 // Select all
                                                                 filterSongs = true
                                                                 filterAlbums = true
                                                                 filterArtists = true
                                                                 filterPlaylists = true
+                                                                filterSpotify = true
                                                             }
                                                         },
                                                         label = {
@@ -689,6 +724,38 @@ fun SearchScreen(
                                                         colors = FilterChipDefaults.filterChipColors(
                                                             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                                             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                    )
+                                                }
+
+                                                // Spotify filter chip
+                                                item {
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            filterSpotify = !filterSpotify
+                                                        },
+                                                        label = {
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                Text("Spotify")
+                                                                if (isSearchingSpotify) {
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    CircularProgressIndicator(
+                                                                        modifier = Modifier.size(12.dp),
+                                                                        strokeWidth = 1.dp
+                                                                    )
+                                                                } else {
+                                                                    Text(" (${spotifyResults.size})")
+                                                                }
+                                                            }
+                                                        },
+                                                        selected = filterSpotify,
+                                                        leadingIcon = if (filterSpotify) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
                                                         )
                                                     )
                                                 }
@@ -1031,12 +1098,16 @@ fun SearchResults(
     albums: List<Album>,
     artists: List<Artist>,
     playlists: List<Playlist>,
+    spotifySongs: List<StreamingSong> = emptyList(),
+    isSearchingSpotify: Boolean = false,
+    isLoadingStream: Boolean = false,
     searchQuery: String,
     totalResults: Int,
     onSongClick: (Song) -> Unit,
     onAlbumClick: (Album) -> Unit,
     onArtistClick: (Artist) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
+    onSpotifySongClick: (StreamingSong) -> Unit = {},
     onAddSongToPlaylist: (Song) -> Unit,
     onSongMoreClick: (Song) -> Unit = {},
     onAlbumBottomSheetClick: (Album) -> Unit = {}, // New parameter
@@ -1351,7 +1422,65 @@ fun SearchResults(
                 }
             }
         }
-        
+
+        // Spotify streaming section
+        if (spotifySongs.isNotEmpty() || isSearchingSpotify) {
+            item {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = "Spotify",
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Spotify",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isSearchingSpotify) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        }
+                        if (!isSearchingSpotify) {
+                            Text(
+                                text = "${spotifySongs.size}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Spotify song items
+            items(
+                items = spotifySongs.take(10),
+                key = { "spotify_${it.id}" },
+                contentType = { "spotify_song" }
+            ) { song ->
+                SpotifySearchSongItem(
+                    song = song,
+                    isLoading = isLoadingStream,
+                    onClick = { onSpotifySongClick(song) },
+                    haptics = haptics
+                )
+            }
+        }
+
         // Add bottom spacing
         item { Spacer(modifier = Modifier.height(88.dp)) }
     }
@@ -3646,4 +3775,137 @@ private fun SongOptionGridItem(
             )
         }
     }
+}
+
+/**
+ * Spotify search result item
+ */
+@Composable
+private fun SpotifySearchSongItem(
+    song: StreamingSong,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+    haptics: HapticFeedback
+) {
+    val context = LocalContext.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isLoading) {
+                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                onClick()
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Album art
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            ) {
+                coil.compose.AsyncImage(
+                    model = coil.request.ImageRequest.Builder(context)
+                        .data(song.artworkUri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = song.album,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Spotify badge
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = "Spotify",
+                        tint = MaterialTheme.colorScheme.onSecondary,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Track info
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (song.explicit) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Explicit,
+                            contentDescription = "Explicit",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = song.album,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+
+            // Duration and loading indicator
+            Column(horizontalAlignment = Alignment.End) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = formatSpotifyDuration(song.duration),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSpotifyDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1000).toInt()
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }

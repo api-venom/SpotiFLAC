@@ -33,6 +33,8 @@ class StreamingRepository(
         }
 
         try {
+            Log.d(TAG, "Starting search for: $query")
+
             val payload = JSONObject().apply {
                 put("variables", JSONObject().apply {
                     put("searchTerm", query)
@@ -53,13 +55,17 @@ class StreamingRepository(
                 })
             }
 
+            Log.d(TAG, "Sending query to Pathfinder API")
             val response = authManager.query(payload)
             if (response == null) {
-                Log.e(TAG, "Search query failed")
+                Log.e(TAG, "Search query failed - null response from Pathfinder API")
                 return@withContext emptyList()
             }
 
-            parseSearchResults(response)
+            Log.d(TAG, "Received response, parsing results")
+            val results = parseSearchResults(response)
+            Log.d(TAG, "Search completed with ${results.size} results")
+            results
         } catch (e: Exception) {
             Log.e(TAG, "Error searching tracks", e)
             emptyList()
@@ -73,10 +79,31 @@ class StreamingRepository(
         val results = mutableListOf<StreamingSong>()
 
         try {
-            val data = response.optJSONObject("data") ?: return results
-            val searchV2 = data.optJSONObject("searchV2") ?: return results
-            val tracksResult = searchV2.optJSONObject("tracksV2") ?: return results
-            val items = tracksResult.optJSONArray("items") ?: return results
+            val data = response.optJSONObject("data")
+            if (data == null) {
+                Log.e(TAG, "No 'data' object in response")
+                return results
+            }
+
+            val searchV2 = data.optJSONObject("searchV2")
+            if (searchV2 == null) {
+                Log.e(TAG, "No 'searchV2' object in data")
+                return results
+            }
+
+            val tracksResult = searchV2.optJSONObject("tracksV2")
+            if (tracksResult == null) {
+                Log.e(TAG, "No 'tracksV2' object in searchV2")
+                return results
+            }
+
+            val items = tracksResult.optJSONArray("items")
+            if (items == null) {
+                Log.e(TAG, "No 'items' array in tracksV2")
+                return results
+            }
+
+            Log.d(TAG, "Found ${items.length()} items in response")
 
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue

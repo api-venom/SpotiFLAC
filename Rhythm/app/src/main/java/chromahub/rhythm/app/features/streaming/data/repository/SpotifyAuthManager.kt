@@ -391,23 +391,35 @@ class SpotifyAuthManager {
                 })
             }
 
-            Log.d(TAG, "Client token payload: ${payload.toString().take(200)}...")
+            Log.d(TAG, "Client token payload: ${payload.toString().take(300)}...")
 
-            val request = Request.Builder()
+            // Build cookie header from stored cookies
+            val cookieHeader = cookieStore["open.spotify.com"]?.joinToString("; ") { "${it.name}=${it.value}" } ?: ""
+            Log.d(TAG, "Sending cookies: ${if (cookieHeader.isNotEmpty()) "${cookieHeader.take(50)}..." else "none"}")
+
+            val requestBuilder = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
+                .addHeader("Authority", "clienttoken.spotify.com")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
                 .addHeader("User-Agent", USER_AGENT)
+                .addHeader("Origin", "https://open.spotify.com")
+                .addHeader("Referer", "https://open.spotify.com/")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
 
+            // Add cookies if available
+            if (cookieHeader.isNotEmpty()) {
+                requestBuilder.addHeader("Cookie", cookieHeader)
+            }
+
+            val request = requestBuilder.build()
             val response = httpClient.newCall(request).execute()
 
             Log.d(TAG, "Client token response code: ${response.code}")
 
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string()
-                Log.e(TAG, "Client token request failed: ${response.code}, body: ${errorBody?.take(200)}")
+                Log.e(TAG, "Client token request failed: ${response.code}, body: ${errorBody?.take(500)}")
                 return false
             }
 

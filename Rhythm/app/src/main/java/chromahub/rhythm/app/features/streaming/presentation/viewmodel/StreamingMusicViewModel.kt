@@ -280,14 +280,9 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
      */
     fun playSong(song: StreamingSong) {
         viewModelScope.launch {
-            if (!song.isPlayable) {
-                _error.value = "This track is not available for playback"
-                return@launch
-            }
-            
             _currentSong.value = song
             _isPlaying.value = true
-            
+
             // TODO: Get streaming URL and start playback via MediaPlaybackService
         }
     }

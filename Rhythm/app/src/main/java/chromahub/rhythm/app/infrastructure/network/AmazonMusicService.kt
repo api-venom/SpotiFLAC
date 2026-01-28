@@ -43,7 +43,7 @@ class AmazonMusicService {
             val response = httpClient.newCall(request).execute()
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body()?.string() ?: "{}")
+                val json = JSONObject(response.body?.string() ?: "{}")
 
                 if (json.optBoolean("success", false)) {
                     val data = json.optJSONObject("data")
@@ -64,7 +64,7 @@ class AmazonMusicService {
 
                 Log.w(TAG, "Amazon API returned unsuccessful response")
             } else {
-                Log.e(TAG, "Amazon API error: ${response.code()}")
+                Log.e(TAG, "Amazon API error: ${response.code}")
             }
 
             null

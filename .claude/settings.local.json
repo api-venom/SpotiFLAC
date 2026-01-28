@@ -18,7 +18,8 @@
       "Bash",
       "Bash(powershell -Command:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Android app \\(Rhythm\\) integration with unified CI/CD\n\n- Integrate Rhythm music player as Android component\n- Add build-android job to GitHub Actions workflow\n- Configure Android signing via GitHub secrets\n- Update release workflow to include APK artifacts\n- Add Android section to README with feature list\n\nCo-Authored-By: Claude \\(claude-opus-4.5\\) <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

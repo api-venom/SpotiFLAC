@@ -198,6 +198,16 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         const val ACTION_UNMUTE = "chromahub.rhythm.app.action.UNMUTE"
         const val ACTION_TOGGLE_MUTE = "chromahub.rhythm.app.action.TOGGLE_MUTE"
 
+        // Streaming playback action
+        const val ACTION_PLAY_STREAMING = "chromahub.rhythm.app.action.PLAY_STREAMING"
+        const val EXTRA_STREAM_URL = "stream_url"
+        const val EXTRA_SONG_TITLE = "song_title"
+        const val EXTRA_SONG_ARTIST = "song_artist"
+        const val EXTRA_SONG_ALBUM = "song_album"
+        const val EXTRA_ARTWORK_URL = "artwork_url"
+        const val EXTRA_SONG_ID = "song_id"
+        const val EXTRA_SONG_DURATION = "song_duration"
+
         // Playback custom commands
         const val REPEAT_MODE_ALL = "repeat_all"
         const val REPEAT_MODE_ONE = "repeat_one"
@@ -1123,6 +1133,20 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                 Log.d(TAG, "Toggle mute action")
                 toggleMute()
             }
+            ACTION_PLAY_STREAMING -> {
+                val streamUrl = intent.getStringExtra(EXTRA_STREAM_URL)
+                val title = intent.getStringExtra(EXTRA_SONG_TITLE) ?: "Unknown"
+                val artist = intent.getStringExtra(EXTRA_SONG_ARTIST) ?: "Unknown"
+                val album = intent.getStringExtra(EXTRA_SONG_ALBUM) ?: ""
+                val artworkUrl = intent.getStringExtra(EXTRA_ARTWORK_URL)
+                val songId = intent.getStringExtra(EXTRA_SONG_ID) ?: streamUrl ?: ""
+                val duration = intent.getLongExtra(EXTRA_SONG_DURATION, 0L)
+
+                if (streamUrl != null) {
+                    Log.d(TAG, "Playing streaming URL: $streamUrl")
+                    playStreamingUrl(streamUrl, songId, title, artist, album, artworkUrl, duration)
+                }
+            }
         }
         
         // We make sure to call the super implementation
@@ -1217,6 +1241,74 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in playExternalFile coroutine", e)
+            }
+        }
+    }
+
+    /**
+     * Play a streaming URL (from Tidal, Qobuz, Amazon, etc.)
+     */
+    private fun playStreamingUrl(
+        streamUrl: String,
+        songId: String,
+        title: String,
+        artist: String,
+        album: String,
+        artworkUrl: String?,
+        duration: Long
+    ) {
+        Log.d(TAG, "Playing streaming URL: $streamUrl for $title by $artist")
+
+        serviceScope.launch {
+            try {
+                // Create a media item with the streaming URL
+                val mediaItem = MediaItem.Builder()
+                    .setUri(Uri.parse(streamUrl))
+                    .setMediaId(songId)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(artist)
+                            .setAlbumTitle(album)
+                            .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
+                            .build()
+                    )
+                    .build()
+
+                // Clear the player first to avoid conflicts with existing items
+                player.clearMediaItems()
+
+                // Play the media item
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
+
+                Log.d(TAG, "Streaming playback started for: $title")
+
+                // Force a recheck of playback state in case it doesn't start
+                player.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_READY -> {
+                                Log.d(TAG, "Streaming playback ready, ensuring play is called")
+                                player.play()
+                                player.removeListener(this)
+                            }
+                            Player.STATE_ENDED -> {
+                                Log.d(TAG, "Streaming playback ended")
+                                player.removeListener(this)
+                            }
+                        }
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.e(TAG, "Streaming playback error: ${error.message}", error)
+                        player.removeListener(this)
+                    }
+                })
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in playStreamingUrl coroutine", e)
             }
         }
     }

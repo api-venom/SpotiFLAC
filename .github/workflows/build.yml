@@ -703,7 +703,7 @@ jobs:
 
       - name: Generate checksums
         run: |
-          cd Rhythm/app/build/outputs/apk/githubRelease
+          cd Rhythm/app/build/outputs/apk/github/release
           for file in *.apk; do
             if [ -f "$file" ]; then
               sha256sum "$file" > "$file.sha256"
@@ -714,22 +714,25 @@ jobs:
       - name: Prepare Android artifacts
         run: |
           mkdir -p android-dist
-          cp Rhythm/app/build/outputs/apk/githubRelease/*.apk android-dist/
-          cp Rhythm/app/build/outputs/apk/githubRelease/*.sha256 android-dist/ 2>/dev/null || true
-          cp Rhythm/app/build/outputs/apk/githubRelease/*.md5 android-dist/ 2>/dev/null || true
+          cp Rhythm/app/build/outputs/apk/github/release/*.apk android-dist/
+          cp Rhythm/app/build/outputs/apk/github/release/*.sha256 android-dist/ 2>/dev/null || true
+          cp Rhythm/app/build/outputs/apk/github/release/*.md5 android-dist/ 2>/dev/null || true
 
           # Rename APK to KnightMusic for branding consistency
           cd android-dist
-          for file in Rhythm-*.apk; do
+          for file in *.apk; do
             if [ -f "$file" ]; then
-              newname=$(echo "$file" | sed 's/Rhythm/KnightMusic/')
-              mv "$file" "$newname"
-              # Also rename checksums
-              if [ -f "${file}.sha256" ]; then
-                mv "${file}.sha256" "${newname}.sha256"
-              fi
-              if [ -f "${file}.md5" ]; then
-                mv "${file}.md5" "${newname}.md5"
+              # Handle various naming patterns (app-*, Rhythm-*, rhythm-*)
+              newname=$(echo "$file" | sed -e 's/^app-/KnightMusic-/' -e 's/^Rhythm-/KnightMusic-/' -e 's/^rhythm-/KnightMusic-/')
+              if [ "$file" != "$newname" ]; then
+                mv "$file" "$newname"
+                # Also rename checksums
+                if [ -f "${file}.sha256" ]; then
+                  mv "${file}.sha256" "${newname}.sha256"
+                fi
+                if [ -f "${file}.md5" ]; then
+                  mv "${file}.md5" "${newname}.md5"
+                fi
               fi
             fi
           done
@@ -980,7 +983,7 @@ jobs:
             artifacts/windows-portable-zip/KnightMusic-Windows-Portable.zip
             artifacts/macos-portable/KnightMusic.dmg
             artifacts/linux-portable/KnightMusic.AppImage
-            artifacts/android-apk/KnightMusic-*-githubRelease.apk
-            artifacts/android-apk/KnightMusic-*-githubRelease.apk.sha256
+            artifacts/android-apk/KnightMusic-*.apk
+            artifacts/android-apk/KnightMusic-*.apk.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

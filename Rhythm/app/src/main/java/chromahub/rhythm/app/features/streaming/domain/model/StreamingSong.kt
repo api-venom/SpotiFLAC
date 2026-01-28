@@ -4,7 +4,8 @@ import chromahub.rhythm.app.core.domain.model.PlayableItem
 import chromahub.rhythm.app.core.domain.model.SourceType
 
 /**
- * Represents a song from a streaming service.
+ * Represents a song from streaming services (Tidal, Qobuz, Amazon)
+ * Implements PlayableItem to integrate with the existing player
  */
 data class StreamingSong(
     override val id: String,
@@ -13,36 +14,66 @@ data class StreamingSong(
     override val album: String,
     override val duration: Long,
     override val artworkUri: String?,
-    override val sourceType: SourceType,
-    val streamingUrl: String?,
-    val previewUrl: String?,
-    val isExplicit: Boolean = false,
-    val popularity: Int? = null,
+    val spotifyId: String,
+    val streamUrl: String? = null,
+    val provider: String? = null,
+    val quality: String? = null,
+    val mimeType: String = "audio/flac",
+    val bitDepth: Int = 16,
+    val sampleRate: Int = 44100,
+    val isrc: String? = null,
     val releaseDate: String? = null,
-    val isPlayable: Boolean = true,
-    val externalId: String? = null, // Spotify URI, Apple Music ID, etc.
-    val isrc: String? = null // International Standard Recording Code
+    val explicit: Boolean = false,
+    val popularity: Int = 0
 ) : PlayableItem {
-    
-    override fun getPlaybackUri(): String = streamingUrl ?: previewUrl ?: ""
-    
-    /**
-     * Check if full playback is available (vs preview only).
-     */
-    fun hasFullPlayback(): Boolean = streamingUrl != null
-    
-    /**
-     * Check if preview is available.
-     */
-    fun hasPreview(): Boolean = previewUrl != null
-}
 
-/**
- * Represents quality information for a streaming track.
- */
-data class StreamingQualityInfo(
-    val bitrate: Int,
-    val format: String, // "MP3", "AAC", "FLAC", etc.
-    val sampleRate: Int? = null,
-    val bitDepth: Int? = null
-)
+    override val sourceType: SourceType
+        get() = when (provider?.lowercase()) {
+            "tidal" -> SourceType.TIDAL
+            "qobuz" -> SourceType.QOBUZ
+            "amazon" -> SourceType.AMAZON_MUSIC
+            else -> SourceType.SPOTIFY
+        }
+
+    override fun getPlaybackUri(): String {
+        return streamUrl ?: ""
+    }
+
+    fun hasStreamUrl(): Boolean = !streamUrl.isNullOrEmpty()
+
+    fun getQualityDisplay(): String {
+        return when {
+            quality?.contains("HI_RES", ignoreCase = true) == true -> "Hi-Res ${bitDepth}-bit/${sampleRate/1000}kHz"
+            quality?.contains("LOSSLESS", ignoreCase = true) == true -> "FLAC ${bitDepth}-bit"
+            quality?.contains("CD", ignoreCase = true) == true -> "CD Quality"
+            else -> quality ?: "High Quality"
+        }
+    }
+
+    companion object {
+        fun fromSpotifyTrack(
+            spotifyId: String,
+            name: String,
+            artists: String,
+            album: String,
+            albumArt: String?,
+            durationMs: Long,
+            releaseDate: String? = null,
+            explicit: Boolean = false,
+            popularity: Int = 0
+        ): StreamingSong {
+            return StreamingSong(
+                id = "spotify:$spotifyId",
+                title = name,
+                artist = artists,
+                album = album,
+                duration = durationMs,
+                artworkUri = albumArt,
+                spotifyId = spotifyId,
+                releaseDate = releaseDate,
+                explicit = explicit,
+                popularity = popularity
+            )
+        }
+    }
+}

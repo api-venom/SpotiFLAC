@@ -241,11 +241,10 @@ class SpotifyAuthManager {
     private fun getSessionInfo(): Boolean {
         try {
             Log.d(TAG, "Starting getSessionInfo...")
+            // Match Windows Go app exactly - only User-Agent header
             val request = Request.Builder()
                 .url("https://open.spotify.com")
                 .addHeader("User-Agent", USER_AGENT)
-                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .addHeader("Accept-Language", "en-US,en;q=0.5")
                 .get()
                 .build()
 
@@ -310,11 +309,11 @@ class SpotifyAuthManager {
 
             val url = "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=$totpCode&totpVer=$version&totpServer=$totpCode"
 
+            // Match Windows Go app exactly - User-Agent and Content-Type only
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", USER_AGENT)
                 .addHeader("Content-Type", "application/json;charset=UTF-8")
-                .addHeader("Accept", "application/json")
                 .get()
                 .build()
 
@@ -455,6 +454,7 @@ class SpotifyAuthManager {
 
         try {
             Log.d(TAG, "Sending query to Pathfinder API: ${payload.optString("operationName")}")
+            // Match Windows Go app exactly
             val request = Request.Builder()
                 .url("https://api-partner.spotify.com/pathfinder/v2/query")
                 .addHeader("Authorization", "Bearer $accessToken")
@@ -462,7 +462,6 @@ class SpotifyAuthManager {
                 .addHeader("Spotify-App-Version", clientVersion)
                 .addHeader("Content-Type", "application/json")
                 .addHeader("User-Agent", USER_AGENT)
-                .addHeader("Accept", "application/json")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 

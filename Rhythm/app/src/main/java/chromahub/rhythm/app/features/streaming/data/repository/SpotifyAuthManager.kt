@@ -314,13 +314,14 @@ class SpotifyAuthManager {
             val (totpCode, version) = generateTOTP()
             Log.d(TAG, "Generated TOTP: $totpCode, version: $version")
 
-            val url = "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=$totpCode&totpVer=$version&totpServer=$totpCode"
+            // Use mobile-web-player like browser does on Android
+            val url = "https://open.spotify.com/api/token?reason=init&productType=mobile-web-player&totp=$totpCode&totpVer=$version&totpServer=$totpCode"
 
-            // Match Windows Go app exactly - User-Agent and Content-Type only
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", USER_AGENT)
-                .addHeader("Content-Type", "application/json;charset=UTF-8")
+                .addHeader("Accept", "*/*")
+                .addHeader("Referer", "https://open.spotify.com/")
                 .get()
                 .build()
 
@@ -399,16 +400,18 @@ class SpotifyAuthManager {
 
             Log.d(TAG, "Client token payload: ${payload.toString()}")
 
-            // Use plain client without cookies (like Go app which doesn't send cookies here)
-            // Remove Authority header - it's an HTTP/2 pseudo-header set automatically
+            // Add Origin header like browser does
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
                 .addHeader("User-Agent", USER_AGENT)
+                .addHeader("Origin", "https://open.spotify.com")
+                .addHeader("Referer", "https://open.spotify.com/")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
+            // Use plain client (no cookies needed for different domain)
             val response = plainHttpClient.newCall(request).execute()
 
             Log.d(TAG, "Client token response code: ${response.code}")
@@ -461,13 +464,16 @@ class SpotifyAuthManager {
 
         try {
             Log.d(TAG, "Sending query to Pathfinder API: ${payload.optString("operationName")}")
-            // Match Windows Go app exactly
+            // Match browser headers
             val request = Request.Builder()
                 .url("https://api-partner.spotify.com/pathfinder/v2/query")
+                .addHeader("Accept", "application/json")
+                .addHeader("Accept-Language", "en")
                 .addHeader("Authorization", "Bearer $accessToken")
                 .addHeader("Client-Token", clientToken!!)
-                .addHeader("Spotify-App-Version", clientVersion)
-                .addHeader("Content-Type", "application/json")
+                .addHeader("Content-Type", "application/json;charset=UTF-8")
+                .addHeader("Origin", "https://open.spotify.com")
+                .addHeader("Referer", "https://open.spotify.com/")
                 .addHeader("User-Agent", USER_AGENT)
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()

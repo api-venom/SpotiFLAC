@@ -62,6 +62,13 @@ class SpotifyAuthManager {
         .followRedirects(true)
         .build()
 
+    // Separate client without cookies for client token request (like Go app)
+    private val plainHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
     private val mutex = Mutex()
 
     // Cached tokens
@@ -392,17 +399,17 @@ class SpotifyAuthManager {
 
             Log.d(TAG, "Client token payload: ${payload.toString()}")
 
-            // Match Windows app headers exactly
+            // Use plain client without cookies (like Go app which doesn't send cookies here)
+            // Remove Authority header - it's an HTTP/2 pseudo-header set automatically
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
-                .addHeader("Authority", "clienttoken.spotify.com")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
                 .addHeader("User-Agent", USER_AGENT)
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
-            val response = httpClient.newCall(request).execute()
+            val response = plainHttpClient.newCall(request).execute()
 
             Log.d(TAG, "Client token response code: ${response.code}")
 

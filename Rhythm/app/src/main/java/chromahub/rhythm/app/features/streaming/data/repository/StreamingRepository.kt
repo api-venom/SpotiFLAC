@@ -107,7 +107,8 @@ class StreamingRepository(
 
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
-                val itemData = item.optJSONObject("item") ?: continue
+                // Structure is items[i].item.data (like Windows FilterSearch)
+                val itemData = item.optJSONObject("item")?.optJSONObject("data") ?: continue
                 val track = parseTrack(itemData)
                 if (track != null) {
                     results.add(track)

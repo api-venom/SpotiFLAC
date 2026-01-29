@@ -393,11 +393,12 @@ class SpotifyAuthManager {
 
             Log.d(TAG, "Client token payload: ${payload.toString()}")
 
-            // Match Windows app headers exactly - no cookies, no Origin/Referer
+            // Match Windows app headers exactly
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
-                .addHeader("Accept", "application/json")
+                .addHeader("Authority", "clienttoken.spotify.com")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "application/json")
                 .addHeader("User-Agent", USER_AGENT)
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()

@@ -35,7 +35,8 @@ class SpotifyAuthManager {
         )
         private const val TOTP_VERSION = 61
 
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+        // Use Android mobile user agent (matches mobile-web-player product type)
+        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
     }
 
     private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
@@ -388,12 +389,12 @@ class SpotifyAuthManager {
                     put("client_version", clientVersion)
                     put("client_id", clientId)
                     put("js_sdk_data", JSONObject().apply {
-                        put("device_brand", "unknown")
-                        put("device_model", "unknown")
-                        put("os", "windows")
-                        put("os_version", "NT 10.0")
+                        put("device_brand", "Google")
+                        put("device_model", "Pixel 7")
+                        put("os", "android")
+                        put("os_version", "13")
                         put("device_id", deviceId)
-                        put("device_type", "computer")
+                        put("device_type", "mobile")
                     })
                 })
             }

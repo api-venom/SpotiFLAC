@@ -76,10 +76,28 @@ class SpotifyAuthManager {
         .build()
 
     // Separate client without cookies for client token request (like Go app)
+    // Force HTTP/1.1 to match curl behavior
     private val plainHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+        .addInterceptor { chain ->
+            val request = chain.request()
+            Log.d(TAG, "=== CLIENT TOKEN REQUEST ===")
+            Log.d(TAG, "URL: ${request.url}")
+            Log.d(TAG, "Method: ${request.method}")
+            request.headers.forEach { (name, value) ->
+                Log.d(TAG, "Header: $name = $value")
+            }
+            val response = chain.proceed(request)
+            Log.d(TAG, "=== CLIENT TOKEN RESPONSE ===")
+            Log.d(TAG, "Status: ${response.code}")
+            response.headers.forEach { (name, value) ->
+                Log.d(TAG, "Response Header: $name = $value")
+            }
+            response
+        }
         .build()
 
     private val mutex = Mutex()

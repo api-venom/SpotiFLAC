@@ -249,10 +249,21 @@ class SpotifyAuthManager {
     private fun getSessionInfo(): Boolean {
         try {
             Log.d(TAG, "Starting getSessionInfo...")
-            // Match Windows Go app exactly - only User-Agent header
+            // Match browser headers including Client Hints
             val request = Request.Builder()
                 .url("https://open.spotify.com")
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("User-Agent", USER_AGENT)
+                // Client Hints headers
+                .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
+                .addHeader("sec-ch-ua-mobile", "?1")
+                .addHeader("sec-ch-ua-platform", "\"Android\"")
+                .addHeader("sec-fetch-dest", "document")
+                .addHeader("sec-fetch-mode", "navigate")
+                .addHeader("sec-fetch-site", "none")
+                .addHeader("sec-fetch-user", "?1")
+                .addHeader("upgrade-insecure-requests", "1")
                 .get()
                 .build()
 
@@ -320,9 +331,17 @@ class SpotifyAuthManager {
 
             val request = Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", USER_AGENT)
                 .addHeader("Accept", "*/*")
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("Referer", "https://open.spotify.com/")
+                .addHeader("User-Agent", USER_AGENT)
+                // Client Hints headers
+                .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
+                .addHeader("sec-ch-ua-mobile", "?1")
+                .addHeader("sec-ch-ua-platform", "\"Android\"")
+                .addHeader("sec-fetch-dest", "empty")
+                .addHeader("sec-fetch-mode", "cors")
+                .addHeader("sec-fetch-site", "same-origin")
                 .get()
                 .build()
 
@@ -389,26 +408,34 @@ class SpotifyAuthManager {
                     put("client_version", clientVersion)
                     put("client_id", clientId)
                     put("js_sdk_data", JSONObject().apply {
-                        put("device_brand", "Google")
-                        put("device_model", "Pixel 7")
+                        put("device_brand", "unknown")
+                        put("device_model", "unknown")
                         put("os", "android")
                         put("os_version", "13")
                         put("device_id", deviceId)
-                        put("device_type", "mobile")
+                        put("device_type", "smartphone")
                     })
                 })
             }
 
             Log.d(TAG, "Client token payload: ${payload.toString()}")
 
-            // Add Origin header like browser does
+            // Add all browser headers including Client Hints
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
-                .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
-                .addHeader("User-Agent", USER_AGENT)
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
+                .addHeader("Content-Type", "application/json")
                 .addHeader("Origin", "https://open.spotify.com")
                 .addHeader("Referer", "https://open.spotify.com/")
+                .addHeader("User-Agent", USER_AGENT)
+                // Client Hints headers (like browser sends)
+                .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
+                .addHeader("sec-ch-ua-mobile", "?1")
+                .addHeader("sec-ch-ua-platform", "\"Android\"")
+                .addHeader("sec-fetch-dest", "empty")
+                .addHeader("sec-fetch-mode", "cors")
+                .addHeader("sec-fetch-site", "same-site")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -465,17 +492,24 @@ class SpotifyAuthManager {
 
         try {
             Log.d(TAG, "Sending query to Pathfinder API: ${payload.optString("operationName")}")
-            // Match browser headers
+            // Match browser headers including Client Hints
             val request = Request.Builder()
                 .url("https://api-partner.spotify.com/pathfinder/v2/query")
                 .addHeader("Accept", "application/json")
-                .addHeader("Accept-Language", "en")
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("Authorization", "Bearer $accessToken")
                 .addHeader("Client-Token", clientToken!!)
                 .addHeader("Content-Type", "application/json;charset=UTF-8")
                 .addHeader("Origin", "https://open.spotify.com")
                 .addHeader("Referer", "https://open.spotify.com/")
                 .addHeader("User-Agent", USER_AGENT)
+                // Client Hints headers
+                .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
+                .addHeader("sec-ch-ua-mobile", "?1")
+                .addHeader("sec-ch-ua-platform", "\"Android\"")
+                .addHeader("sec-fetch-dest", "empty")
+                .addHeader("sec-fetch-mode", "cors")
+                .addHeader("sec-fetch-site", "same-site")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.session.MediaController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -48,11 +49,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingViewModel
 import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingMusicViewModel
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingHomeScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingSearchScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingLibraryScreen
+import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingPlayerScreen
+import chromahub.rhythm.app.features.streaming.presentation.components.StreamingMiniPlayer
 import chromahub.rhythm.app.util.HapticUtils
+import kotlinx.coroutines.delay
 
 /**
  * Streaming screen route definitions.
@@ -61,6 +66,7 @@ sealed class StreamingScreen(val route: String) {
     object Home : StreamingScreen("streaming_home")
     object Search : StreamingScreen("streaming_search")
     object Library : StreamingScreen("streaming_library")
+    object Player : StreamingScreen("streaming_player")
     object PlaylistDetail : StreamingScreen("streaming_playlist/{playlistId}") {
         fun createRoute(playlistId: String) = "streaming_playlist/$playlistId"
     }
@@ -75,8 +81,9 @@ sealed class StreamingScreen(val route: String) {
 fun StreamingNavigation(
     navController: NavHostController = rememberNavController(),
     streamingMusicViewModel: StreamingMusicViewModel = viewModel(),
+    streamingViewModel: StreamingViewModel = viewModel(),
+    mediaController: MediaController? = null,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToPlayer: () -> Unit = {},
     onSwitchToLocalMode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -84,11 +91,32 @@ fun StreamingNavigation(
     val currentRoute = navBackStackEntry?.destination?.route ?: StreamingScreen.Home.route
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    
+
+    // Streaming state
+    val currentSong by streamingViewModel.currentSong.collectAsState()
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(1L) }
+    var showPlayerSheet by remember { mutableStateOf(false) }
+
+    // Update playback state from MediaController
+    LaunchedEffect(mediaController) {
+        mediaController?.let { controller ->
+            while (true) {
+                isPlaying = controller.isPlaying
+                currentPosition = controller.currentPosition
+                duration = controller.duration.coerceAtLeast(1L)
+                delay(100)
+            }
+        }
+    }
+
+    val progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
+
     // Tablet detection
     val windowSizeClass = calculateWindowSizeClass(context as android.app.Activity)
     val isTablet = windowSizeClass.widthSizeClass >= WindowWidthSizeClass.Medium
-    
+
     // Show bottom nav on main screens only
     val showNavBar = currentRoute in listOf(
         StreamingScreen.Home.route,
@@ -98,50 +126,52 @@ fun StreamingNavigation(
     
     if (isTablet) {
         // Tablet layout with Navigation Rail
-        Row(modifier = modifier.fillMaxSize()) {
-            // Navigation rail for tablets
-            AnimatedVisibility(
-                visible = showNavBar,
-                enter = slideInHorizontally(
-                    initialOffsetX = { -it / 2 },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
+        Box(modifier = modifier.fillMaxSize()) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Navigation rail for tablets
+                AnimatedVisibility(
+                    visible = showNavBar,
+                    enter = slideInHorizontally(
+                        initialOffsetX = { -it / 2 },
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) + fadeIn(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ),
+                    exit = slideOutHorizontally(
+                        targetOffsetX = { -it / 2 },
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) + fadeOut(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
                     )
-                ) + fadeIn(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
+                ) {
+                    StreamingNavigationRail(
+                        currentRoute = currentRoute,
+                        navController = navController,
+                        onNavigateToSettings = onNavigateToSettings,
+                        context = context,
+                        haptic = haptic
                     )
-                ),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { -it / 2 },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                ) + fadeOut(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                )
-            ) {
-                StreamingNavigationRail(
-                    currentRoute = currentRoute,
-                    navController = navController,
-                    onNavigateToSettings = onNavigateToSettings,
-                    context = context,
-                    haptic = haptic
-                )
-            }
-            
-            // Main content for tablet
-            NavHost(
-                navController = navController,
-                startDestination = StreamingScreen.Home.route,
-                modifier = Modifier.fillMaxSize()
-            ) {
+                }
+
+                // Main content for tablet with mini player at bottom
+                Column(modifier = Modifier.fillMaxSize()) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = StreamingScreen.Home.route,
+                        modifier = Modifier.weight(1f)
+                    ) {
                 // Home Screen
                 composable(
                     route = StreamingScreen.Home.route,
@@ -221,53 +251,107 @@ fun StreamingNavigation(
                     }
                 }
             }
+
+            // Mini player for tablet
+            StreamingMiniPlayer(
+                song = currentSong,
+                isPlaying = isPlaying,
+                progress = progress,
+                onPlayPause = {
+                    if (isPlaying) mediaController?.pause() else mediaController?.play()
+                },
+                onPlayerClick = { showPlayerSheet = true },
+                onSkipNext = { streamingViewModel.playNext() },
+                onSkipPrevious = { streamingViewModel.playPrevious() }
+            )
         }
-    } else {
+    }
+
+    // Full screen player sheet for tablet
+    AnimatedVisibility(
+        visible = showPlayerSheet,
+        enter = slideInVertically(
+            initialOffsetY = { it },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        ) + fadeIn(),
+        exit = slideOutVertically(
+            targetOffsetY = { it },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        ) + fadeOut(),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        StreamingPlayerScreen(
+            mediaController = mediaController,
+            onDismiss = { showPlayerSheet = false },
+            viewModel = streamingViewModel
+        )
+    }
+} else {
         // Phone layout with bottom navigation
-        Scaffold(
-            bottomBar = {
-                // Bottom navigation bar matching local navigation style
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                ) {
-                    // Navigation bar shown only on specific routes with spring animation
-                    AnimatedVisibility(
-                        visible = showNavBar,
-                        enter = slideInVertically(
-                            initialOffsetY = { fullHeight -> fullHeight / 2 },
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ) + fadeIn(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ),
-                        exit = slideOutVertically(
-                            targetOffsetY = { fullHeight -> fullHeight / 2 },
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ) + fadeOut(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        )
+        Box(modifier = modifier.fillMaxSize()) {
+            Scaffold(
+                bottomBar = {
+                    // Mini player and bottom navigation
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
                     ) {
-                        StreamingBottomNavBar(
-                            currentRoute = currentRoute,
-                            navController = navController,
-                            context = context
+                        // Mini player
+                        StreamingMiniPlayer(
+                            song = currentSong,
+                            isPlaying = isPlaying,
+                            progress = progress,
+                            onPlayPause = {
+                                if (isPlaying) mediaController?.pause() else mediaController?.play()
+                            },
+                            onPlayerClick = { showPlayerSheet = true },
+                            onSkipNext = { streamingViewModel.playNext() },
+                            onSkipPrevious = { streamingViewModel.playPrevious() }
                         )
+
+                        // Navigation bar shown only on specific routes with spring animation
+                        AnimatedVisibility(
+                            visible = showNavBar,
+                            enter = slideInVertically(
+                                initialOffsetY = { fullHeight -> fullHeight / 2 },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ) + fadeIn(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ),
+                            exit = slideOutVertically(
+                                targetOffsetY = { fullHeight -> fullHeight / 2 },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ) + fadeOut(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            )
+                        ) {
+                            StreamingBottomNavBar(
+                                currentRoute = currentRoute,
+                                navController = navController,
+                                context = context
+                            )
+                        }
                     }
                 }
-            },
             modifier = modifier
         ) { paddingValues ->
             NavHost(
@@ -354,6 +438,32 @@ fun StreamingNavigation(
                     }
                 }
             }
+        }
+
+        // Full screen player sheet
+        AnimatedVisibility(
+            visible = showPlayerSheet,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            ) + fadeIn(),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            ) + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            StreamingPlayerScreen(
+                mediaController = mediaController,
+                onDismiss = { showPlayerSheet = false },
+                viewModel = streamingViewModel
+            )
         }
     }
 }

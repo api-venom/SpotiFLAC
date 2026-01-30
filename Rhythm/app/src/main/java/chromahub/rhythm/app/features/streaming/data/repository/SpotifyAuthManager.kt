@@ -442,30 +442,41 @@ class SpotifyAuthManager {
                 })
             }
 
-            Log.d(TAG, "Client token payload: ${payload.toString()}")
+            val payloadStr = payload.toString()
+            Log.d(TAG, "Client token payload: $payloadStr")
 
-            // Use minimal headers that work with curl
-            val request = Request.Builder()
-                .url("https://clienttoken.spotify.com/v1/clienttoken")
-                .addHeader("Accept", "application/json")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Origin", "https://open.spotify.com")
-                .addHeader("User-Agent", USER_AGENT)
-                .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
+            // Use HttpURLConnection directly instead of OkHttp
+            val url = java.net.URL("https://clienttoken.spotify.com/v1/clienttoken")
+            val connection = url.openConnection() as javax.net.ssl.HttpsURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Origin", "https://open.spotify.com")
+            connection.setRequestProperty("User-Agent", USER_AGENT)
 
-            // Use plain client without cookies
-            val response = plainHttpClient.newCall(request).execute()
+            // Log all request headers
+            Log.d(TAG, "=== HttpURLConnection REQUEST ===")
+            connection.requestProperties.forEach { (key, values) ->
+                Log.d(TAG, "Header: $key = ${values.joinToString(", ")}")
+            }
 
-            Log.d(TAG, "Client token response code: ${response.code}")
+            // Write payload
+            connection.outputStream.use { os ->
+                os.write(payloadStr.toByteArray(Charsets.UTF_8))
+            }
 
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string()
-                Log.e(TAG, "Client token request failed: ${response.code}, body: ${errorBody}")
+            val responseCode = connection.responseCode
+            Log.d(TAG, "Client token response code: $responseCode")
+
+            if (responseCode != 200) {
+                val errorStream = connection.errorStream
+                val errorBody = errorStream?.bufferedReader()?.readText() ?: ""
+                Log.e(TAG, "Client token request failed: $responseCode, body: $errorBody")
                 return false
             }
 
-            val responseBody = response.body?.string() ?: "{}"
+            val responseBody = connection.inputStream.bufferedReader().readText()
             Log.d(TAG, "Client token response: ${responseBody.take(200)}")
             val json = JSONObject(responseBody)
             val responseType = json.optString("response_type")

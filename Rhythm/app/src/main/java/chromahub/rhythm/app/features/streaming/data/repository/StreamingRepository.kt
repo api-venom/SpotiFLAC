@@ -33,8 +33,6 @@ class StreamingRepository(
         }
 
         try {
-            Log.d(TAG, "Starting search for: $query")
-
             val payload = JSONObject().apply {
                 put("variables", JSONObject().apply {
                     put("searchTerm", query)
@@ -55,19 +53,17 @@ class StreamingRepository(
                 })
             }
 
-            Log.d(TAG, "Sending query to Pathfinder API")
             val response = authManager.query(payload)
             if (response == null) {
-                Log.e(TAG, "Search query failed - null response from Pathfinder API")
+                Log.e(TAG, "Search failed")
                 return@withContext emptyList()
             }
 
-            Log.d(TAG, "Received response, parsing results")
             val results = parseSearchResults(response)
-            Log.d(TAG, "Search completed with ${results.size} results")
+            Log.d(TAG, "Search: ${results.size} results")
             results
         } catch (e: Exception) {
-            Log.e(TAG, "Error searching tracks", e)
+            Log.e(TAG, "Search error: ${e.message}")
             emptyList()
         }
     }
@@ -79,45 +75,22 @@ class StreamingRepository(
         val results = mutableListOf<StreamingSong>()
 
         try {
-            val data = response.optJSONObject("data")
-            if (data == null) {
-                Log.e(TAG, "No 'data' object in response")
-                return results
-            }
-
-            val searchV2 = data.optJSONObject("searchV2")
-            if (searchV2 == null) {
-                Log.e(TAG, "No 'searchV2' object in data")
-                return results
-            }
-
-            val tracksResult = searchV2.optJSONObject("tracksV2")
-            if (tracksResult == null) {
-                Log.e(TAG, "No 'tracksV2' object in searchV2")
-                return results
-            }
-
-            val items = tracksResult.optJSONArray("items")
-            if (items == null) {
-                Log.e(TAG, "No 'items' array in tracksV2")
-                return results
-            }
-
-            Log.d(TAG, "Found ${items.length()} items in response")
+            val items = response
+                .optJSONObject("data")
+                ?.optJSONObject("searchV2")
+                ?.optJSONObject("tracksV2")
+                ?.optJSONArray("items") ?: return results
 
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
-                // Structure is items[i].item.data (like Windows FilterSearch)
                 val itemData = item.optJSONObject("item")?.optJSONObject("data") ?: continue
                 val track = parseTrack(itemData)
                 if (track != null) {
                     results.add(track)
                 }
             }
-
-            Log.d(TAG, "Parsed ${results.size} tracks from search")
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing search results", e)
+            Log.e(TAG, "Parse error: ${e.message}")
         }
 
         return results
@@ -199,36 +172,24 @@ class StreamingRepository(
                 explicit = isExplicit
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing track", e)
             return null
         }
     }
 
     /**
      * Get stream URL for a track
-     * Tries Tidal, Qobuz, and Amazon Music in order of preference
      */
     suspend fun getStreamUrl(song: StreamingSong): StreamingSong = withContext(Dispatchers.IO) {
         try {
-            val streamingManager = NetworkClient.streamingManager
-            if (streamingManager == null) {
-                Log.e(TAG, "Streaming manager not available")
-                return@withContext song
-            }
-
-            val preferredProvider = NetworkClient.getPreferredStreamingProvider()
-            val preferredQuality = NetworkClient.getPreferredStreamingQuality()
-
-            Log.d(TAG, "Getting stream URL for ${song.title} - provider: $preferredProvider, quality: $preferredQuality")
+            val streamingManager = NetworkClient.streamingManager ?: return@withContext song
 
             val result = streamingManager.getStreamUrl(
                 spotifyId = song.spotifyId,
-                preferredProvider = preferredProvider,
-                quality = preferredQuality
+                preferredProvider = NetworkClient.getPreferredStreamingProvider(),
+                quality = NetworkClient.getPreferredStreamingQuality()
             )
 
             if (result != null) {
-                Log.d(TAG, "Got stream URL from ${result.provider}: ${result.quality}")
                 return@withContext song.copy(
                     streamUrl = result.streamUrl,
                     provider = result.provider,
@@ -240,10 +201,10 @@ class StreamingRepository(
                 )
             }
 
-            Log.w(TAG, "No stream URL found for ${song.title}")
+            Log.w(TAG, "No stream: ${song.title}")
             song
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting stream URL", e)
+            Log.e(TAG, "Stream error: ${e.message}")
             song
         }
     }
@@ -253,11 +214,7 @@ class StreamingRepository(
      */
     suspend fun checkAvailability(spotifyId: String): Map<String, Boolean> = withContext(Dispatchers.IO) {
         try {
-            val streamingManager = NetworkClient.streamingManager
-            if (streamingManager == null) {
-                return@withContext emptyMap()
-            }
-
+            val streamingManager = NetworkClient.streamingManager ?: return@withContext emptyMap()
             val availability = streamingManager.checkAvailability(spotifyId)
             mapOf(
                 "tidal" to availability.tidalAvailable,
@@ -266,14 +223,12 @@ class StreamingRepository(
                 "deezer" to availability.deezerAvailable
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking availability", e)
             emptyMap()
         }
     }
 
     /**
-     * Fetch full track metadata (like Windows SpotiFLAC)
-     * Gets detailed track info using the getTrack query
+     * Fetch full track metadata
      */
     suspend fun fetchTrackMetadata(spotifyId: String): StreamingSong? = withContext(Dispatchers.IO) {
         try {
@@ -290,21 +245,16 @@ class StreamingRepository(
                 })
             }
 
-            val response = authManager.query(payload)
-            if (response == null) {
-                Log.e(TAG, "Failed to fetch track metadata")
-                return@withContext null
-            }
-
+            val response = authManager.query(payload) ?: return@withContext null
             parseTrackUnion(response, spotifyId)
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching track metadata", e)
+            Log.e(TAG, "Metadata error: ${e.message}")
             null
         }
     }
 
     /**
-     * Parse trackUnion response (like Windows FilterTrack)
+     * Parse trackUnion response
      */
     private suspend fun parseTrackUnion(response: JSONObject, spotifyId: String): StreamingSong? {
         try {
@@ -397,8 +347,6 @@ class StreamingRepository(
             // Parse playcount
             val playcount = trackUnion.optString("playcount", "0").toLongOrNull() ?: 0
 
-            Log.d(TAG, "Fetched metadata for: $name by ${artists.joinToString(", ")}")
-
             return StreamingSong(
                 id = "spotify:$spotifyId",
                 title = name,
@@ -412,7 +360,6 @@ class StreamingRepository(
                 popularity = (playcount / 1000000).toInt().coerceIn(0, 100) // Rough popularity
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing trackUnion", e)
             return null
         }
     }

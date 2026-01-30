@@ -75,23 +75,12 @@ class SpotifyAuthManager {
         .followRedirects(true)
         .build()
 
-    // Separate client without cookies for client token request (like Go app)
-    // Force HTTP/1.1 to match curl behavior
+    // Separate client without cookies for client token request
     private val plainHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        .addNetworkInterceptor { chain ->
-            val request = chain.request()
-            Log.d(TAG, "=== NETWORK REQUEST (actual wire) ===")
-            Log.d(TAG, "URL: ${request.url}")
-            Log.d(TAG, "Method: ${request.method}")
-            request.headers.forEach { (name, value) ->
-                Log.d(TAG, "Header: $name = $value")
-            }
-            chain.proceed(request)
-        }
         .build()
 
     private val mutex = Mutex()
@@ -272,14 +261,11 @@ class SpotifyAuthManager {
      */
     private fun getSessionInfo(): Boolean {
         try {
-            Log.d(TAG, "Starting getSessionInfo...")
-            // Match browser headers including Client Hints
             val request = Request.Builder()
                 .url("https://open.spotify.com")
                 .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
                 .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("User-Agent", USER_AGENT)
-                // Client Hints headers
                 .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
                 .addHeader("sec-ch-ua-mobile", "?1")
                 .addHeader("sec-ch-ua-platform", "\"Android\"")
@@ -293,15 +279,12 @@ class SpotifyAuthManager {
 
             val response = httpClient.newCall(request).execute()
 
-            Log.d(TAG, "Session info response code: ${response.code}")
-
             if (!response.isSuccessful) {
-                Log.e(TAG, "Session info request failed: ${response.code}")
+                Log.e(TAG, "Session: ${response.code}")
                 return false
             }
 
             val body = response.body?.string() ?: ""
-            Log.d(TAG, "Session info body length: ${body.length}")
 
             // Extract client version from appServerConfig
             val regex = """<script id="appServerConfig" type="text/plain">([^<]+)</script>""".toRegex()
@@ -311,32 +294,25 @@ class SpotifyAuthManager {
                     val decoded = String(Base64.decode(match.groupValues[1], Base64.DEFAULT))
                     val cfg = JSONObject(decoded)
                     clientVersion = cfg.optString("clientVersion", clientVersion)
-                    Log.d(TAG, "Got client version: $clientVersion")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse client version", e)
+                    // Use default version
                 }
-            } else {
-                Log.w(TAG, "Could not find appServerConfig in response, using default clientVersion: $clientVersion")
             }
 
             // Extract device ID from sp_t cookie
-            val storedCookies = cookieStore["open.spotify.com"]
-            Log.d(TAG, "Stored cookies for open.spotify.com: ${storedCookies?.map { it.name } ?: "none"}")
-
-            storedCookies?.find { it.name == "sp_t" }?.let {
+            cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
                 deviceId = it.value
-                Log.d(TAG, "Got device ID from cookie: ${deviceId?.take(10)}...")
             }
 
-            // If no sp_t cookie, generate a random device ID (like Windows app fallback)
+            // If no sp_t cookie, generate a random device ID
             if (deviceId.isNullOrEmpty()) {
                 deviceId = java.util.UUID.randomUUID().toString()
-                Log.d(TAG, "Generated random device ID: ${deviceId?.take(10)}...")
             }
 
+            Log.d(TAG, "Session OK, v=$clientVersion")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting session info", e)
+            Log.e(TAG, "Session error: ${e.message}")
             return false
         }
     }
@@ -346,9 +322,7 @@ class SpotifyAuthManager {
      */
     private fun getAccessToken(): Boolean {
         try {
-            Log.d(TAG, "Starting getAccessToken...")
             val (totpCode, version) = generateTOTP()
-            Log.d(TAG, "Generated TOTP: $totpCode, version: $version")
 
             // Use mobile-web-player like browser does on Android
             val url = "https://open.spotify.com/api/token?reason=init&productType=mobile-web-player&totp=$totpCode&totpVer=$version&totpServer=$totpCode"
@@ -371,39 +345,31 @@ class SpotifyAuthManager {
 
             val response = httpClient.newCall(request).execute()
 
-            Log.d(TAG, "Access token response code: ${response.code}")
-
             if (!response.isSuccessful) {
-                val errorBody = response.body?.string()
-                Log.e(TAG, "Access token request failed: ${response.code}, body: ${errorBody?.take(200)}")
+                Log.e(TAG, "Token: ${response.code}")
                 return false
             }
 
             val responseBody = response.body?.string() ?: "{}"
-            Log.d(TAG, "Access token response length: ${responseBody.length}")
             val json = JSONObject(responseBody)
             accessToken = json.optString("accessToken")
             clientId = json.optString("clientId")
 
-            Log.d(TAG, "Parsed accessToken: ${if (accessToken.isNullOrEmpty()) "EMPTY" else "${accessToken?.take(10)}..."}")
-            Log.d(TAG, "Parsed clientId: $clientId")
-
             // Update device ID from cookie if available
             cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
                 deviceId = it.value
-                Log.d(TAG, "Updated device ID from cookie after token request")
             }
 
             if (accessToken.isNullOrEmpty()) {
-                Log.e(TAG, "No access token in response. Full response: ${responseBody.take(500)}")
+                Log.e(TAG, "No accessToken")
                 return false
             }
 
             tokenExpiryTime = System.currentTimeMillis() + (3600 * 1000) // 1 hour
-            Log.d(TAG, "Got access token successfully, expires at: $tokenExpiryTime")
+            Log.d(TAG, "Token OK")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting access token", e)
+            Log.e(TAG, "Token error: ${e.message}")
             return false
         }
     }
@@ -413,17 +379,13 @@ class SpotifyAuthManager {
      */
     private fun getClientToken(): Boolean {
         try {
-            Log.d(TAG, "Starting getClientToken...")
-            Log.d(TAG, "clientId: ${clientId?.take(10)}..., deviceId: ${deviceId?.take(10)}..., clientVersion: $clientVersion")
-
             // Generate deviceId if not available
             if (deviceId.isNullOrEmpty()) {
                 deviceId = java.util.UUID.randomUUID().toString()
-                Log.d(TAG, "Generated fallback device ID: ${deviceId?.take(10)}...")
             }
 
             if (clientId.isNullOrEmpty()) {
-                Log.e(TAG, "Missing clientId for client token request")
+                Log.e(TAG, "No clientId")
                 return false
             }
 
@@ -443,7 +405,6 @@ class SpotifyAuthManager {
             }
 
             val payloadStr = payload.toString()
-            Log.d(TAG, "Client token payload: $payloadStr")
 
             // Use HttpURLConnection directly instead of OkHttp
             val url = java.net.URL("https://clienttoken.spotify.com/v1/clienttoken")
@@ -455,36 +416,24 @@ class SpotifyAuthManager {
             connection.setRequestProperty("Origin", "https://open.spotify.com")
             connection.setRequestProperty("User-Agent", USER_AGENT)
 
-            // Log all request headers
-            Log.d(TAG, "=== HttpURLConnection REQUEST ===")
-            connection.requestProperties.forEach { (key, values) ->
-                Log.d(TAG, "Header: $key = ${values.joinToString(", ")}")
-            }
-
             // Write payload
             connection.outputStream.use { os ->
                 os.write(payloadStr.toByteArray(Charsets.UTF_8))
             }
 
             val responseCode = connection.responseCode
-            Log.d(TAG, "Client token response code: $responseCode")
 
             if (responseCode != 200) {
-                val errorStream = connection.errorStream
-                val errorBody = errorStream?.bufferedReader()?.readText() ?: ""
-                Log.e(TAG, "Client token request failed: $responseCode, body: $errorBody")
+                Log.e(TAG, "ClientToken: $responseCode")
                 return false
             }
 
             val responseBody = connection.inputStream.bufferedReader().readText()
-            Log.d(TAG, "Client token response: ${responseBody.take(200)}")
             val json = JSONObject(responseBody)
             val responseType = json.optString("response_type")
 
-            Log.d(TAG, "Client token response_type: $responseType")
-
             if (responseType != "RESPONSE_GRANTED_TOKEN_RESPONSE") {
-                Log.e(TAG, "Invalid client token response type: $responseType. Full response: ${responseBody.take(500)}")
+                Log.e(TAG, "ClientToken invalid: $responseType")
                 return false
             }
 
@@ -492,14 +441,14 @@ class SpotifyAuthManager {
             clientToken = grantedToken?.optString("token")
 
             if (clientToken.isNullOrEmpty()) {
-                Log.e(TAG, "No client token in response. Full response: ${responseBody.take(500)}")
+                Log.e(TAG, "No clientToken")
                 return false
             }
 
-            Log.d(TAG, "Got client token: ${clientToken?.take(10)}...")
+            Log.d(TAG, "ClientToken OK")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting client token", e)
+            Log.e(TAG, "ClientToken error: ${e.message}")
             return false
         }
     }
@@ -509,15 +458,13 @@ class SpotifyAuthManager {
      */
     suspend fun query(payload: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
         if (!isInitialized()) {
-            Log.d(TAG, "Not initialized, attempting to initialize...")
             if (!initialize()) {
-                Log.e(TAG, "Failed to initialize, cannot query")
+                Log.e(TAG, "Init failed")
                 return@withContext null
             }
         }
 
         try {
-            Log.d(TAG, "Sending query to Pathfinder API: ${payload.optString("operationName")}")
             // Match browser headers including Client Hints
             val request = Request.Builder()
                 .url("https://api-partner.spotify.com/pathfinder/v2/query")
@@ -541,14 +488,10 @@ class SpotifyAuthManager {
 
             val response = httpClient.newCall(request).execute()
 
-            Log.d(TAG, "Query response code: ${response.code}")
-
             if (!response.isSuccessful) {
-                val errorBody = response.body?.string()
-                Log.e(TAG, "Query failed: ${response.code}. Error body: ${errorBody?.take(500)}")
+                Log.e(TAG, "Query: ${response.code}")
                 // If unauthorized, try to reinitialize
                 if (response.code == 401) {
-                    Log.d(TAG, "Got 401, clearing tokens for re-auth")
                     accessToken = null
                     tokenExpiryTime = 0
                 }
@@ -556,21 +499,17 @@ class SpotifyAuthManager {
             }
 
             val responseBody = response.body?.string() ?: "{}"
-            Log.d(TAG, "Query response length: ${responseBody.length}")
-
             val result = JSONObject(responseBody)
 
             // Check for errors in response
             val errors = result.optJSONArray("errors")
             if (errors != null && errors.length() > 0) {
-                val firstError = errors.optJSONObject(0)
-                val errorMessage = firstError?.optString("message")
-                Log.e(TAG, "Query returned errors: $errorMessage")
+                Log.e(TAG, "Query errors: ${errors.optJSONObject(0)?.optString("message")}")
             }
 
             result
         } catch (e: Exception) {
-            Log.e(TAG, "Error making query", e)
+            Log.e(TAG, "Query error: ${e.message}")
             null
         }
     }

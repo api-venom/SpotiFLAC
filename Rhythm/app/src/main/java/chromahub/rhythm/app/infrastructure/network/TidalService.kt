@@ -8,28 +8,25 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 /**
  * Service for Tidal streaming integration
- * Provides access to lossless FLAC streams via third-party proxy APIs
+ * Uses HttpURLConnection for API requests
  */
 class TidalService {
     companion object {
         private const val TAG = "TidalService"
 
-        // Tidal OAuth credentials (base64 decoded)
         private const val TIDAL_CLIENT_ID = "6BDSRDPK9hQEBTgU"
         private const val TIDAL_CLIENT_SECRET = "xeuPmY7nbpZ9IIbLAcQ93shka1VNheUAqN6IcszjTG8="
         private const val TIDAL_AUTH_URL = "https://auth.tidal.com/v1/oauth2/token"
         private const val TIDAL_API_URL = "https://api.tidal.com/v1"
 
-        // Third-party proxy APIs for streaming URLs
         private val PROXY_APIS = listOf(
             "https://vogel.qqdl.site",
             "https://maus.qqdl.site",
@@ -41,30 +38,21 @@ class TidalService {
             "https://triton.squid.wtf"
         )
 
-        // Quality constants
-        const val QUALITY_HI_RES_LOSSLESS = "HI_RES_LOSSLESS" // 24-bit FLAC
-        const val QUALITY_HI_RES = "HI_RES" // 24-bit
-        const val QUALITY_LOSSLESS = "LOSSLESS" // 16-bit FLAC, 44.1kHz
-        const val QUALITY_HIGH = "HIGH" // AAC 320kbps
+        const val QUALITY_HI_RES_LOSSLESS = "HI_RES_LOSSLESS"
+        const val QUALITY_HI_RES = "HI_RES"
+        const val QUALITY_LOSSLESS = "LOSSLESS"
+        const val QUALITY_HIGH = "HIGH"
 
         private const val REQUEST_TIMEOUT_MS = 20000L
+        private const val CONNECT_TIMEOUT_MS = 15000
+        private const val READ_TIMEOUT_MS = 15000
     }
-
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
 
     private var cachedAccessToken: String? = null
     private var tokenExpiryTime: Long = 0
 
-    /**
-     * Get Tidal access token using client credentials
-     */
     private suspend fun getAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
-            // Check cached token
             if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpiryTime) {
                 return@withContext cachedAccessToken
             }
@@ -72,68 +60,68 @@ class TidalService {
             val credentials = "$TIDAL_CLIENT_ID:$TIDAL_CLIENT_SECRET"
             val encodedCredentials = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
 
-            val request = Request.Builder()
-                .url(TIDAL_AUTH_URL)
-                .addHeader("Authorization", "Basic $encodedCredentials")
-                .addHeader("Content-Type", "application/x-www-form-urlencoded")
-                .post("client_id=$TIDAL_CLIENT_ID&grant_type=client_credentials"
-                    .toRequestBody("application/x-www-form-urlencoded".toMediaType()))
-                .build()
+            val url = URL(TIDAL_AUTH_URL)
+            val conn = (url.openConnection() as HttpsURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                setRequestProperty("Authorization", "Basic $encodedCredentials")
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            }
 
-            val response = httpClient.newCall(request).execute()
+            conn.outputStream.use { os ->
+                OutputStreamWriter(os).use { writer ->
+                    writer.write("client_id=$TIDAL_CLIENT_ID&grant_type=client_credentials")
+                }
+            }
 
-            if (response.isSuccessful) {
-                val json = JSONObject(response.body?.string() ?: "{}")
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                val json = JSONObject(body)
                 val token = json.optString("access_token")
                 val expiresIn = json.optInt("expires_in", 3600)
 
                 if (token.isNotEmpty()) {
                     cachedAccessToken = token
                     tokenExpiryTime = System.currentTimeMillis() + (expiresIn - 60) * 1000
-                    Log.d(TAG, "Got Tidal access token")
                     return@withContext token
                 }
             }
 
-            Log.e(TAG, "Failed to get Tidal access token: ${response.code}")
+            Log.e(TAG, "Auth: ${conn.responseCode}")
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting Tidal access token", e)
+            Log.e(TAG, "Auth error: ${e.message}")
             null
         }
     }
 
-    /**
-     * Get track info from official Tidal API
-     */
     suspend fun getTrackInfo(trackId: Long): TidalTrack? = withContext(Dispatchers.IO) {
         try {
             val token = getAccessToken() ?: return@withContext null
 
-            val request = Request.Builder()
-                .url("$TIDAL_API_URL/tracks/$trackId?countryCode=US")
-                .addHeader("Authorization", "Bearer $token")
-                .get()
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-
-            if (response.isSuccessful) {
-                val json = JSONObject(response.body?.string() ?: "{}")
-                return@withContext parseTrackInfo(json)
+            val url = URL("$TIDAL_API_URL/tracks/$trackId?countryCode=US")
+            val conn = (url.openConnection() as HttpsURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                setRequestProperty("Authorization", "Bearer $token")
             }
 
-            Log.e(TAG, "Failed to get track info: ${response.code}")
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                return@withContext parseTrackInfo(JSONObject(body))
+            }
+
+            Log.e(TAG, "TrackInfo: ${conn.responseCode}")
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting track info", e)
+            Log.e(TAG, "TrackInfo error: ${e.message}")
             null
         }
     }
 
-    /**
-     * Get streaming URL for a track with quality fallback
-     */
     suspend fun getStreamUrl(trackId: Long, preferredQuality: String = QUALITY_LOSSLESS): StreamResult? = withContext(Dispatchers.IO) {
         val qualities = when (preferredQuality) {
             QUALITY_HI_RES_LOSSLESS -> listOf(QUALITY_HI_RES_LOSSLESS, QUALITY_LOSSLESS, QUALITY_HIGH)
@@ -145,22 +133,17 @@ class TidalService {
         for (quality in qualities) {
             val result = tryGetStreamUrl(trackId, quality)
             if (result != null) {
-                Log.d(TAG, "Got stream URL for track $trackId at quality $quality")
                 return@withContext result
             }
         }
 
-        Log.w(TAG, "Failed to get stream URL for track $trackId at any quality")
+        Log.w(TAG, "No stream for $trackId")
         null
     }
 
-    /**
-     * Try to get stream URL from proxy APIs in parallel
-     */
     private suspend fun tryGetStreamUrl(trackId: Long, quality: String): StreamResult? = coroutineScope {
         val shuffledApis = PROXY_APIS.shuffled()
 
-        // Try APIs in parallel with timeout
         val results = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
             shuffledApis.map { api ->
                 async(Dispatchers.IO) {
@@ -169,48 +152,36 @@ class TidalService {
             }.awaitAll()
         } ?: emptyList()
 
-        // Return first successful result
         results.filterNotNull().firstOrNull()
     }
 
-    /**
-     * Try a single API endpoint
-     */
     private fun tryApiEndpoint(apiBase: String, trackId: Long, quality: String): StreamResult? {
         return try {
-            val url = "$apiBase/track/?id=$trackId&quality=$quality"
-            Log.d(TAG, "Trying API: $url")
+            val apiUrl = "$apiBase/track/?id=$trackId&quality=$quality"
+            val url = URL(apiUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+            }
 
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return null
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
                 parseStreamResponse(body, quality)
             } else {
-                Log.d(TAG, "API returned ${response.code}: $apiBase")
                 null
             }
         } catch (e: Exception) {
-            Log.d(TAG, "API error for $apiBase: ${e.message}")
             null
         }
     }
 
-    /**
-     * Parse stream response (handles V1, V2, array formats)
-     */
     private fun parseStreamResponse(body: String, quality: String): StreamResult? {
         return try {
-            // First try to parse as JSONObject
+            // Try as JSONObject
             try {
                 val json = JSONObject(body)
 
-                // Try V1 format (direct URL)
                 val directUrl = json.optString("OriginalTrackUrl")
                 if (directUrl.isNotEmpty()) {
                     return StreamResult(
@@ -221,7 +192,6 @@ class TidalService {
                     )
                 }
 
-                // Try V2 format (manifest)
                 val data = json.optJSONObject("data")
                 if (data != null) {
                     val manifest = data.optString("Manifest")
@@ -230,7 +200,6 @@ class TidalService {
                     }
                 }
 
-                // Try URLs array (BTS format at top level)
                 if (json.has("urls")) {
                     val urls = json.getJSONArray("urls")
                     if (urls.length() > 0) {
@@ -243,7 +212,6 @@ class TidalService {
                     }
                 }
 
-                // Try url field
                 val url = json.optString("url")
                 if (url.isNotEmpty()) {
                     return StreamResult(
@@ -254,10 +222,10 @@ class TidalService {
                     )
                 }
             } catch (e: Exception) {
-                // Not a JSON object, try array
+                // Not a JSON object
             }
 
-            // Try to parse as JSON array (like Windows V1 format)
+            // Try as JSON array
             try {
                 val jsonArray = org.json.JSONArray(body)
                 for (i in 0 until jsonArray.length()) {
@@ -278,20 +246,15 @@ class TidalService {
 
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing stream response", e)
             null
         }
     }
 
-    /**
-     * Parse base64 encoded manifest
-     */
     private fun parseManifest(manifestB64: String, quality: String, data: JSONObject): StreamResult? {
         return try {
             val manifestBytes = Base64.decode(manifestB64, Base64.DEFAULT)
             val manifestStr = String(manifestBytes)
 
-            // Check if it's JSON (BTS format)
             if (manifestStr.startsWith("{")) {
                 val manifestJson = JSONObject(manifestStr)
                 val urls = manifestJson.optJSONArray("urls")
@@ -307,9 +270,7 @@ class TidalService {
                 }
             }
 
-            // Check if it's DASH/MPD format
             if (manifestStr.contains("<MPD") || manifestStr.contains("<?xml")) {
-                // For DASH, return the manifest itself
                 return StreamResult(
                     url = manifestStr,
                     quality = quality,
@@ -322,14 +283,10 @@ class TidalService {
 
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing manifest", e)
             null
         }
     }
 
-    /**
-     * Parse track info from JSON
-     */
     private fun parseTrackInfo(json: JSONObject): TidalTrack {
         val album = json.optJSONObject("album")
         val artists = json.optJSONArray("artists")
@@ -362,17 +319,13 @@ class TidalService {
 
     private fun getMimeTypeForQuality(quality: String): String {
         return when (quality) {
-            QUALITY_HI_RES_LOSSLESS, QUALITY_LOSSLESS -> "audio/flac"
-            QUALITY_HI_RES -> "audio/flac"
+            QUALITY_HI_RES_LOSSLESS, QUALITY_LOSSLESS, QUALITY_HI_RES -> "audio/flac"
             QUALITY_HIGH -> "audio/mp4"
             else -> "audio/mpeg"
         }
     }
 }
 
-/**
- * Tidal track info data class
- */
 data class TidalTrack(
     val id: Long,
     val title: String,
@@ -389,9 +342,6 @@ data class TidalTrack(
     val releaseDate: String?
 )
 
-/**
- * Stream result containing URL and quality info
- */
 data class StreamResult(
     val url: String,
     val quality: String,

@@ -1,7 +1,10 @@
 package chromahub.rhythm.app.features.streaming.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -11,8 +14,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,21 +38,25 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -62,11 +70,12 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
- * Streaming Mini Player Component
- * Displays current streaming song with playback controls
+ * Enhanced Streaming Mini Player Component
+ * Matches local player quality with premium animations and gestures
  */
 @Composable
 fun StreamingMiniPlayer(
@@ -82,15 +91,68 @@ fun StreamingMiniPlayer(
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
 
-    // Swipe gesture state
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var verticalDragOffset by remember { mutableFloatStateOf(0f) }
+    // Interaction source for press feedback
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
 
+    // Scale animation for tap feedback
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "scale"
+    )
+
+    // Song change bounce animation
+    var songChangeBounce by remember { mutableStateOf(false) }
+    val bounceScale by animateFloatAsState(
+        targetValue = if (songChangeBounce) 1.02f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "bounce"
+    )
+
+    // Swipe gesture states
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 100f
+
+    // Animated translation
+    val translationX by animateFloatAsState(
+        targetValue = offsetX.coerceIn(-200f, 200f),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "translationX"
+    )
+
+    // Progress animation
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = spring(stiffness = Spring.StiffnessLow),
         label = "progress"
     )
+
+    // Play button shape animation
+    val playButtonCorner by animateDpAsState(
+        targetValue = if (isPlaying) 16.dp else 50.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "playCorner"
+    )
+
+    // Trigger bounce on song change
+    LaunchedEffect(song?.id) {
+        if (song != null) {
+            songChangeBounce = true
+            delay(100)
+            songChangeBounce = false
+        }
+    }
 
     AnimatedVisibility(
         visible = song != null,
@@ -112,67 +174,124 @@ fun StreamingMiniPlayer(
     ) {
         song?.let { currentSong ->
             Card(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onPlayerClick()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .scale(scale * bounceScale)
                     .graphicsLayer {
-                        translationX = dragOffset
-                        translationY = verticalDragOffset.coerceAtMost(0f)
+                        this.translationX = translationX
+                        translationY = offsetY.coerceAtMost(0f)
                     }
                     .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
+                        detectDragGestures(
+                            onDragStart = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
                             onDragEnd = {
-                                if (abs(dragOffset) > 100) {
+                                val absX = abs(offsetX)
+                                val absY = abs(offsetY)
+
+                                if (absX > absY && absX > swipeThreshold) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (dragOffset > 0) {
+                                    if (offsetX > 0) {
                                         onSkipPrevious()
                                     } else {
                                         onSkipNext()
                                     }
-                                }
-                                dragOffset = 0f
-                            },
-                            onDragCancel = { dragOffset = 0f },
-                            onHorizontalDrag = { _, dragAmount ->
-                                dragOffset += dragAmount
-                            }
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (verticalDragOffset < -100) {
+                                } else if (absY > absX && offsetY < -swipeThreshold) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onPlayerClick()
                                 }
-                                verticalDragOffset = 0f
+
+                                offsetX = 0f
+                                offsetY = 0f
                             },
-                            onDragCancel = { verticalDragOffset = 0f },
-                            onVerticalDrag = { _, dragAmount ->
-                                verticalDragOffset += dragAmount
+                            onDragCancel = {
+                                offsetX = 0f
+                                offsetY = 0f
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
                             }
                         )
-                    }
-                    .clickable { onPlayerClick() },
+                    },
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 ),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                interactionSource = interactionSource
             ) {
                 Column {
+                    // Drag handle indicator
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        HorizontalDivider(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                        )
+                    }
+
+                    // Swipe indicator hints
+                    AnimatedVisibility(
+                        visible = abs(offsetX) > 20 || offsetY < -20,
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val hintText = when {
+                                offsetX < -swipeThreshold / 2 -> "Next track"
+                                offsetX > swipeThreshold / 2 -> "Previous track"
+                                offsetY < -swipeThreshold / 2 -> "Open player"
+                                else -> ""
+                            }
+                            if (hintText.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(
+                                        alpha = (abs(offsetX) / swipeThreshold).coerceIn(0.3f, 0.8f)
+                                    )
+                                ) {
+                                    Text(
+                                        text = hintText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Album Art
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        // Album Art with loading shimmer
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 2.dp
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -185,23 +304,23 @@ fun StreamingMiniPlayer(
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
                         // Song info
                         Column(
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
                                 text = currentSong.title,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
                                     text = currentSong.artist,
@@ -211,77 +330,92 @@ fun StreamingMiniPlayer(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
+
                                 // Provider badge
                                 currentSong.provider?.let { provider ->
-                                    Spacer(modifier = Modifier.width(8.dp))
                                     Surface(
                                         color = MaterialTheme.colorScheme.primaryContainer,
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = RoundedCornerShape(6.dp)
                                     ) {
                                         Text(
                                             text = provider.uppercase(),
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 8.sp,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
                         // Controls
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            IconButton(
+                            // Previous button (smaller)
+                            FilledTonalIconButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSkipPrevious()
                                 },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(36.dp),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipPrevious,
                                     contentDescription = "Previous",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp)
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 
+                            // Play/Pause with morphing shape
                             FilledIconButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onPlayPause()
                                 },
+                                modifier = Modifier.size(48.dp),
+                                shape = RoundedCornerShape(playButtonCorner),
                                 colors = IconButtonDefaults.filledIconButtonColors(
                                     containerColor = MaterialTheme.colorScheme.primary
-                                ),
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlaying) "Pause" else "Play",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(26.dp)
                                 )
+                            ) {
+                                Crossfade(
+                                    targetState = isPlaying,
+                                    animationSpec = tween(200, easing = FastOutSlowInEasing),
+                                    label = "playPause"
+                                ) { playing ->
+                                    Icon(
+                                        imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (playing) "Pause" else "Play",
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
                             }
 
-                            IconButton(
+                            // Next button
+                            FilledTonalIconButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSkipNext()
                                 },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(36.dp),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipNext,
                                     contentDescription = "Next",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp)
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -300,14 +434,4 @@ fun StreamingMiniPlayer(
             }
         }
     }
-}
-
-/**
- * Format duration in milliseconds to mm:ss format
- */
-private fun formatDuration(durationMs: Long): String {
-    val totalSeconds = (durationMs / 1000).toInt()
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }

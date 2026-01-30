@@ -5,11 +5,10 @@ import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import chromahub.rhythm.app.features.streaming.data.repository.LyricsService
 import chromahub.rhythm.app.features.streaming.data.repository.SpotifyAuthManager
 import chromahub.rhythm.app.features.streaming.data.repository.StreamingRepository
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
-import chromahub.rhythm.app.network.AppleMusicApiService
-import chromahub.rhythm.app.network.LRCLibApiService
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.shared.data.model.LyricsData
 import kotlinx.coroutines.Dispatchers
@@ -20,10 +19,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.TimeUnit
 
 /**
  * ViewModel for streaming functionality
@@ -31,36 +26,13 @@ import java.util.concurrent.TimeUnit
  */
 class StreamingViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
-        private const val TAG = "StreamingViewModel"
+        private const val TAG = "StreamingVM"
         private const val SEARCH_DEBOUNCE_MS = 500L
-        private const val LRCLIB_BASE_URL = "https://lrclib.net/"
-        private const val APPLE_MUSIC_BASE_URL = "https://apic.musixmatch.com/"
     }
 
     private val authManager = SpotifyAuthManager()
     private val repository = StreamingRepository(authManager)
-
-    // HTTP client for lyrics APIs
-    private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
-
-    // LRCLib API for line-synced lyrics
-    private val lrcLibApi: LRCLibApiService = Retrofit.Builder()
-        .baseUrl(LRCLIB_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-        .create(LRCLibApiService::class.java)
-
-    // Apple Music API for word-by-word lyrics
-    private val appleMusicApi: AppleMusicApiService = Retrofit.Builder()
-        .baseUrl(APPLE_MUSIC_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-        .create(AppleMusicApiService::class.java)
+    private val lyricsService = LyricsService()
 
     // Search state
     private val _searchQuery = MutableStateFlow("")
@@ -296,7 +268,7 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Fetch lyrics for a streaming song
+     * Fetch lyrics for a streaming song using HttpURLConnection-based LyricsService
      */
     private fun fetchLyricsForSong(song: StreamingSong) {
         lyricsJob?.cancel()
@@ -305,107 +277,21 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
             _currentLyrics.value = null
 
             try {
-                val lyrics = withContext(Dispatchers.IO) {
-                    fetchLyricsFromApis(song.artist, song.title, song.duration.toInt() / 1000)
-                }
+                val lyrics = lyricsService.fetchLyrics(
+                    artist = song.artist,
+                    title = song.title,
+                    album = song.album,
+                    durationSeconds = (song.duration / 1000).toInt()
+                )
                 _currentLyrics.value = lyrics
-                Log.d(TAG, "Lyrics fetched: ${lyrics?.hasLyrics() ?: false}")
+                Log.d(TAG, "Lyrics: ${lyrics?.hasLyrics() == true}")
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching lyrics", e)
+                Log.e(TAG, "Lyrics error: ${e.message}")
                 _currentLyrics.value = null
             } finally {
                 _isLoadingLyrics.value = false
             }
         }
-    }
-
-    /**
-     * Fetch lyrics from available APIs
-     * Tries Apple Music (word-by-word) first, then LRCLib (line-synced)
-     */
-    private suspend fun fetchLyricsFromApis(
-        artist: String,
-        title: String,
-        durationSeconds: Int
-    ): LyricsData? {
-        var syncedLyrics: String? = null
-        var plainLyrics: String? = null
-        var wordByWordLyrics: String? = null
-
-        // Try LRCLib first for synced lyrics
-        try {
-            val lrcResults = lrcLibApi.searchLyrics(
-                trackName = title.cleanForSearch(),
-                artistName = artist.cleanForSearch(),
-                duration = durationSeconds
-            )
-
-            if (lrcResults.isNotEmpty()) {
-                // Find best match by duration if provided
-                val bestMatch = if (durationSeconds > 0) {
-                    lrcResults.minByOrNull {
-                        kotlin.math.abs((it.duration ?: 0.0) - durationSeconds)
-                    }
-                } else {
-                    lrcResults.firstOrNull()
-                }
-
-                syncedLyrics = bestMatch?.syncedLyrics
-                plainLyrics = bestMatch?.plainLyrics
-                Log.d(TAG, "LRCLib found: synced=${syncedLyrics != null}, plain=${plainLyrics != null}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "LRCLib search failed", e)
-        }
-
-        // Try Apple Music for word-by-word lyrics
-        try {
-            val searchQuery = "$artist $title"
-            val appleMusicResults = appleMusicApi.searchSongs(searchQuery)
-
-            if (appleMusicResults.isNotEmpty()) {
-                // Find best match
-                val bestMatch = appleMusicResults.firstOrNull { result ->
-                    result.songName?.contains(title, ignoreCase = true) == true ||
-                    title.contains(result.songName ?: "", ignoreCase = true)
-                } ?: appleMusicResults.firstOrNull()
-
-                bestMatch?.id?.let { trackId ->
-                    val lyricsResponse = appleMusicApi.getLyrics(trackId)
-                    if (lyricsResponse.content?.isNotEmpty() == true) {
-                        // Convert to JSON string for storage
-                        wordByWordLyrics = com.google.gson.Gson().toJson(lyricsResponse.content)
-                        Log.d(TAG, "Apple Music word-by-word lyrics found")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Apple Music lyrics fetch failed", e)
-        }
-
-        // Return combined lyrics data if any source succeeded
-        return if (syncedLyrics != null || plainLyrics != null || wordByWordLyrics != null) {
-            LyricsData(
-                plainLyrics = plainLyrics,
-                syncedLyrics = syncedLyrics,
-                wordByWordLyrics = wordByWordLyrics
-            )
-        } else {
-            null
-        }
-    }
-
-    /**
-     * Clean string for search - removes feat., ft., etc.
-     */
-    private fun String.cleanForSearch(): String {
-        return this
-            .replace(Regex("\\s*\\(feat\\..*?\\)", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s*\\(ft\\..*?\\)", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s*feat\\..*", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s*ft\\..*", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s*\\[.*?\\]"), "")
-            .trim()
     }
 
     /**

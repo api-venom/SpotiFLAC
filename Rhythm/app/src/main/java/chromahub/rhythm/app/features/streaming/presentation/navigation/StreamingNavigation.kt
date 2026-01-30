@@ -123,7 +123,7 @@ fun StreamingNavigation(
         StreamingScreen.Library.route,
         StreamingScreen.Search.route
     )
-    
+
     if (isTablet) {
         // Tablet layout with Navigation Rail
         Box(modifier = modifier.fillMaxSize()) {
@@ -172,127 +172,128 @@ fun StreamingNavigation(
                         startDestination = StreamingScreen.Home.route,
                         modifier = Modifier.weight(1f)
                     ) {
-                // Home Screen
-                composable(
-                    route = StreamingScreen.Home.route,
-                    enterTransition = { fadeIn(animationSpec = tween(300)) },
-                    exitTransition = { fadeOut(animationSpec = tween(300)) }
-                ) {
-                    StreamingHomeScreen(
-                        onNavigateToSearch = { navController.navigate(StreamingScreen.Search.route) },
-                        onNavigateToLibrary = { navController.navigate(StreamingScreen.Library.route) },
-                        onNavigateToSettings = onNavigateToSettings,
-                        onSwitchToLocalMode = onSwitchToLocalMode
-                    )
-                }
-                
-                // Search Screen
-                composable(
-                    route = StreamingScreen.Search.route,
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(300)) +
-                        slideInVertically(
-                            initialOffsetY = { it / 4 },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    },
-                    exitTransition = {
-                        fadeOut(animationSpec = tween(300)) +
-                        slideOutVertically(
-                            targetOffsetY = { it / 4 },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    }
-                ) {
-                    StreamingSearchScreen(
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-                
-                // Library Screen
-                composable(
-                    route = StreamingScreen.Library.route,
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(300)) +
-                        slideInHorizontally(
-                            initialOffsetX = { it },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    },
-                    exitTransition = {
-                        fadeOut(animationSpec = tween(300)) +
-                        slideOutHorizontally(
-                            targetOffsetX = { it },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    }
-                ) {
-                    StreamingLibraryScreen(
-                        onNavigateToPlaylist = { playlistId ->
-                            navController.navigate(StreamingScreen.PlaylistDetail.createRoute(playlistId))
+                        // Home Screen
+                        composable(
+                            route = StreamingScreen.Home.route,
+                            enterTransition = { fadeIn(animationSpec = tween(300)) },
+                            exitTransition = { fadeOut(animationSpec = tween(300)) }
+                        ) {
+                            StreamingHomeScreen(
+                                onNavigateToSearch = { navController.navigate(StreamingScreen.Search.route) },
+                                onNavigateToLibrary = { navController.navigate(StreamingScreen.Library.route) },
+                                onNavigateToSettings = onNavigateToSettings,
+                                onSwitchToLocalMode = onSwitchToLocalMode
+                            )
                         }
-                    )
-                }
-                
-                // Playlist Detail (placeholder)
-                composable(
-                    route = StreamingScreen.PlaylistDetail.route,
-                    arguments = listOf(
-                        navArgument("playlistId") { type = NavType.StringType }
-                    )
-                ) { backStackEntry ->
-                    val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
-                    // Placeholder for now
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Playlist: $playlistId\n\nComing Soon")
+
+                        // Search Screen
+                        composable(
+                            route = StreamingScreen.Search.route,
+                            enterTransition = {
+                                fadeIn(animationSpec = tween(300)) +
+                                slideInVertically(
+                                    initialOffsetY = { it / 4 },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                            },
+                            exitTransition = {
+                                fadeOut(animationSpec = tween(300)) +
+                                slideOutVertically(
+                                    targetOffsetY = { it / 4 },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                            }
+                        ) {
+                            StreamingSearchScreen(
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+
+                        // Library Screen
+                        composable(
+                            route = StreamingScreen.Library.route,
+                            enterTransition = {
+                                fadeIn(animationSpec = tween(300)) +
+                                slideInHorizontally(
+                                    initialOffsetX = { it },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                            },
+                            exitTransition = {
+                                fadeOut(animationSpec = tween(300)) +
+                                slideOutHorizontally(
+                                    targetOffsetX = { it },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                            }
+                        ) {
+                            StreamingLibraryScreen(
+                                onNavigateToPlaylist = { playlistId ->
+                                    navController.navigate(StreamingScreen.PlaylistDetail.createRoute(playlistId))
+                                }
+                            )
+                        }
+
+                        // Playlist Detail (placeholder)
+                        composable(
+                            route = StreamingScreen.PlaylistDetail.route,
+                            arguments = listOf(
+                                navArgument("playlistId") { type = NavType.StringType }
+                            )
+                        ) { backStackEntry ->
+                            val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
+                            // Placeholder for now
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Playlist: $playlistId\n\nComing Soon")
+                            }
+                        }
                     }
+
+                    // Mini player for tablet
+                    StreamingMiniPlayer(
+                        song = currentSong,
+                        isPlaying = isPlaying,
+                        progress = progress,
+                        onPlayPause = {
+                            if (isPlaying) mediaController?.pause() else mediaController?.play()
+                        },
+                        onPlayerClick = { showPlayerSheet = true },
+                        onSkipNext = { streamingViewModel.playNext() },
+                        onSkipPrevious = { streamingViewModel.playPrevious() }
+                    )
                 }
             }
 
-            // Mini player for tablet
-            StreamingMiniPlayer(
-                song = currentSong,
-                isPlaying = isPlaying,
-                progress = progress,
-                onPlayPause = {
-                    if (isPlaying) mediaController?.pause() else mediaController?.play()
-                },
-                onPlayerClick = { showPlayerSheet = true },
-                onSkipNext = { streamingViewModel.playNext() },
-                onSkipPrevious = { streamingViewModel.playPrevious() }
-            )
+            // Full screen player sheet for tablet
+            AnimatedVisibility(
+                visible = showPlayerSheet,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                ) + fadeIn(),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                ) + fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                StreamingPlayerScreen(
+                    mediaController = mediaController,
+                    onDismiss = { showPlayerSheet = false },
+                    viewModel = streamingViewModel
+                )
+            }
         }
-    }
-
-    // Full screen player sheet for tablet
-    AnimatedVisibility(
-        visible = showPlayerSheet,
-        enter = slideInVertically(
-            initialOffsetY = { it },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        ) + fadeIn(),
-        exit = slideOutVertically(
-            targetOffsetY = { it },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        ) + fadeOut(),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        StreamingPlayerScreen(
-            mediaController = mediaController,
-            onDismiss = { showPlayerSheet = false },
-            viewModel = streamingViewModel
-        )
-    }
-} else {
+    } else {
         // Phone layout with bottom navigation
         Box(modifier = modifier.fillMaxSize()) {
             Scaffold(
@@ -351,119 +352,120 @@ fun StreamingNavigation(
                             )
                         }
                     }
-                }
-            modifier = modifier
-        ) { paddingValues ->
-            NavHost(
-                navController = navController,
-                startDestination = StreamingScreen.Home.route,
-                modifier = Modifier.padding(paddingValues)
-            ) {
-                // Home Screen
-                composable(
-                    route = StreamingScreen.Home.route,
-                    enterTransition = { fadeIn(animationSpec = tween(300)) },
-                    exitTransition = { fadeOut(animationSpec = tween(300)) }
+                },
+                modifier = modifier
+            ) { paddingValues ->
+                NavHost(
+                    navController = navController,
+                    startDestination = StreamingScreen.Home.route,
+                    modifier = Modifier.padding(paddingValues)
                 ) {
-                    StreamingHomeScreen(
-                        onNavigateToSearch = { navController.navigate(StreamingScreen.Search.route) },
-                        onNavigateToLibrary = { navController.navigate(StreamingScreen.Library.route) },
-                        onNavigateToSettings = onNavigateToSettings,
-                        onSwitchToLocalMode = onSwitchToLocalMode
-                    )
-                }
-                
-                // Search Screen
-                composable(
-                    route = StreamingScreen.Search.route,
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(300)) +
-                        slideInVertically(
-                            initialOffsetY = { it / 4 },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    },
-                    exitTransition = {
-                        fadeOut(animationSpec = tween(300)) +
-                        slideOutVertically(
-                            targetOffsetY = { it / 4 },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    }
-                ) {
-                    StreamingSearchScreen(
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-                
-                // Library Screen
-                composable(
-                    route = StreamingScreen.Library.route,
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(300)) +
-                        slideInHorizontally(
-                            initialOffsetX = { it },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    },
-                    exitTransition = {
-                        fadeOut(animationSpec = tween(300)) +
-                        slideOutHorizontally(
-                            targetOffsetX = { it },
-                            animationSpec = tween(350, easing = EaseInOutQuart)
-                        )
-                    }
-                ) {
-                    StreamingLibraryScreen(
-                        onNavigateToPlaylist = { playlistId ->
-                            navController.navigate(StreamingScreen.PlaylistDetail.createRoute(playlistId))
-                        }
-                    )
-                }
-                
-                // Playlist Detail (placeholder)
-                composable(
-                    route = StreamingScreen.PlaylistDetail.route,
-                    arguments = listOf(
-                        navArgument("playlistId") { type = NavType.StringType }
-                    )
-                ) { backStackEntry ->
-                    val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
-                    // Placeholder for now
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                    // Home Screen
+                    composable(
+                        route = StreamingScreen.Home.route,
+                        enterTransition = { fadeIn(animationSpec = tween(300)) },
+                        exitTransition = { fadeOut(animationSpec = tween(300)) }
                     ) {
-                        Text("Playlist: $playlistId\n\nComing Soon")
+                        StreamingHomeScreen(
+                            onNavigateToSearch = { navController.navigate(StreamingScreen.Search.route) },
+                            onNavigateToLibrary = { navController.navigate(StreamingScreen.Library.route) },
+                            onNavigateToSettings = onNavigateToSettings,
+                            onSwitchToLocalMode = onSwitchToLocalMode
+                        )
+                    }
+
+                    // Search Screen
+                    composable(
+                        route = StreamingScreen.Search.route,
+                        enterTransition = {
+                            fadeIn(animationSpec = tween(300)) +
+                            slideInVertically(
+                                initialOffsetY = { it / 4 },
+                                animationSpec = tween(350, easing = EaseInOutQuart)
+                            )
+                        },
+                        exitTransition = {
+                            fadeOut(animationSpec = tween(300)) +
+                            slideOutVertically(
+                                targetOffsetY = { it / 4 },
+                                animationSpec = tween(350, easing = EaseInOutQuart)
+                            )
+                        }
+                    ) {
+                        StreamingSearchScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    // Library Screen
+                    composable(
+                        route = StreamingScreen.Library.route,
+                        enterTransition = {
+                            fadeIn(animationSpec = tween(300)) +
+                            slideInHorizontally(
+                                initialOffsetX = { it },
+                                animationSpec = tween(350, easing = EaseInOutQuart)
+                            )
+                        },
+                        exitTransition = {
+                            fadeOut(animationSpec = tween(300)) +
+                            slideOutHorizontally(
+                                targetOffsetX = { it },
+                                animationSpec = tween(350, easing = EaseInOutQuart)
+                            )
+                        }
+                    ) {
+                        StreamingLibraryScreen(
+                            onNavigateToPlaylist = { playlistId ->
+                                navController.navigate(StreamingScreen.PlaylistDetail.createRoute(playlistId))
+                            }
+                        )
+                    }
+
+                    // Playlist Detail (placeholder)
+                    composable(
+                        route = StreamingScreen.PlaylistDetail.route,
+                        arguments = listOf(
+                            navArgument("playlistId") { type = NavType.StringType }
+                        )
+                    ) { backStackEntry ->
+                        val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
+                        // Placeholder for now
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Playlist: $playlistId\n\nComing Soon")
+                        }
                     }
                 }
             }
-        }
 
-        // Full screen player sheet
-        AnimatedVisibility(
-            visible = showPlayerSheet,
-            enter = slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
+            // Full screen player sheet
+            AnimatedVisibility(
+                visible = showPlayerSheet,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                ) + fadeIn(),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                ) + fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                StreamingPlayerScreen(
+                    mediaController = mediaController,
+                    onDismiss = { showPlayerSheet = false },
+                    viewModel = streamingViewModel
                 )
-            ) + fadeIn(),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            ) + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            StreamingPlayerScreen(
-                mediaController = mediaController,
-                onDismiss = { showPlayerSheet = false },
-                viewModel = streamingViewModel
-            )
+            }
         }
     }
 }
@@ -475,7 +477,7 @@ private fun StreamingBottomNavBar(
     context: android.content.Context
 ) {
     val haptic = LocalHapticFeedback.current
-    
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -549,7 +551,7 @@ private fun StreamingBottomNavBar(
                             ),
                             label = "pillWidth_$title"
                         )
-                        
+
                         // Icon color animation
                         val iconColor by animateColorAsState(
                             targetValue = if (isSelected)
@@ -652,10 +654,10 @@ private fun StreamingBottomNavBar(
                     }
                 }
             }
-            
+
             // Search button (matching local navigation style)
             Spacer(modifier = Modifier.width(12.dp))
-            
+
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(20.dp),
@@ -682,6 +684,17 @@ private fun StreamingBottomNavBar(
 }
 
 /**
+ * Data class for streaming navigation rail items
+ */
+private data class StreamingNavRailItem(
+    val route: String,
+    val title: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+    val onClick: () -> Unit
+)
+
+/**
  * Navigation rail for tablets - floating design with vertically centered contents
  */
 @Composable
@@ -694,7 +707,7 @@ private fun StreamingNavigationRail(
 ) {
     // Calculate rail height based on number of items (4 items * 64dp + padding)
     val railHeight = (4 * 64 + 24).dp
-    
+
     Box(
         modifier = Modifier
             .fillMaxHeight()
@@ -760,7 +773,7 @@ private fun StreamingNavigationRail(
                         onClick = onNavigateToSettings
                     )
                 )
-                
+
                 items.forEach { item ->
                     StreamingNavigationRailItemWithAnimation(
                         item = item,
@@ -773,17 +786,6 @@ private fun StreamingNavigationRail(
         }
     }
 }
-
-/**
- * Data class for streaming navigation rail items
- */
-private data class StreamingNavRailItem(
-    val route: String,
-    val title: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
-    val onClick: () -> Unit
-)
 
 /**
  * Streaming navigation rail item with animated selection indicator

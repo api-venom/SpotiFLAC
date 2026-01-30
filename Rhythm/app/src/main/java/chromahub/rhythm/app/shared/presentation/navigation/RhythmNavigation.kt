@@ -115,8 +115,7 @@ fun RhythmNavigation(
                         // Show streaming navigation with proper bottom nav
                         StreamingNavigation(
                             onNavigateToSettings = navigateToSettings,
-                            onNavigateToPlayer = { /* TODO */ },
-                            onSwitchToLocalMode = { 
+                            onSwitchToLocalMode = {
                                 // Switch back to local mode
                                 appSettings.setAppMode("LOCAL")
                             }

@@ -52,7 +52,19 @@ class SpotifyAuthManager {
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            return cookieStore[url.host] ?: emptyList()
+            val cookies = mutableListOf<Cookie>()
+            // Get cookies for exact host
+            cookieStore[url.host]?.let { cookies.addAll(it) }
+            // Also get cookies from open.spotify.com for any spotify.com subdomain
+            if (url.host.endsWith(".spotify.com") || url.host == "spotify.com") {
+                cookieStore["open.spotify.com"]?.forEach { cookie ->
+                    // Add if not already present and cookie matches the domain
+                    if (cookies.none { it.name == cookie.name } && cookie.matches(url)) {
+                        cookies.add(cookie)
+                    }
+                }
+            }
+            return cookies
         }
     }
 
@@ -424,6 +436,7 @@ class SpotifyAuthManager {
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
                 .addHeader("Accept", "application/json")
+                .addHeader("Accept-Encoding", "gzip, deflate, br")
                 .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Origin", "https://open.spotify.com")
@@ -439,8 +452,8 @@ class SpotifyAuthManager {
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
-            // Use plain client (no cookies needed for different domain)
-            val response = plainHttpClient.newCall(request).execute()
+            // Use httpClient with cookies (browser sends cookies too)
+            val response = httpClient.newCall(request).execute()
 
             Log.d(TAG, "Client token response code: ${response.code}")
 

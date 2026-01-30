@@ -402,26 +402,6 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Add to search history
-     */
-    private fun addToSearchHistory(query: String) {
-        val current = _searchHistory.value.toMutableList()
-        current.remove(query)
-        current.add(0, query)
-        if (current.size > 10) {
-            current.removeAt(current.lastIndex)
-        }
-        _searchHistory.value = current
-    }
-
-    /**
-     * Clear search history
-     */
-    fun clearSearchHistory() {
-        _searchHistory.value = emptyList()
-    }
-
-    /**
      * Clear current search
      */
     fun clearSearch() {

@@ -33,8 +33,13 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
         private const val PREFS_NAME = "streaming_prefs"
         private const val KEY_SEARCH_HISTORY = "search_history"
         private const val KEY_RECENTLY_PLAYED = "recently_played"
+        private const val KEY_QUEUE = "queue"
+        private const val KEY_QUEUE_INDEX = "queue_index"
+        private const val KEY_SHUFFLE_MODE = "shuffle_mode"
+        private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val MAX_HISTORY_SIZE = 15
         private const val MAX_RECENTLY_PLAYED = 30
+        private const val MAX_QUEUE_SIZE = 100
     }
 
     private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -79,6 +84,17 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
+    // Shuffle mode
+    private val _shuffleEnabled = MutableStateFlow(false)
+    val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
+
+    // Repeat mode: 0 = off, 1 = repeat all, 2 = repeat one
+    private val _repeatMode = MutableStateFlow(0)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    // Original queue order (for un-shuffling)
+    private var originalQueue: List<StreamingSong> = emptyList()
+
     // Search history (persistent)
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
@@ -94,6 +110,8 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
         // Load persistent data on init
         loadSearchHistory()
         loadRecentlyPlayed()
+        loadQueue()
+        loadPlaybackSettings()
     }
 
     /**
@@ -181,6 +199,86 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
         } catch (e: Exception) {
             Log.e(TAG, "Error saving recently played", e)
         }
+    }
+
+    /**
+     * Load queue from SharedPreferences
+     */
+    private fun loadQueue() {
+        try {
+            val queueJson = prefs.getString(KEY_QUEUE, null)
+            val savedIndex = prefs.getInt(KEY_QUEUE_INDEX, 0)
+
+            if (queueJson != null) {
+                val jsonArray = JSONArray(queueJson)
+                val songs = mutableListOf<StreamingSong>()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    songs.add(StreamingSong(
+                        id = obj.getString("id"),
+                        title = obj.getString("title"),
+                        artist = obj.getString("artist"),
+                        album = obj.optString("album", ""),
+                        duration = obj.optLong("duration", 0L),
+                        artworkUri = obj.optString("artworkUri", null),
+                        spotifyId = obj.optString("spotifyId", ""),
+                        provider = obj.optString("provider", null),
+                        streamUrl = null
+                    ))
+                }
+                _queue.value = songs
+                originalQueue = songs
+                _currentIndex.value = savedIndex.coerceIn(0, songs.size.coerceAtLeast(1) - 1)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading queue", e)
+        }
+    }
+
+    /**
+     * Save queue to SharedPreferences
+     */
+    private fun saveQueue() {
+        try {
+            val jsonArray = JSONArray()
+            _queue.value.take(MAX_QUEUE_SIZE).forEach { song ->
+                val obj = JSONObject().apply {
+                    put("id", song.id)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("album", song.album)
+                    put("duration", song.duration)
+                    put("artworkUri", song.artworkUri ?: "")
+                    put("spotifyId", song.spotifyId)
+                    put("provider", song.provider ?: "")
+                }
+                jsonArray.put(obj)
+            }
+            prefs.edit()
+                .putString(KEY_QUEUE, jsonArray.toString())
+                .putInt(KEY_QUEUE_INDEX, _currentIndex.value)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving queue", e)
+        }
+    }
+
+    /**
+     * Load playback settings (shuffle/repeat) from SharedPreferences
+     */
+    private fun loadPlaybackSettings() {
+        _shuffleEnabled.value = prefs.getBoolean(KEY_SHUFFLE_MODE, false)
+        _repeatMode.value = prefs.getInt(KEY_REPEAT_MODE, 0)
+    }
+
+    /**
+     * Save playback settings to SharedPreferences
+     */
+    private fun savePlaybackSettings() {
+        prefs.edit()
+            .putBoolean(KEY_SHUFFLE_MODE, _shuffleEnabled.value)
+            .putInt(KEY_REPEAT_MODE, _repeatMode.value)
+            .apply()
     }
 
     /**
@@ -317,10 +415,19 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
             _isLoadingStream.value = true
 
             try {
-                // Set the queue
-                val songQueue = playQueue ?: listOf(song)
-                _queue.value = songQueue
-                _currentIndex.value = songQueue.indexOf(song).coerceAtLeast(0)
+                // Set the queue if provided
+                if (playQueue != null) {
+                    _queue.value = playQueue
+                    originalQueue = playQueue
+                    _currentIndex.value = playQueue.indexOf(song).coerceAtLeast(0)
+                    saveQueue()
+                } else if (_queue.value.isEmpty()) {
+                    // Create single-song queue if none exists
+                    _queue.value = listOf(song)
+                    originalQueue = listOf(song)
+                    _currentIndex.value = 0
+                    saveQueue()
+                }
 
                 // Fetch stream URL if not already available
                 val songWithStream = if (song.hasStreamUrl()) {
@@ -374,30 +481,225 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Play next song in queue
+     * Play next song in queue (respects repeat modes)
      */
     fun playNext() {
         val queue = _queue.value
         val currentIdx = _currentIndex.value
 
-        if (currentIdx < queue.size - 1) {
-            val nextSong = queue[currentIdx + 1]
-            _currentIndex.value = currentIdx + 1
-            playSong(nextSong, queue)
+        if (queue.isEmpty()) return
+
+        val nextIndex = when (_repeatMode.value) {
+            2 -> currentIdx // Repeat one - stay on current song
+            1 -> (currentIdx + 1) % queue.size // Repeat all - wrap around
+            else -> if (currentIdx < queue.size - 1) currentIdx + 1 else return
         }
+
+        val nextSong = queue[nextIndex]
+        _currentIndex.value = nextIndex
+        saveQueue()
+        playSong(nextSong, queue)
     }
 
     /**
-     * Play previous song in queue
+     * Play previous song in queue (respects repeat modes)
      */
     fun playPrevious() {
         val queue = _queue.value
         val currentIdx = _currentIndex.value
 
-        if (currentIdx > 0) {
-            val prevSong = queue[currentIdx - 1]
-            _currentIndex.value = currentIdx - 1
-            playSong(prevSong, queue)
+        if (queue.isEmpty()) return
+
+        val prevIndex = when (_repeatMode.value) {
+            2 -> currentIdx // Repeat one - stay on current song
+            1 -> if (currentIdx > 0) currentIdx - 1 else queue.size - 1 // Repeat all - wrap around
+            else -> if (currentIdx > 0) currentIdx - 1 else return
+        }
+
+        val prevSong = queue[prevIndex]
+        _currentIndex.value = prevIndex
+        saveQueue()
+        playSong(prevSong, queue)
+    }
+
+    /**
+     * Toggle shuffle mode
+     */
+    fun toggleShuffle() {
+        val newShuffle = !_shuffleEnabled.value
+        _shuffleEnabled.value = newShuffle
+
+        if (newShuffle) {
+            // Save original order and shuffle
+            val currentSong = _currentSong.value
+            originalQueue = _queue.value.toList()
+            val shuffled = _queue.value.toMutableList()
+
+            // Keep current song at the beginning
+            if (currentSong != null) {
+                shuffled.remove(currentSong)
+                shuffled.shuffle()
+                shuffled.add(0, currentSong)
+                _currentIndex.value = 0
+            } else {
+                shuffled.shuffle()
+            }
+            _queue.value = shuffled
+        } else {
+            // Restore original order
+            val currentSong = _currentSong.value
+            _queue.value = originalQueue
+            // Update index to point to current song in original queue
+            if (currentSong != null) {
+                val newIndex = originalQueue.indexOfFirst { it.spotifyId == currentSong.spotifyId }
+                _currentIndex.value = newIndex.coerceAtLeast(0)
+            }
+        }
+
+        saveQueue()
+        savePlaybackSettings()
+    }
+
+    /**
+     * Cycle through repeat modes: off -> all -> one -> off
+     */
+    fun toggleRepeat() {
+        _repeatMode.value = (_repeatMode.value + 1) % 3
+        savePlaybackSettings()
+    }
+
+    /**
+     * Set specific repeat mode
+     */
+    fun setRepeatMode(mode: Int) {
+        _repeatMode.value = mode.coerceIn(0, 2)
+        savePlaybackSettings()
+    }
+
+    /**
+     * Add a song to the end of the queue
+     */
+    fun addToQueue(song: StreamingSong) {
+        val current = _queue.value.toMutableList()
+        // Don't add duplicates
+        if (current.none { it.spotifyId == song.spotifyId }) {
+            current.add(song)
+            _queue.value = current
+            saveQueue()
+        }
+    }
+
+    /**
+     * Add a song to play next (after current song)
+     */
+    fun addToPlayNext(song: StreamingSong) {
+        val current = _queue.value.toMutableList()
+        val insertIndex = (_currentIndex.value + 1).coerceAtMost(current.size)
+
+        // Remove if already exists
+        val existingIndex = current.indexOfFirst { it.spotifyId == song.spotifyId }
+        if (existingIndex >= 0) {
+            current.removeAt(existingIndex)
+            // Adjust current index if needed
+            if (existingIndex < _currentIndex.value) {
+                _currentIndex.value = _currentIndex.value - 1
+            }
+        }
+
+        current.add(insertIndex.coerceAtMost(current.size), song)
+        _queue.value = current
+        saveQueue()
+    }
+
+    /**
+     * Remove a song from the queue at a specific index
+     */
+    fun removeFromQueue(index: Int) {
+        val current = _queue.value.toMutableList()
+        if (index in current.indices && index != _currentIndex.value) {
+            current.removeAt(index)
+            // Adjust current index if needed
+            if (index < _currentIndex.value) {
+                _currentIndex.value = _currentIndex.value - 1
+            }
+            _queue.value = current
+            saveQueue()
+        }
+    }
+
+    /**
+     * Move a song in the queue from one position to another
+     */
+    fun moveInQueue(fromIndex: Int, toIndex: Int) {
+        val current = _queue.value.toMutableList()
+        if (fromIndex in current.indices && toIndex in current.indices && fromIndex != toIndex) {
+            val song = current.removeAt(fromIndex)
+            current.add(toIndex, song)
+
+            // Update current index if it was affected
+            val currentIdx = _currentIndex.value
+            val newCurrentIndex = when {
+                fromIndex == currentIdx -> toIndex
+                fromIndex < currentIdx && toIndex >= currentIdx -> currentIdx - 1
+                fromIndex > currentIdx && toIndex <= currentIdx -> currentIdx + 1
+                else -> currentIdx
+            }
+            _currentIndex.value = newCurrentIndex
+            _queue.value = current
+            saveQueue()
+        }
+    }
+
+    /**
+     * Clear the queue (except current song)
+     */
+    fun clearQueue() {
+        val currentSong = _currentSong.value
+        if (currentSong != null) {
+            _queue.value = listOf(currentSong)
+            _currentIndex.value = 0
+        } else {
+            _queue.value = emptyList()
+            _currentIndex.value = 0
+        }
+        originalQueue = _queue.value
+        saveQueue()
+    }
+
+    /**
+     * Play a specific song in the queue by index
+     */
+    fun playFromQueue(index: Int) {
+        val queue = _queue.value
+        if (index in queue.indices) {
+            _currentIndex.value = index
+            playSong(queue[index], queue)
+        }
+    }
+
+    /**
+     * Check if there's a next song available
+     */
+    fun hasNext(): Boolean {
+        val queue = _queue.value
+        val currentIdx = _currentIndex.value
+        return when (_repeatMode.value) {
+            1 -> queue.isNotEmpty() // Repeat all - always has next
+            2 -> true // Repeat one - current song is always next
+            else -> currentIdx < queue.size - 1
+        }
+    }
+
+    /**
+     * Check if there's a previous song available
+     */
+    fun hasPrevious(): Boolean {
+        val queue = _queue.value
+        val currentIdx = _currentIndex.value
+        return when (_repeatMode.value) {
+            1 -> queue.isNotEmpty() // Repeat all - always has previous
+            2 -> true // Repeat one - current song is always previous
+            else -> currentIdx > 0
         }
     }
 

@@ -85,7 +85,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil.compose.AsyncImage
@@ -107,7 +106,7 @@ fun StreamingPlayerScreen(
     mediaController: MediaController?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: StreamingViewModel = viewModel()
+    viewModel: StreamingViewModel
 ) {
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current

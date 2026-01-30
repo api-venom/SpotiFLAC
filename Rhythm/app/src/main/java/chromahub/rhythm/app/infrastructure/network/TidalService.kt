@@ -52,6 +52,7 @@ class TidalService {
     private var tokenExpiryTime: Long = 0
 
     private suspend fun getAccessToken(): String? = withContext(Dispatchers.IO) {
+        var conn: HttpsURLConnection? = null
         try {
             if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpiryTime) {
                 return@withContext cachedAccessToken
@@ -61,7 +62,7 @@ class TidalService {
             val encodedCredentials = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
 
             val url = URL(TIDAL_AUTH_URL)
-            val conn = (url.openConnection() as HttpsURLConnection).apply {
+            conn = (url.openConnection() as HttpsURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = CONNECT_TIMEOUT_MS
@@ -77,7 +78,7 @@ class TidalService {
             }
 
             if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(body)
                 val token = json.optString("access_token")
                 val expiresIn = json.optInt("expires_in", 3600)
@@ -89,20 +90,23 @@ class TidalService {
                 }
             }
 
-            Log.e(TAG, "Auth: ${conn.responseCode}")
+            // Don't log auth failures - proxy APIs don't need auth
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Auth error: ${e.message}")
+            // Silent - proxy APIs work without auth
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 
     suspend fun getTrackInfo(trackId: Long): TidalTrack? = withContext(Dispatchers.IO) {
+        var conn: HttpsURLConnection? = null
         try {
             val token = getAccessToken() ?: return@withContext null
 
             val url = URL("$TIDAL_API_URL/tracks/$trackId?countryCode=US")
-            val conn = (url.openConnection() as HttpsURLConnection).apply {
+            conn = (url.openConnection() as HttpsURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
@@ -110,15 +114,17 @@ class TidalService {
             }
 
             if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
                 return@withContext parseTrackInfo(JSONObject(body))
             }
 
-            Log.e(TAG, "TrackInfo: ${conn.responseCode}")
+            Log.d(TAG, "TrackInfo: ${conn.responseCode}")
             null
         } catch (e: Exception) {
             Log.e(TAG, "TrackInfo error: ${e.message}")
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 
@@ -156,23 +162,26 @@ class TidalService {
     }
 
     private fun tryApiEndpoint(apiBase: String, trackId: Long, quality: String): StreamResult? {
+        var conn: HttpURLConnection? = null
         return try {
             val apiUrl = "$apiBase/track/?id=$trackId&quality=$quality"
             val url = URL(apiUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
             }
 
             if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
                 parseStreamResponse(body, quality)
             } else {
                 null
             }
         } catch (e: Exception) {
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 

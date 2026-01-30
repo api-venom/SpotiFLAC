@@ -11,14 +11,13 @@ import chromahub.rhythm.app.features.streaming.data.repository.StreamingReposito
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.shared.data.model.LyricsData
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * ViewModel for streaming functionality
@@ -285,6 +284,9 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 _currentLyrics.value = lyrics
                 Log.d(TAG, "Lyrics: ${lyrics?.hasLyrics() == true}")
+            } catch (e: CancellationException) {
+                // Job cancelled, don't log as error - this is normal during navigation
+                Log.d(TAG, "Lyrics fetch cancelled")
             } catch (e: Exception) {
                 Log.e(TAG, "Lyrics error: ${e.message}")
                 _currentLyrics.value = null

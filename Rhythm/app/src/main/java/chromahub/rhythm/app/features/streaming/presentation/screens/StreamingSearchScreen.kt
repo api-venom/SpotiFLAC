@@ -64,10 +64,11 @@ import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingV
 @Composable
 fun StreamingSearchScreen(
     onBack: () -> Unit = {},
-    onPlaySong: (StreamingSong) -> Unit = {},
     modifier: Modifier = Modifier,
-    viewModel: StreamingViewModel = viewModel()
+    sharedViewModel: StreamingViewModel? = null
 ) {
+    // Use shared ViewModel if provided, otherwise create local one
+    val viewModel: StreamingViewModel = sharedViewModel ?: viewModel()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -226,7 +227,6 @@ fun StreamingSearchScreen(
                                 isLoading = isLoadingStream && currentSong?.spotifyId == song.spotifyId,
                                 onClick = {
                                     viewModel.playSong(song, searchResults)
-                                    onPlaySong(song)
                                 }
                             )
                         }

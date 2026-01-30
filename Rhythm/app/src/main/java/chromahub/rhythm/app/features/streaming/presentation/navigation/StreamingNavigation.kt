@@ -205,7 +205,8 @@ fun StreamingNavigation(
                             }
                         ) {
                             StreamingSearchScreen(
-                                onBack = { navController.popBackStack() }
+                                onBack = { navController.popBackStack() },
+                                sharedViewModel = streamingViewModel
                             )
                         }
 

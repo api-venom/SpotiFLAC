@@ -157,12 +157,13 @@ class LyricsService {
     }
 
     /**
-     * HTTP GET request using HttpURLConnection
+     * HTTP GET request using HttpURLConnection with proper resource cleanup
      */
     private fun httpGet(urlString: String): String? {
+        var conn: HttpURLConnection? = null
         return try {
             val url = URL(urlString)
-            val conn = url.openConnection() as HttpURLConnection
+            conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = CONNECT_TIMEOUT
             conn.readTimeout = READ_TIMEOUT
@@ -170,7 +171,7 @@ class LyricsService {
             conn.setRequestProperty("Accept", "application/json")
 
             if (conn.responseCode == 200) {
-                conn.inputStream.bufferedReader().readText()
+                conn.inputStream.bufferedReader().use { it.readText() }
             } else {
                 Log.w(TAG, "HTTP ${conn.responseCode}")
                 null
@@ -178,6 +179,8 @@ class LyricsService {
         } catch (e: Exception) {
             Log.e(TAG, "HTTP error: ${e.message}")
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 

@@ -194,7 +194,8 @@ class TidalService {
 
                 val data = json.optJSONObject("data")
                 if (data != null) {
-                    val manifest = data.optString("Manifest")
+                    // Try both lowercase and uppercase manifest field
+                    val manifest = data.optString("manifest").ifEmpty { data.optString("Manifest") }
                     if (manifest.isNotEmpty()) {
                         return parseManifest(manifest, quality, data)
                     }

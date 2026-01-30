@@ -208,6 +208,10 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         const val EXTRA_SONG_ID = "song_id"
         const val EXTRA_SONG_DURATION = "song_duration"
 
+        // Notification click action
+        const val ACTION_OPEN_PLAYER = "chromahub.rhythm.app.action.OPEN_PLAYER"
+        const val EXTRA_FROM_NOTIFICATION = "from_notification"
+
         // Playback custom commands
         const val REPEAT_MODE_ALL = "repeat_all"
         const val REPEAT_MODE_ONE = "repeat_one"
@@ -613,6 +617,8 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         // PendingIntent that launches MainActivity when user taps media controls
         val sessionIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            action = ACTION_OPEN_PLAYER
+            putExtra(EXTRA_FROM_NOTIFICATION, true)
         }
         val pendingIntent = PendingIntent.getActivity(
             this,

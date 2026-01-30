@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -56,7 +57,10 @@ import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingSea
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingLibraryScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingPlayerScreen
 import chromahub.rhythm.app.features.streaming.presentation.components.StreamingMiniPlayer
+import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.util.HapticUtils
+import android.content.ComponentName
+import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.delay
 
 /**
@@ -82,7 +86,7 @@ fun StreamingNavigation(
     navController: NavHostController = rememberNavController(),
     streamingMusicViewModel: StreamingMusicViewModel = viewModel(),
     streamingViewModel: StreamingViewModel = viewModel(),
-    mediaController: MediaController? = null,
+    externalMediaController: MediaController? = null,
     onNavigateToSettings: () -> Unit = {},
     onSwitchToLocalMode: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -92,12 +96,74 @@ fun StreamingNavigation(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
+    // Connect to MediaPlaybackService if no external controller provided
+    var connectedController by remember { mutableStateOf<MediaController?>(null) }
+    val mediaController = externalMediaController ?: connectedController
+
+    // Build MediaController connection
+    DisposableEffect(context) {
+        val sessionToken = SessionToken(context, ComponentName(context, MediaPlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+
+        controllerFuture.addListener({
+            try {
+                connectedController = controllerFuture.get()
+            } catch (e: Exception) {
+                // Ignore connection failures
+            }
+        }, MoreExecutors.directExecutor())
+
+        onDispose {
+            connectedController?.release()
+            connectedController = null
+        }
+    }
+
     // Streaming state
     val currentSong by streamingViewModel.currentSong.collectAsState()
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(1L) }
     var showPlayerSheet by remember { mutableStateOf(false) }
+
+    // Sync current song from MediaController when reconnecting (e.g., after app restart)
+    LaunchedEffect(mediaController) {
+        mediaController?.let { controller ->
+            // Small delay to ensure controller is fully connected
+            delay(100)
+
+            // Check if there's a currently playing streaming song
+            val currentMediaItem = controller.currentMediaItem
+            val mediaId = currentMediaItem?.mediaId ?: ""
+
+            android.util.Log.d("StreamingNav", "MediaController connected, mediaId=$mediaId, isPlaying=${controller.isPlaying}, currentSong=${currentSong?.title}")
+
+            if (mediaId.startsWith("spotify:") && currentSong == null) {
+                val metadata = currentMediaItem?.mediaMetadata
+                android.util.Log.d("StreamingNav", "Restoring song: ${metadata?.title}")
+                streamingViewModel.restoreCurrentSong(
+                    mediaId = mediaId,
+                    title = metadata?.title?.toString() ?: "Unknown",
+                    artist = metadata?.artist?.toString() ?: "Unknown",
+                    album = metadata?.albumTitle?.toString() ?: "",
+                    artworkUri = metadata?.artworkUri?.toString(),
+                    duration = controller.duration.coerceAtLeast(0L),
+                    provider = "tidal" // Default, the actual provider info isn't stored in MediaMetadata
+                )
+            }
+        }
+    }
+
+    // Auto-show player when a streaming song starts playing (e.g., from notification click)
+    LaunchedEffect(currentSong, isPlaying) {
+        android.util.Log.d("StreamingNav", "Player check: song=${currentSong?.title}, isPlaying=$isPlaying, showSheet=$showPlayerSheet")
+        if (currentSong != null && isPlaying && !showPlayerSheet) {
+            // Delay slightly to let UI settle after app launch
+            delay(300)
+            android.util.Log.d("StreamingNav", "Showing player sheet")
+            showPlayerSheet = true
+        }
+    }
 
     // Update playback state from MediaController
     LaunchedEffect(mediaController) {

@@ -277,40 +277,40 @@ class SpotifyAuthManager {
                 .get()
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Session: ${response.code}")
-                return false
-            }
-
-            val body = response.body?.string() ?: ""
-
-            // Extract client version from appServerConfig
-            val regex = """<script id="appServerConfig" type="text/plain">([^<]+)</script>""".toRegex()
-            val match = regex.find(body)
-            if (match != null) {
-                try {
-                    val decoded = String(Base64.decode(match.groupValues[1], Base64.DEFAULT))
-                    val cfg = JSONObject(decoded)
-                    clientVersion = cfg.optString("clientVersion", clientVersion)
-                } catch (e: Exception) {
-                    // Use default version
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Session: ${response.code}")
+                    return false
                 }
-            }
 
-            // Extract device ID from sp_t cookie
-            cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
-                deviceId = it.value
-            }
+                val body = response.body?.string() ?: ""
 
-            // If no sp_t cookie, generate a random device ID
-            if (deviceId.isNullOrEmpty()) {
-                deviceId = java.util.UUID.randomUUID().toString()
-            }
+                // Extract client version from appServerConfig
+                val regex = """<script id="appServerConfig" type="text/plain">([^<]+)</script>""".toRegex()
+                val match = regex.find(body)
+                if (match != null) {
+                    try {
+                        val decoded = String(Base64.decode(match.groupValues[1], Base64.DEFAULT))
+                        val cfg = JSONObject(decoded)
+                        clientVersion = cfg.optString("clientVersion", clientVersion)
+                    } catch (e: Exception) {
+                        // Use default version
+                    }
+                }
 
-            Log.d(TAG, "Session OK, v=$clientVersion")
-            return true
+                // Extract device ID from sp_t cookie
+                cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
+                    deviceId = it.value
+                }
+
+                // If no sp_t cookie, generate a random device ID
+                if (deviceId.isNullOrEmpty()) {
+                    deviceId = java.util.UUID.randomUUID().toString()
+                }
+
+                Log.d(TAG, "Session OK, v=$clientVersion")
+                return true
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Session error: ${e.message}")
             return false
@@ -343,31 +343,31 @@ class SpotifyAuthManager {
                 .get()
                 .build()
 
-            val response = httpClient.newCall(request).execute()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Token: ${response.code}")
+                    return false
+                }
 
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Token: ${response.code}")
-                return false
+                val responseBody = response.body?.string() ?: "{}"
+                val json = JSONObject(responseBody)
+                accessToken = json.optString("accessToken")
+                clientId = json.optString("clientId")
+
+                // Update device ID from cookie if available
+                cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
+                    deviceId = it.value
+                }
+
+                if (accessToken.isNullOrEmpty()) {
+                    Log.e(TAG, "No accessToken")
+                    return false
+                }
+
+                tokenExpiryTime = System.currentTimeMillis() + (3600 * 1000) // 1 hour
+                Log.d(TAG, "Token OK")
+                return true
             }
-
-            val responseBody = response.body?.string() ?: "{}"
-            val json = JSONObject(responseBody)
-            accessToken = json.optString("accessToken")
-            clientId = json.optString("clientId")
-
-            // Update device ID from cookie if available
-            cookieStore["open.spotify.com"]?.find { it.name == "sp_t" }?.let {
-                deviceId = it.value
-            }
-
-            if (accessToken.isNullOrEmpty()) {
-                Log.e(TAG, "No accessToken")
-                return false
-            }
-
-            tokenExpiryTime = System.currentTimeMillis() + (3600 * 1000) // 1 hour
-            Log.d(TAG, "Token OK")
-            return true
         } catch (e: Exception) {
             Log.e(TAG, "Token error: ${e.message}")
             return false
@@ -378,6 +378,7 @@ class SpotifyAuthManager {
      * Get client token
      */
     private fun getClientToken(): Boolean {
+        var connection: javax.net.ssl.HttpsURLConnection? = null
         try {
             // Generate deviceId if not available
             if (deviceId.isNullOrEmpty()) {
@@ -408,7 +409,7 @@ class SpotifyAuthManager {
 
             // Use HttpURLConnection directly instead of OkHttp
             val url = java.net.URL("https://clienttoken.spotify.com/v1/clienttoken")
-            val connection = url.openConnection() as javax.net.ssl.HttpsURLConnection
+            connection = url.openConnection() as javax.net.ssl.HttpsURLConnection
             connection.requestMethod = "POST"
             connection.doOutput = true
             connection.setRequestProperty("Accept", "application/json")
@@ -428,7 +429,7 @@ class SpotifyAuthManager {
                 return false
             }
 
-            val responseBody = connection.inputStream.bufferedReader().readText()
+            val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(responseBody)
             val responseType = json.optString("response_type")
 
@@ -450,6 +451,8 @@ class SpotifyAuthManager {
         } catch (e: Exception) {
             Log.e(TAG, "ClientToken error: ${e.message}")
             return false
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -486,28 +489,28 @@ class SpotifyAuthManager {
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Query: ${response.code}")
-                // If unauthorized, try to reinitialize
-                if (response.code == 401) {
-                    accessToken = null
-                    tokenExpiryTime = 0
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Query: ${response.code}")
+                    // If unauthorized, try to reinitialize
+                    if (response.code == 401) {
+                        accessToken = null
+                        tokenExpiryTime = 0
+                    }
+                    return@withContext null
                 }
-                return@withContext null
+
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                // Check for errors in response
+                val errors = result.optJSONArray("errors")
+                if (errors != null && errors.length() > 0) {
+                    Log.e(TAG, "Query errors: ${errors.optJSONObject(0)?.optString("message")}")
+                }
+
+                result
             }
-
-            val responseBody = response.body?.string() ?: "{}"
-            val result = JSONObject(responseBody)
-
-            // Check for errors in response
-            val errors = result.optJSONArray("errors")
-            if (errors != null && errors.length() > 0) {
-                Log.e(TAG, "Query errors: ${errors.optJSONObject(0)?.optString("message")}")
-            }
-
-            result
         } catch (e: Exception) {
             Log.e(TAG, "Query error: ${e.message}")
             null

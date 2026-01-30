@@ -1,5 +1,6 @@
 package chromahub.rhythm.app.shared.presentation.navigation
 
+import android.content.ComponentName
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOutQuart
@@ -39,15 +40,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -56,12 +63,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.core.domain.model.AppMode
 import chromahub.rhythm.app.features.local.presentation.navigation.LocalNavigation
 import chromahub.rhythm.app.features.streaming.presentation.navigation.StreamingNavigation
+import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.shared.data.repository.UserPreferencesRepository
 import chromahub.rhythm.app.shared.presentation.viewmodel.AppModeViewModel
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
 import chromahub.rhythm.app.shared.presentation.viewmodel.ThemeViewModel
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import androidx.compose.ui.platform.LocalContext
+import com.google.common.util.concurrent.MoreExecutors
 
 /**
  * Main navigation composable that handles switching between Local and Streaming modes.
@@ -76,15 +85,59 @@ fun RhythmNavigation(
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
     val appMode by appSettings.appMode.collectAsState()
-    
+
     // Create a NavHostController that can be passed to both local and streaming navigation
     val rootNavController = rememberNavController()
-    
+
     // Settings navigation callback that works for both modes
     val navigateToSettings: () -> Unit = {
         rootNavController.navigate("settings")
     }
-    
+
+    // Connect to MediaPlaybackService to detect if a streaming song is playing
+    var mediaController by remember { mutableStateOf<MediaController?>(null) }
+    var currentMediaId by remember { mutableStateOf("") }
+    var isControllerPlaying by remember { mutableStateOf(false) }
+
+    DisposableEffect(context) {
+        val sessionToken = SessionToken(context, ComponentName(context, MediaPlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+
+        controllerFuture.addListener({
+            try {
+                mediaController = controllerFuture.get()
+            } catch (e: Exception) {
+                // Ignore connection failures
+            }
+        }, MoreExecutors.directExecutor())
+
+        onDispose {
+            mediaController?.release()
+            mediaController = null
+        }
+    }
+
+    // Poll MediaController state to detect streaming song
+    LaunchedEffect(mediaController) {
+        mediaController?.let { controller ->
+            while (true) {
+                currentMediaId = controller.currentMediaItem?.mediaId ?: ""
+                isControllerPlaying = controller.isPlaying
+                kotlinx.coroutines.delay(200)
+            }
+        }
+    }
+
+    // Auto-switch to streaming mode if a streaming song is currently playing
+    LaunchedEffect(currentMediaId, isControllerPlaying) {
+        android.util.Log.d("RhythmNav", "Mode check: mediaId=$currentMediaId, isPlaying=$isControllerPlaying, appMode=$appMode")
+        if (currentMediaId.startsWith("spotify:") && isControllerPlaying && appMode != "STREAMING") {
+            // A streaming song is playing, switch to streaming mode
+            android.util.Log.d("RhythmNav", "Switching to STREAMING mode")
+            appSettings.setAppMode("STREAMING")
+        }
+    }
+
     // Switch between Local and Streaming navigation based on app mode with animated transitions
     NavHost(
         navController = rootNavController,

@@ -125,6 +125,9 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
                 // Add to search history
                 addToSearchHistory(query)
             }
+        } catch (e: CancellationException) {
+            // Job cancelled (e.g., during navigation or new search) - don't log as error
+            Log.d(TAG, "Search cancelled")
         } catch (e: Exception) {
             Log.e(TAG, "Search error", e)
             _searchError.value = "Search failed: ${e.message}"
@@ -303,5 +306,43 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
         _currentSong.value?.let { song ->
             fetchLyricsForSong(song)
         }
+    }
+
+    /**
+     * Restore current song from MediaController metadata.
+     * Used when app reopens and a streaming song is already playing.
+     */
+    fun restoreCurrentSong(
+        mediaId: String,
+        title: String,
+        artist: String,
+        album: String,
+        artworkUri: String?,
+        duration: Long,
+        provider: String? = null
+    ) {
+        // Only restore if mediaId starts with "spotify:" and we don't have a current song
+        if (!mediaId.startsWith("spotify:") || _currentSong.value != null) {
+            return
+        }
+
+        val spotifyId = mediaId.removePrefix("spotify:")
+        val restoredSong = StreamingSong(
+            id = mediaId,
+            title = title,
+            artist = artist,
+            album = album,
+            duration = duration,
+            artworkUri = artworkUri,
+            spotifyId = spotifyId,
+            provider = provider,
+            streamUrl = "restored" // Mark as restored, not used for playback since it's already playing
+        )
+
+        _currentSong.value = restoredSong
+        Log.d(TAG, "Restored current song from MediaController: $title")
+
+        // Fetch lyrics for the restored song
+        fetchLyricsForSong(restoredSong)
     }
 }

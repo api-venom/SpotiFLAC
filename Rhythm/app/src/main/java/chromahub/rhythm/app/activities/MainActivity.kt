@@ -310,9 +310,9 @@ class MainActivity : ComponentActivity() {
     
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
-        
+
         Log.d(TAG, "Handling intent: ${intent.action}, data: ${intent.data}")
-        
+
         try {
             // Check if we should open player (coming from ExternalPlaybackActivity)
             if (intent.getBooleanExtra("OPEN_PLAYER", false)) {
@@ -321,13 +321,28 @@ class MainActivity : ComponentActivity() {
                 // No additional action needed as the navigation will handle it
                 return
             }
-            
+
+            // Check if coming from notification click
+            if (intent.getBooleanExtra(
+                chromahub.rhythm.app.infrastructure.service.MediaPlaybackService.EXTRA_FROM_NOTIFICATION,
+                false
+            )) {
+                Log.d(TAG, "Opening from notification - player will auto-show based on current song")
+                // The RhythmNavigation will detect streaming song is playing and switch mode
+                // The StreamingNavigation will auto-show the player sheet
+                return
+            }
+
             when (intent.action) {
+                chromahub.rhythm.app.infrastructure.service.MediaPlaybackService.ACTION_OPEN_PLAYER -> {
+                    Log.d(TAG, "Opening player from media notification")
+                    // The navigation will handle showing the correct player based on what's playing
+                }
                 Intent.ACTION_VIEW -> {
                     // Handle external audio file with validation
                     intent.data?.let { uri ->
                         Log.d(TAG, "Received ACTION_VIEW intent with URI: $uri")
-                        
+
                         if (isValidAndSafeUri(uri)) {
                             handleExternalAudioFile(uri)
                         } else {

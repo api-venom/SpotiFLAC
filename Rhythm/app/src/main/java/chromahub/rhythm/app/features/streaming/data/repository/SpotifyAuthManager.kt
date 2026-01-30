@@ -438,6 +438,7 @@ class SpotifyAuthManager {
                 .addHeader("Accept", "application/json")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Origin", "https://open.spotify.com")
+                .addHeader("User-Agent", USER_AGENT)
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 

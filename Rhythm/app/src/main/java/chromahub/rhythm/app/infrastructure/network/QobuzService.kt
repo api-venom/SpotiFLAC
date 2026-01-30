@@ -182,10 +182,18 @@ class QobuzService {
 
     /**
      * Parse stream response
+     * Handles multiple response formats from different providers
      */
     private fun parseStreamResponse(body: String, quality: Int): StreamResult? {
         return try {
             val json = JSONObject(body)
+
+            val bitDepth = if (quality >= QUALITY_HIRES_96) 24 else 16
+            val sampleRate = when (quality) {
+                QUALITY_HIRES_192 -> 192000
+                QUALITY_HIRES_96 -> 96000
+                else -> 44100
+            }
 
             // Try standard URL field
             val url = json.optString("url")
@@ -194,12 +202,37 @@ class QobuzService {
                     url = url,
                     quality = getQualityName(quality),
                     mimeType = getMimeTypeForQuality(quality),
-                    bitDepth = if (quality >= QUALITY_HIRES_96) 24 else 16,
-                    sampleRate = when (quality) {
-                        QUALITY_HIRES_192 -> 192000
-                        QUALITY_HIRES_96 -> 96000
-                        else -> 44100
-                    },
+                    bitDepth = bitDepth,
+                    sampleRate = sampleRate,
+                    isManifest = false
+                )
+            }
+
+            // Try data.url field (nested)
+            val data = json.optJSONObject("data")
+            if (data != null) {
+                val dataUrl = data.optString("url")
+                if (dataUrl.isNotEmpty()) {
+                    return StreamResult(
+                        url = dataUrl,
+                        quality = getQualityName(quality),
+                        mimeType = getMimeTypeForQuality(quality),
+                        bitDepth = bitDepth,
+                        sampleRate = sampleRate,
+                        isManifest = false
+                    )
+                }
+            }
+
+            // Try link field (some providers use this)
+            val link = json.optString("link")
+            if (link.isNotEmpty()) {
+                return StreamResult(
+                    url = link,
+                    quality = getQualityName(quality),
+                    mimeType = getMimeTypeForQuality(quality),
+                    bitDepth = bitDepth,
+                    sampleRate = sampleRate,
                     isManifest = false
                 )
             }
@@ -211,8 +244,8 @@ class QobuzService {
                     url = directLink,
                     quality = getQualityName(quality),
                     mimeType = getMimeTypeForQuality(quality),
-                    bitDepth = if (quality >= QUALITY_HIRES_96) 24 else 16,
-                    sampleRate = 44100,
+                    bitDepth = bitDepth,
+                    sampleRate = sampleRate,
                     isManifest = false
                 )
             }

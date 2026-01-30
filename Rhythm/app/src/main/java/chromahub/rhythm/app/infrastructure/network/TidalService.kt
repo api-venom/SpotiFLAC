@@ -202,43 +202,78 @@ class TidalService {
     }
 
     /**
-     * Parse stream response (handles both V1 and V2 formats)
+     * Parse stream response (handles V1, V2, array formats)
      */
     private fun parseStreamResponse(body: String, quality: String): StreamResult? {
         return try {
-            val json = JSONObject(body)
+            // First try to parse as JSONObject
+            try {
+                val json = JSONObject(body)
 
-            // Try V1 format (direct URL)
-            val directUrl = json.optString("OriginalTrackUrl")
-            if (directUrl.isNotEmpty()) {
-                return StreamResult(
-                    url = directUrl,
-                    quality = quality,
-                    mimeType = getMimeTypeForQuality(quality),
-                    isManifest = false
-                )
-            }
-
-            // Try V2 format (manifest)
-            val data = json.optJSONObject("data")
-            if (data != null) {
-                val manifest = data.optString("Manifest")
-                if (manifest.isNotEmpty()) {
-                    return parseManifest(manifest, quality, data)
-                }
-            }
-
-            // Try URLs array
-            if (json.has("urls")) {
-                val urls = json.getJSONArray("urls")
-                if (urls.length() > 0) {
+                // Try V1 format (direct URL)
+                val directUrl = json.optString("OriginalTrackUrl")
+                if (directUrl.isNotEmpty()) {
                     return StreamResult(
-                        url = urls.getString(0),
+                        url = directUrl,
                         quality = quality,
                         mimeType = getMimeTypeForQuality(quality),
                         isManifest = false
                     )
                 }
+
+                // Try V2 format (manifest)
+                val data = json.optJSONObject("data")
+                if (data != null) {
+                    val manifest = data.optString("Manifest")
+                    if (manifest.isNotEmpty()) {
+                        return parseManifest(manifest, quality, data)
+                    }
+                }
+
+                // Try URLs array (BTS format at top level)
+                if (json.has("urls")) {
+                    val urls = json.getJSONArray("urls")
+                    if (urls.length() > 0) {
+                        return StreamResult(
+                            url = urls.getString(0),
+                            quality = quality,
+                            mimeType = json.optString("mimeType", getMimeTypeForQuality(quality)),
+                            isManifest = false
+                        )
+                    }
+                }
+
+                // Try url field
+                val url = json.optString("url")
+                if (url.isNotEmpty()) {
+                    return StreamResult(
+                        url = url,
+                        quality = quality,
+                        mimeType = getMimeTypeForQuality(quality),
+                        isManifest = false
+                    )
+                }
+            } catch (e: Exception) {
+                // Not a JSON object, try array
+            }
+
+            // Try to parse as JSON array (like Windows V1 format)
+            try {
+                val jsonArray = org.json.JSONArray(body)
+                for (i in 0 until jsonArray.length()) {
+                    val item = jsonArray.getJSONObject(i)
+                    val originalTrackUrl = item.optString("OriginalTrackUrl")
+                    if (originalTrackUrl.isNotEmpty()) {
+                        return StreamResult(
+                            url = originalTrackUrl,
+                            quality = quality,
+                            mimeType = getMimeTypeForQuality(quality),
+                            isManifest = false
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // Not a JSON array
             }
 
             null

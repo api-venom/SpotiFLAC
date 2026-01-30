@@ -248,7 +248,8 @@ fun StreamingNavigation(
                                 onNavigateToSearch = { navController.navigate(StreamingScreen.Search.route) },
                                 onNavigateToLibrary = { navController.navigate(StreamingScreen.Library.route) },
                                 onNavigateToSettings = onNavigateToSettings,
-                                onSwitchToLocalMode = onSwitchToLocalMode
+                                onSwitchToLocalMode = onSwitchToLocalMode,
+                                sharedViewModel = streamingViewModel
                             )
                         }
 

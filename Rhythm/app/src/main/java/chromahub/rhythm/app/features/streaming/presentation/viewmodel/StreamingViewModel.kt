@@ -1,6 +1,7 @@
 package chromahub.rhythm.app.features.streaming.presentation.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * ViewModel for streaming functionality
@@ -27,8 +30,14 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     companion object {
         private const val TAG = "StreamingVM"
         private const val SEARCH_DEBOUNCE_MS = 500L
+        private const val PREFS_NAME = "streaming_prefs"
+        private const val KEY_SEARCH_HISTORY = "search_history"
+        private const val KEY_RECENTLY_PLAYED = "recently_played"
+        private const val MAX_HISTORY_SIZE = 15
+        private const val MAX_RECENTLY_PLAYED = 30
     }
 
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val authManager = SpotifyAuthManager()
     private val repository = StreamingRepository(authManager)
     private val lyricsService = LyricsService()
@@ -70,12 +79,176 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
-    // Search history
+    // Search history (persistent)
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
+    // Recently played songs (persistent)
+    private val _recentlyPlayed = MutableStateFlow<List<StreamingSong>>(emptyList())
+    val recentlyPlayed: StateFlow<List<StreamingSong>> = _recentlyPlayed.asStateFlow()
+
     private var searchJob: Job? = null
     private var lyricsJob: Job? = null
+
+    init {
+        // Load persistent data on init
+        loadSearchHistory()
+        loadRecentlyPlayed()
+    }
+
+    /**
+     * Load search history from SharedPreferences
+     */
+    private fun loadSearchHistory() {
+        try {
+            val historyJson = prefs.getString(KEY_SEARCH_HISTORY, null)
+            if (historyJson != null) {
+                val jsonArray = JSONArray(historyJson)
+                val history = mutableListOf<String>()
+                for (i in 0 until jsonArray.length()) {
+                    history.add(jsonArray.getString(i))
+                }
+                _searchHistory.value = history
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading search history", e)
+        }
+    }
+
+    /**
+     * Save search history to SharedPreferences
+     */
+    private fun saveSearchHistory() {
+        try {
+            val jsonArray = JSONArray()
+            _searchHistory.value.forEach { jsonArray.put(it) }
+            prefs.edit().putString(KEY_SEARCH_HISTORY, jsonArray.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving search history", e)
+        }
+    }
+
+    /**
+     * Load recently played songs from SharedPreferences
+     */
+    private fun loadRecentlyPlayed() {
+        try {
+            val recentJson = prefs.getString(KEY_RECENTLY_PLAYED, null)
+            if (recentJson != null) {
+                val jsonArray = JSONArray(recentJson)
+                val songs = mutableListOf<StreamingSong>()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    songs.add(StreamingSong(
+                        id = obj.getString("id"),
+                        title = obj.getString("title"),
+                        artist = obj.getString("artist"),
+                        album = obj.optString("album", ""),
+                        duration = obj.optLong("duration", 0L),
+                        artworkUri = obj.optString("artworkUri", null),
+                        spotifyId = obj.optString("spotifyId", ""),
+                        provider = obj.optString("provider", null),
+                        streamUrl = null // Don't persist stream URLs
+                    ))
+                }
+                _recentlyPlayed.value = songs
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading recently played", e)
+        }
+    }
+
+    /**
+     * Save recently played songs to SharedPreferences
+     */
+    private fun saveRecentlyPlayed() {
+        try {
+            val jsonArray = JSONArray()
+            _recentlyPlayed.value.take(MAX_RECENTLY_PLAYED).forEach { song ->
+                val obj = JSONObject().apply {
+                    put("id", song.id)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("album", song.album)
+                    put("duration", song.duration)
+                    put("artworkUri", song.artworkUri ?: "")
+                    put("spotifyId", song.spotifyId)
+                    put("provider", song.provider ?: "")
+                }
+                jsonArray.put(obj)
+            }
+            prefs.edit().putString(KEY_RECENTLY_PLAYED, jsonArray.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving recently played", e)
+        }
+    }
+
+    /**
+     * Add to search history
+     */
+    private fun addToSearchHistory(query: String) {
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.length < 2) return
+
+        val current = _searchHistory.value.toMutableList()
+        current.remove(trimmedQuery) // Remove if exists to move to front
+        current.add(0, trimmedQuery)
+        if (current.size > MAX_HISTORY_SIZE) {
+            current.removeAt(current.lastIndex)
+        }
+        _searchHistory.value = current
+        saveSearchHistory()
+    }
+
+    /**
+     * Add song to recently played
+     */
+    private fun addToRecentlyPlayed(song: StreamingSong) {
+        val current = _recentlyPlayed.value.toMutableList()
+        // Remove if already exists (by spotifyId)
+        current.removeAll { it.spotifyId == song.spotifyId }
+        // Add to front
+        current.add(0, song.copy(streamUrl = null)) // Don't store stream URL
+        if (current.size > MAX_RECENTLY_PLAYED) {
+            current.removeAt(current.lastIndex)
+        }
+        _recentlyPlayed.value = current
+        saveRecentlyPlayed()
+    }
+
+    /**
+     * Remove item from search history
+     */
+    fun removeFromSearchHistory(query: String) {
+        val current = _searchHistory.value.toMutableList()
+        current.remove(query)
+        _searchHistory.value = current
+        saveSearchHistory()
+    }
+
+    /**
+     * Clear all search history
+     */
+    fun clearSearchHistory() {
+        _searchHistory.value = emptyList()
+        prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
+    }
+
+    /**
+     * Clear recently played
+     */
+    fun clearRecentlyPlayed() {
+        _recentlyPlayed.value = emptyList()
+        prefs.edit().remove(KEY_RECENTLY_PLAYED).apply()
+    }
+
+    /**
+     * Use a search history item
+     */
+    fun useSearchHistoryItem(query: String) {
+        _searchQuery.value = query
+        search(query)
+    }
 
     /**
      * Update search query with debounce
@@ -162,6 +335,9 @@ class StreamingViewModel(application: Application) : AndroidViewModel(applicatio
 
                     // Start playback through MediaPlaybackService
                     startPlayback(songWithStream)
+
+                    // Add to recently played
+                    addToRecentlyPlayed(songWithStream)
 
                     // Fetch lyrics in parallel
                     fetchLyricsForSong(songWithStream)

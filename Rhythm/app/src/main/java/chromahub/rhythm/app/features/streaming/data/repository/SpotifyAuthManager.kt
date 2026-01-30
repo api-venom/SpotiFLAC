@@ -432,28 +432,17 @@ class SpotifyAuthManager {
 
             Log.d(TAG, "Client token payload: ${payload.toString()}")
 
-            // Add all browser headers including Client Hints
+            // Use minimal headers that work with curl
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
                 .addHeader("Accept", "application/json")
-                .addHeader("Accept-Encoding", "gzip, deflate, br")
-                .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Origin", "https://open.spotify.com")
-                .addHeader("Referer", "https://open.spotify.com/")
-                .addHeader("User-Agent", USER_AGENT)
-                // Client Hints headers (like browser sends)
-                .addHeader("sec-ch-ua", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
-                .addHeader("sec-ch-ua-mobile", "?1")
-                .addHeader("sec-ch-ua-platform", "\"Android\"")
-                .addHeader("sec-fetch-dest", "empty")
-                .addHeader("sec-fetch-mode", "cors")
-                .addHeader("sec-fetch-site", "same-site")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
-            // Use httpClient with cookies (browser sends cookies too)
-            val response = httpClient.newCall(request).execute()
+            // Use plain client without cookies
+            val response = plainHttpClient.newCall(request).execute()
 
             Log.d(TAG, "Client token response code: ${response.code}")
 

@@ -1,6 +1,7 @@
 package chromahub.rhythm.app.features.local.presentation.components.lyrics
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,10 +14,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,20 +49,29 @@ sealed class LyricsItem {
 
 /**
  * Animation presets for word-by-word highlighting
- * TODO: Implement different animation styles for word transitions
  */
 enum class WordAnimationPreset {
     DEFAULT,      // Standard fade and scale
-    BOUNCE,       // Bouncy spring animation (TODO: implement)
-    SLIDE,        // Slide-in from sides (TODO: implement)
-    GLOW,         // Glowing highlight effect (TODO: implement)
-    KARAOKE,      // Filling bar effect (TODO: implement)
-    MINIMAL       // Subtle color change only (TODO: implement)
+    BOUNCE,       // Bouncy spring animation
+    SLIDE,        // Slide-in from sides
+    GLOW,         // Glowing highlight effect
+    KARAOKE,      // Filling text effect (Apple Music style)
+    MINIMAL       // Subtle color change only
 }
 
 /**
  * Composable for displaying word-by-word synchronized lyrics from Apple Music
- * TODO: Add animation preset system for different word highlighting styles
+ * Supports multiple animation presets including KARAOKE-style text filling
+ *
+ * @param wordByWordLyrics Raw JSON lyrics string from Apple Music API
+ * @param currentPlaybackTime Current playback position in milliseconds
+ * @param modifier Modifier for the composable
+ * @param listState LazyListState for scroll control
+ * @param onSeek Callback for seeking to a specific timestamp when tapping a line
+ * @param syncOffset Manual offset to adjust lyrics timing in milliseconds
+ * @param animationPreset Animation style for word highlighting
+ * @param activeColor Color for active/highlighted words (karaoke fill color)
+ * @param inactiveColor Color for inactive/upcoming words
  */
 @Composable
 fun WordByWordLyricsView(
@@ -62,11 +80,18 @@ fun WordByWordLyricsView(
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
     onSeek: ((Long) -> Unit)? = null,
-    syncOffset: Long = 0L, // TODO: Add UI controls for adjusting sync offset in real-time
-    animationPreset: WordAnimationPreset = WordAnimationPreset.DEFAULT // TODO: Implement animation presets
+    syncOffset: Long = 0L,
+    animationPreset: WordAnimationPreset = WordAnimationPreset.DEFAULT,
+    activeColor: Color? = null,
+    inactiveColor: Color? = null
 ) {
     val context = LocalContext.current
-    // TODO: Apply syncOffset to all timestamp comparisons for manual sync adjustment
+
+    // Use theme colors as defaults
+    val defaultActiveColor = MaterialTheme.colorScheme.primary
+    val defaultInactiveColor = MaterialTheme.colorScheme.onSurface
+    val effectiveActiveColor = activeColor ?: defaultActiveColor
+    val effectiveInactiveColor = inactiveColor ?: defaultInactiveColor
     val adjustedPlaybackTime = currentPlaybackTime + syncOffset
     
     val parsedLyrics = remember(wordByWordLyrics) {
@@ -176,7 +201,7 @@ fun WordByWordLyricsView(
                         val isCurrentLine = currentLineIndex == index
                         val isUpcomingLine = index > currentLineIndex
                         val linesAhead = index - currentLineIndex
-                        
+
                         // Animated scale for current line with elastic spring
                         val scale by animateFloatAsState(
                             targetValue = when {
@@ -238,81 +263,108 @@ fun WordByWordLyricsView(
 
                         // Calculate distance-based alpha for better readability
                         val distanceFromCurrent = abs(index - currentLineIndex)
-                        
-                        // Build annotated string with word-level highlighting (using adjustedPlaybackTime)
-                        val annotatedText = buildAnnotatedString {
-                            line.words.forEachIndexed { wordIndex, word ->
-                                // TODO: Apply animation preset here based on animationPreset parameter
-                                val isWordActive = isCurrentLine && 
-                                    adjustedPlaybackTime >= word.timestamp && 
-                                    adjustedPlaybackTime <= word.endtime
-                                
-                                // Improved alpha values based on distance for better readability
-                                val wordAlpha = when {
-                                    isWordActive -> 1f
-                                    isCurrentLine -> 0.95f // Active line words that haven't been sung yet
-                                    distanceFromCurrent == 1 -> 0.75f // Next/previous line
-                                    distanceFromCurrent == 2 -> 0.60f
-                                    distanceFromCurrent == 3 -> 0.45f
-                                    else -> 0.32f // Far away lines
-                                }
-                                
-                                // Apply different colors based on voice tag
-                                val baseColor = when (line.voiceTag) {
-                                    "v2" -> MaterialTheme.colorScheme.secondary
-                                    "v3" -> MaterialTheme.colorScheme.tertiary
-                                    else -> MaterialTheme.colorScheme.primary // Default/v1
-                                }
-                                
-                                val wordColor = if (isWordActive) {
-                                    baseColor // Active word gets voice-specific color
-                                } else if (isCurrentLine) {
-                                    // Inactive words in current line - use voice color but slightly dimmed
-                                    when (line.voiceTag) {
-                                        "v2" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
-                                        "v3" -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
-                                        else -> MaterialTheme.colorScheme.onSurface
+
+                        // Choose rendering based on animation preset
+                        when (animationPreset) {
+                            WordAnimationPreset.KARAOKE -> {
+                                // KARAOKE style: Text fill animation
+                                KaraokeLyricLine(
+                                    line = line,
+                                    isCurrentLine = isCurrentLine,
+                                    adjustedPlaybackTime = adjustedPlaybackTime,
+                                    activeColor = effectiveActiveColor,
+                                    inactiveColor = effectiveInactiveColor.copy(
+                                        alpha = when {
+                                            isCurrentLine -> 0.6f
+                                            distanceFromCurrent == 1 -> 0.5f
+                                            distanceFromCurrent == 2 -> 0.4f
+                                            else -> 0.3f
+                                        }
+                                    ),
+                                    scale = scale,
+                                    opacity = opacity,
+                                    translationY = animatedTranslationY,
+                                    onSeek = onSeek
+                                )
+                            }
+                            else -> {
+                                // DEFAULT and other presets: Use annotated string approach
+                                val annotatedText = buildAnnotatedString {
+                                    line.words.forEachIndexed { wordIndex, word ->
+                                        val isWordActive = isCurrentLine &&
+                                            adjustedPlaybackTime >= word.timestamp &&
+                                            adjustedPlaybackTime <= word.endtime
+
+                                        // Determine word color based on preset and custom colors
+                                        val wordColor = when {
+                                            animationPreset == WordAnimationPreset.MINIMAL -> {
+                                                if (isWordActive) effectiveActiveColor
+                                                else effectiveInactiveColor.copy(alpha = 0.7f)
+                                            }
+                                            isWordActive -> {
+                                                // Use custom active color or voice-specific color
+                                                if (activeColor != null) effectiveActiveColor
+                                                else when (line.voiceTag) {
+                                                    "v2" -> MaterialTheme.colorScheme.secondary
+                                                    "v3" -> MaterialTheme.colorScheme.tertiary
+                                                    else -> MaterialTheme.colorScheme.primary
+                                                }
+                                            }
+                                            isCurrentLine -> {
+                                                if (inactiveColor != null) effectiveInactiveColor.copy(alpha = 0.8f)
+                                                else when (line.voiceTag) {
+                                                    "v2" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
+                                                    "v3" -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                }
+                                            }
+                                            else -> {
+                                                val wordAlpha = when {
+                                                    distanceFromCurrent == 1 -> 0.75f
+                                                    distanceFromCurrent == 2 -> 0.60f
+                                                    distanceFromCurrent == 3 -> 0.45f
+                                                    else -> 0.32f
+                                                }
+                                                effectiveInactiveColor.copy(alpha = wordAlpha)
+                                            }
+                                        }
+
+                                        withStyle(
+                                            SpanStyle(
+                                                color = wordColor,
+                                                fontWeight = if (isWordActive) FontWeight.Bold else
+                                                    if (isCurrentLine) FontWeight.SemiBold else FontWeight.Normal
+                                            )
+                                        ) {
+                                            if (wordIndex > 0 && !word.isPart) {
+                                                append(" ")
+                                            }
+                                            append(word.text)
+                                        }
                                     }
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = wordAlpha)
                                 }
-                                
-                                withStyle(
-                                    SpanStyle(
-                                        color = wordColor,
-                                        fontWeight = if (isWordActive) FontWeight.Bold else 
-                                            if (isCurrentLine) FontWeight.SemiBold else FontWeight.Normal
-                                    )
-                                ) {
-                                    // Add space before word if it's not a syllable part
-                                    if (wordIndex > 0 && !word.isPart) {
-                                        append(" ")
-                                    }
-                                    append(word.text)
-                                }
+
+                                Text(
+                                    text = annotatedText,
+                                    style = MaterialTheme.typography.headlineSmall.copy(
+                                        lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.4f
+                                    ),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onSeek?.invoke(line.lineTimestamp)
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 16.dp)
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                            alpha = opacity
+                                            translationY = animatedTranslationY
+                                        }
+                                )
                             }
                         }
-                        
-                        Text(
-                            text = annotatedText,
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.4f
-                            ),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onSeek?.invoke(line.lineTimestamp)
-                                }
-                                .padding(vertical = 12.dp, horizontal = 16.dp)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                    alpha = opacity
-                                    translationY = animatedTranslationY
-//                                    rotationZ = rotationZ
-                                }
-                        )
                     }
                     is LyricsItem.Gap -> {
                         // Visual indicator for instrumental gap
@@ -367,5 +419,141 @@ fun WordByWordLyricsView(
                 }
             }
         }
+    }
+}
+
+/**
+ * Karaoke-style lyric line with progressive text fill animation
+ * Renders text with a gradient fill that progresses word-by-word based on timestamps
+ */
+@Composable
+private fun KaraokeLyricLine(
+    line: WordByWordLyricLine,
+    isCurrentLine: Boolean,
+    adjustedPlaybackTime: Long,
+    activeColor: Color,
+    inactiveColor: Color,
+    scale: Float,
+    opacity: Float,
+    translationY: Float,
+    onSeek: ((Long) -> Unit)?
+) {
+    // Build full text string for the line
+    val fullText = remember(line) {
+        buildString {
+            line.words.forEachIndexed { index, word ->
+                if (index > 0 && !word.isPart) {
+                    append(" ")
+                }
+                append(word.text)
+            }
+        }
+    }
+
+    // Calculate fill progress for karaoke effect
+    val fillProgress by remember(adjustedPlaybackTime, line, isCurrentLine) {
+        derivedStateOf {
+            if (!isCurrentLine) {
+                // If line has passed, show fully filled; if upcoming, show unfilled
+                if (adjustedPlaybackTime > line.lineEndtime) 1f else 0f
+            } else {
+                // Calculate per-character progress
+                var charIndex = 0
+                var filledChars = 0f
+                var totalChars = 0
+
+                line.words.forEachIndexed { wordIndex, word ->
+                    if (wordIndex > 0 && !word.isPart) {
+                        totalChars++
+                        charIndex++
+                        // Space is filled if we're past the previous word
+                        if (adjustedPlaybackTime >= word.timestamp) {
+                            filledChars++
+                        }
+                    }
+
+                    val wordLength = word.text.length
+                    totalChars += wordLength
+
+                    when {
+                        adjustedPlaybackTime >= word.endtime -> {
+                            // Word fully sung
+                            filledChars += wordLength
+                        }
+                        adjustedPlaybackTime >= word.timestamp -> {
+                            // Word currently being sung - interpolate fill
+                            val wordDuration = (word.endtime - word.timestamp).coerceAtLeast(1L)
+                            val elapsed = adjustedPlaybackTime - word.timestamp
+                            val wordProgress = (elapsed.toFloat() / wordDuration).coerceIn(0f, 1f)
+                            filledChars += wordLength * wordProgress
+                        }
+                        // Word not yet sung - no fill
+                    }
+
+                    charIndex += wordLength
+                }
+
+                if (totalChars > 0) filledChars / totalChars else 0f
+            }
+        }
+    }
+
+    // Smooth animation for fill progress
+    val animatedFillProgress by animateFloatAsState(
+        targetValue = fillProgress,
+        animationSpec = tween(
+            durationMillis = 50,
+            easing = LinearEasing
+        ),
+        label = "karaokeFill"
+    )
+
+    // Store text layout result for gradient calculation
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSeek?.invoke(line.lineTimestamp) }
+            .padding(vertical = 12.dp, horizontal = 16.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = opacity
+                this.translationY = translationY
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                // Draw background text (unfilled)
+                drawContent()
+
+                // Draw filled overlay using gradient mask
+                textLayoutResult?.let { layout ->
+                    val fillWidth = size.width * animatedFillProgress
+
+                    // Draw active color clipped to fill progress
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(activeColor, activeColor),
+                            startX = 0f,
+                            endX = fillWidth
+                        ),
+                        size = Size(fillWidth, size.height),
+                        blendMode = BlendMode.SrcAtop
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = fullText,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.4f
+            ),
+            fontWeight = if (isCurrentLine) FontWeight.SemiBold else FontWeight.Normal,
+            color = inactiveColor,
+            textAlign = TextAlign.Center,
+            onTextLayout = { textLayoutResult = it }
+        )
     }
 }

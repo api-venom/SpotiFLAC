@@ -108,6 +108,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import chromahub.rhythm.app.features.local.presentation.components.lyrics.SyncedLyricsView
+import chromahub.rhythm.app.features.local.presentation.components.lyrics.WordAnimationPreset
 import chromahub.rhythm.app.features.local.presentation.components.lyrics.WordByWordLyricsView
 import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingViewModel
 import chromahub.rhythm.app.util.LyricsParser
@@ -602,6 +603,9 @@ fun StreamingPlayerScreen(
                                                 mediaController?.seekTo(timestamp)
                                             },
                                             syncOffset = lyricsTimeOffset.toLong(),
+                                            animationPreset = WordAnimationPreset.KARAOKE,
+                                            activeColor = albumColors.lightVibrantColor,
+                                            inactiveColor = Color.White,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     } else {

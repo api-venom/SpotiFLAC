@@ -13,6 +13,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,6 +64,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.core.domain.model.AppMode
 import chromahub.rhythm.app.features.local.presentation.navigation.LocalNavigation
+import chromahub.rhythm.app.features.local.presentation.screens.EqualizerScreen
+import chromahub.rhythm.app.features.local.presentation.screens.ListeningStatsScreen
 import chromahub.rhythm.app.features.streaming.presentation.navigation.StreamingNavigation
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
 import chromahub.rhythm.app.shared.data.repository.UserPreferencesRepository
@@ -195,6 +199,54 @@ fun RhythmNavigation(
                 appSettings = appSettings,
                 navController = rootNavController
             )
+        }
+
+        // Equalizer screen (accessible from settings in any mode)
+        composable(
+            route = "equalizer",
+            enterTransition = {
+                fadeIn(animationSpec = tween(300)) +
+                        slideInVertically(
+                            initialOffsetY = { it / 4 },
+                            animationSpec = tween(350, easing = EaseInOutQuart)
+                        )
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            },
+            popExitTransition = {
+                fadeOut(animationSpec = tween(300)) +
+                        slideOutVertically(
+                            targetOffsetY = { it / 4 },
+                            animationSpec = tween(350, easing = EaseInOutQuart)
+                        )
+            }
+        ) {
+            EqualizerScreen(navController = rootNavController)
+        }
+
+        // Listening stats screen (accessible from settings in any mode)
+        composable(
+            route = "listening_stats",
+            enterTransition = {
+                fadeIn(animationSpec = tween(300)) +
+                        slideInVertically(
+                            initialOffsetY = { it / 4 },
+                            animationSpec = tween(350, easing = EaseInOutQuart)
+                        )
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            },
+            popExitTransition = {
+                fadeOut(animationSpec = tween(300)) +
+                        slideOutVertically(
+                            targetOffsetY = { it / 4 },
+                            animationSpec = tween(350, easing = EaseInOutQuart)
+                        )
+            }
+        ) {
+            ListeningStatsScreen(navController = rootNavController)
         }
     }
 }
